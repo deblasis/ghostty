@@ -3889,6 +3889,12 @@ pub fn countTrackedPins(self: *const PageList) usize {
     return self.tracked_pins.count();
 }
 
+/// Returns the tracked pins for this pagelist. The slice is owned by the
+/// pagelist and is only valid until the pagelist is modified.
+pub fn trackedPins(self: *const PageList) []const *Pin {
+    return self.tracked_pins.keys();
+}
+
 /// Checks if a pin is valid for this pagelist. This is a very slow and
 /// expensive operation since we traverse the entire linked list in the
 /// worst case. Only for runtime safety/debug.

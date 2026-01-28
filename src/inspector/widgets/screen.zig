@@ -13,12 +13,14 @@ const window_pagelist = "PageList";
 
 /// Screen information inspector widget.
 pub const Info = struct {
+    pagelist: widgets.pagelist.Inspector = .{},
+
     pub const empty: Info = .{};
 
     /// Draw the screen info contents.
     pub fn draw(self: *Info, open: bool, data: struct {
         /// The screen that we're inspecting.
-        screen: *const terminal.Screen,
+        screen: *terminal.Screen,
 
         /// Which screen key we're viewing.
         key: terminal.ScreenSet.Key,
@@ -32,8 +34,6 @@ pub const Info = struct {
         /// Color palette for cursor color resolution.
         color_palette: *const terminal.color.DynamicPalette,
     }) void {
-        _ = self;
-
         // Create the dockspace for this screen
         const dockspace_id = cimgui.c.ImGui_GetID("Screen Dockspace");
         _ = createDockSpace(dockspace_id);
@@ -88,7 +88,7 @@ pub const Info = struct {
                 null,
                 cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
             )) break :pagelist;
-            cimgui.c.ImGui_Text("hello");
+            self.pagelist.draw(&screen.pages);
         }
 
         // The remainder is the open state
