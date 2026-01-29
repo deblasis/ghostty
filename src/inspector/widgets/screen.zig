@@ -9,13 +9,18 @@ const terminal = @import("../../terminal/main.zig");
 
 /// Window names for the screen dockspace.
 const window_info = "Info";
+const window_grid = "Grid";
 const window_pagelist = "PageList";
 
 /// Screen information inspector widget.
 pub const Info = struct {
-    pagelist: widgets.pagelist.Inspector = .{},
+    pagelist: widgets.pagelist.Inspector,
+    grid: Grid,
 
-    pub const empty: Info = .{};
+    pub const empty: Info = .{
+        .pagelist = .empty,
+        .grid = .empty,
+    };
 
     /// Draw the screen info contents.
     pub fn draw(self: *Info, open: bool, data: struct {
@@ -80,6 +85,17 @@ pub const Info = struct {
             )) internalStateTable(&screen.pages);
         }
 
+        // Grid window
+        grid: {
+            defer cimgui.c.ImGui_End();
+            if (!cimgui.c.ImGui_Begin(
+                window_grid,
+                null,
+                cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+            )) break :grid;
+            self.grid.draw(&screen.pages);
+        }
+
         // PageList window
         pagelist: {
             defer cimgui.c.ImGui_End();
@@ -120,6 +136,7 @@ pub const Info = struct {
 
             // Dock windows into the space
             cimgui.ImGui_DockBuilderDockWindow(window_info, dockspace_id);
+            cimgui.ImGui_DockBuilderDockWindow(window_grid, dockspace_id);
             cimgui.ImGui_DockBuilderDockWindow(window_pagelist, dockspace_id);
             cimgui.ImGui_DockBuilderFinish(dockspace_id);
         }
@@ -329,10 +346,28 @@ pub fn internalStateTable(
     cimgui.c.ImGui_Text("Memory Limit");
     _ = cimgui.c.ImGui_TableSetColumnIndex(1);
     cimgui.c.ImGui_Text("%d bytes (%d KiB)", pages.maxSize(), units.toKibiBytes(pages.maxSize()));
-
     cimgui.c.ImGui_TableNextRow();
     _ = cimgui.c.ImGui_TableSetColumnIndex(0);
     cimgui.c.ImGui_Text("Viewport Location");
     _ = cimgui.c.ImGui_TableSetColumnIndex(1);
     cimgui.c.ImGui_Text("%s", @tagName(pages.viewport).ptr);
 }
+
+/// Grid inspector widget for a specific screen.
+pub const Grid = struct {
+    lookup_region: terminal.point.Tag,
+    lookup_coord: terminal.point.Coordinate,
+
+    pub const empty: Grid = .{
+        .lookup_region = .viewport,
+        .lookup_coord = .{ .x = 0, .y = 0 },
+    };
+
+    pub fn draw(
+        self: *Grid,
+        pages: *const terminal.PageList,
+    ) void {
+        _ = self;
+        _ = pages;
+    }
+};
