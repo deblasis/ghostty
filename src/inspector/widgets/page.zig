@@ -149,26 +149,13 @@ pub fn managedMemory(page: *const Page) void {
         _ = cimgui.c.ImGui_TableSetColumnIndex(2);
         cimgui.c.ImGui_Text("%d", page.graphemeCapacity());
 
-        {
-            const StringAlloc = @TypeOf(page.string_alloc);
-            const string_chunk = StringAlloc.bytesRequired(u8, 1);
-            const string_total_chunks = page.string_alloc.bitmap_count * StringAlloc.bitmap_bit_size;
-            var string_free_chunks: usize = 0;
-            const string_bitmaps = page.string_alloc.bitmap.ptr(page.memory);
-            for (string_bitmaps[0..page.string_alloc.bitmap_count]) |bitmap| {
-                string_free_chunks += @popCount(bitmap);
-            }
-            const string_used_chunks = string_total_chunks - string_free_chunks;
-            const string_used_bytes = string_used_chunks * string_chunk;
-            const string_capacity_bytes = string_total_chunks * string_chunk;
-            cimgui.c.ImGui_TableNextRow();
-            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
-            cimgui.c.ImGui_Text("Strings (bytes)");
-            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
-            cimgui.c.ImGui_Text("%d", string_used_bytes);
-            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
-            cimgui.c.ImGui_Text("%d", string_capacity_bytes);
-        }
+        cimgui.c.ImGui_TableNextRow();
+        _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+        cimgui.c.ImGui_Text("Strings (bytes)");
+        _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+        cimgui.c.ImGui_Text("%d", page.string_alloc.usedBytes(page.memory));
+        _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+        cimgui.c.ImGui_Text("%d", page.string_alloc.capacityBytes());
 
         {
             const hyperlink_map = page.hyperlink_map.map(page.memory);
