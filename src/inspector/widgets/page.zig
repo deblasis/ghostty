@@ -14,6 +14,9 @@ pub fn inspector(page: *const terminal.Page) void {
     cimgui.c.ImGui_SeparatorText("Styles");
     stylesList(page);
 
+    cimgui.c.ImGui_SeparatorText("Hyperlinks");
+    hyperlinksList(page);
+
     cimgui.c.ImGui_SeparatorText("Rows");
     rowsTable(page);
 }
@@ -343,6 +346,76 @@ fn stylesList(page: *const Page) void {
             defer cimgui.c.ImGui_TreePop();
             widgets.style.table(item.value, null);
         }
+    }
+}
+
+fn hyperlinksList(page: *const Page) void {
+    const items = page.hyperlink_set.items.ptr(page.memory)[0..page.hyperlink_set.layout.cap];
+
+    var count: usize = 0;
+    for (items, 0..) |item, index| {
+        if (index == 0) continue;
+        if (item.meta.ref == 0) continue;
+        count += 1;
+    }
+
+    if (count == 0) {
+        cimgui.c.ImGui_TextDisabled("(no hyperlinks in use)");
+        return;
+    }
+
+    const visible_rows: usize = @min(count, 8);
+    const row_height: f32 = cimgui.c.ImGui_GetTextLineHeightWithSpacing();
+    const child_height: f32 = row_height * (@as(f32, @floatFromInt(visible_rows)) + 2.0);
+
+    defer cimgui.c.ImGui_EndChild();
+    if (!cimgui.c.ImGui_BeginChild(
+        "##page_hyperlinks",
+        .{ .x = 0.0, .y = child_height },
+        cimgui.c.ImGuiChildFlags_Borders,
+        cimgui.c.ImGuiWindowFlags_None,
+    )) return;
+
+    if (!cimgui.c.ImGui_BeginTable(
+        "##page_hyperlinks_table",
+        4,
+        cimgui.c.ImGuiTableFlags_BordersInnerV |
+            cimgui.c.ImGuiTableFlags_RowBg |
+            cimgui.c.ImGuiTableFlags_SizingFixedFit,
+    )) return;
+    defer cimgui.c.ImGui_EndTable();
+
+    cimgui.c.ImGui_TableSetupScrollFreeze(0, 1);
+    cimgui.c.ImGui_TableSetupColumn("ID", cimgui.c.ImGuiTableColumnFlags_WidthFixed);
+    cimgui.c.ImGui_TableSetupColumn("Refs", cimgui.c.ImGuiTableColumnFlags_WidthFixed);
+    cimgui.c.ImGui_TableSetupColumn("Explicit ID", cimgui.c.ImGuiTableColumnFlags_WidthFixed);
+    cimgui.c.ImGui_TableSetupColumn("URI", cimgui.c.ImGuiTableColumnFlags_WidthStretch);
+    cimgui.c.ImGui_TableHeadersRow();
+
+    for (items, 0..) |item, index| {
+        if (index == 0) continue;
+        if (item.meta.ref == 0) continue;
+
+        cimgui.c.ImGui_TableNextRow();
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+        cimgui.c.ImGui_Text("%d", index);
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+        cimgui.c.ImGui_Text("%d", item.meta.ref);
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+        switch (item.value.id) {
+            .explicit => |slice| {
+                const explicit_id = slice.slice(page.memory);
+                cimgui.c.ImGui_Text("%.*s", explicit_id.len, explicit_id.ptr);
+            },
+            .implicit => cimgui.c.ImGui_TextDisabled("-"),
+        }
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(3);
+        const uri = item.value.uri.slice(page.memory);
+        cimgui.c.ImGui_Text("%.*s", uri.len, uri.ptr);
     }
 }
 
