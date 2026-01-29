@@ -1,6 +1,7 @@
 const std = @import("std");
 const cimgui = @import("dcimgui");
 const terminal = @import("../../terminal/main.zig");
+const stylepkg = @import("../../terminal/style.zig");
 const widgets = @import("../widgets.zig");
 const units = @import("../units.zig");
 
@@ -416,3 +417,436 @@ fn scrollbarWidget(
         );
     }
 }
+
+/// Grid inspector widget for choosing and inspecting a specific cell.
+pub const CellChooser = struct {
+    lookup_region: terminal.point.Tag,
+    lookup_coord: terminal.point.Coordinate,
+    cell_info: CellInfo,
+
+    pub const empty: CellChooser = .{
+        .lookup_region = .viewport,
+        .lookup_coord = .{ .x = 0, .y = 0 },
+        .cell_info = .empty,
+    };
+
+    pub fn draw(
+        self: *CellChooser,
+        pages: *const PageList,
+    ) void {
+        cimgui.c.ImGui_TextWrapped(
+            "Inspect a cell by choosing a coordinate space and entering the X/Y position. " ++
+                "The inspector resolves the point into the page list and displays the cell contents.",
+        );
+
+        cimgui.c.ImGui_SeparatorText("Cell Inspector");
+
+        const region_max = maxCoord(pages, self.lookup_region);
+        if (region_max) |coord| {
+            self.lookup_coord.x = @min(self.lookup_coord.x, coord.x);
+            self.lookup_coord.y = @min(self.lookup_coord.y, coord.y);
+        } else {
+            self.lookup_coord = .{ .x = 0, .y = 0 };
+        }
+
+        {
+            const disabled = region_max == null;
+            cimgui.c.ImGui_BeginDisabled(disabled);
+            defer cimgui.c.ImGui_EndDisabled();
+
+            const preview = @tagName(self.lookup_region);
+            const combo_width = comptime blk: {
+                var max_len: usize = 0;
+                for (std.meta.tags(terminal.point.Tag)) |tag| {
+                    max_len = @max(max_len, @tagName(tag).len);
+                }
+                break :blk max_len + 4;
+            };
+            cimgui.c.ImGui_SetNextItemWidth(cimgui.c.ImGui_CalcTextSize("X" ** combo_width).x);
+            if (cimgui.c.ImGui_BeginCombo(
+                "##grid_region",
+                preview.ptr,
+                cimgui.c.ImGuiComboFlags_HeightSmall,
+            )) {
+                inline for (comptime std.meta.tags(terminal.point.Tag)) |tag| {
+                    const selected = tag == self.lookup_region;
+                    if (cimgui.c.ImGui_SelectableEx(
+                        @tagName(tag).ptr,
+                        selected,
+                        cimgui.c.ImGuiSelectableFlags_None,
+                        .{ .x = 0, .y = 0 },
+                    )) {
+                        self.lookup_region = tag;
+                    }
+                    if (selected) cimgui.c.ImGui_SetItemDefaultFocus();
+                }
+                cimgui.c.ImGui_EndCombo();
+            }
+
+            cimgui.c.ImGui_SameLine();
+
+            const width = cimgui.c.ImGui_CalcTextSize("00000").x;
+            var x_value: terminal.size.CellCountInt = self.lookup_coord.x;
+            var y_value: u32 = self.lookup_coord.y;
+            var changed = false;
+
+            cimgui.c.ImGui_AlignTextToFramePadding();
+            cimgui.c.ImGui_Text("x:");
+            cimgui.c.ImGui_SameLine();
+            cimgui.c.ImGui_SetNextItemWidth(width);
+            if (cimgui.c.ImGui_InputScalar(
+                "##grid_x",
+                cimgui.c.ImGuiDataType_U16,
+                &x_value,
+            )) changed = true;
+
+            cimgui.c.ImGui_SameLine();
+            cimgui.c.ImGui_AlignTextToFramePadding();
+            cimgui.c.ImGui_Text("y:");
+            cimgui.c.ImGui_SameLine();
+            cimgui.c.ImGui_SetNextItemWidth(width);
+            if (cimgui.c.ImGui_InputScalar(
+                "##grid_y",
+                cimgui.c.ImGuiDataType_U32,
+                &y_value,
+            )) changed = true;
+
+            cimgui.c.ImGui_SameLine();
+            widgets.helpMarker("Choose the coordinate space and X/Y position (0-indexed).");
+
+            if (changed) {
+                if (region_max) |coord| {
+                    self.lookup_coord.x = @min(x_value, coord.x);
+                    self.lookup_coord.y = @min(y_value, coord.y);
+                }
+            }
+        }
+
+        if (region_max) |coord| {
+            cimgui.c.ImGui_TextDisabled(
+                "Range: x 0..%d, y 0..%d",
+                coord.x,
+                coord.y,
+            );
+        } else {
+            cimgui.c.ImGui_TextDisabled("(region has no rows)");
+            return;
+        }
+
+        const pt = switch (self.lookup_region) {
+            .active => terminal.Point{ .active = self.lookup_coord },
+            .viewport => terminal.Point{ .viewport = self.lookup_coord },
+            .screen => terminal.Point{ .screen = self.lookup_coord },
+            .history => terminal.Point{ .history = self.lookup_coord },
+        };
+
+        const cell = pages.getCell(pt) orelse {
+            cimgui.c.ImGui_TextDisabled("(cell out of range)");
+            return;
+        };
+
+        self.cell_info.draw(cell, pt);
+
+        if (cell.cell.style_id != stylepkg.default_id) {
+            cimgui.c.ImGui_SeparatorText("Style");
+            const style = cell.node.data.styles.get(
+                cell.node.data.memory,
+                cell.cell.style_id,
+            ).*;
+            widgets.style.table(style, null);
+        }
+
+        if (cell.cell.hyperlink) {
+            cimgui.c.ImGui_SeparatorText("Hyperlink");
+            hyperlinkTable(cell);
+        }
+
+        if (cell.cell.hasGrapheme()) {
+            cimgui.c.ImGui_SeparatorText("Grapheme");
+            graphemeTable(cell);
+        }
+    }
+};
+
+fn maxCoord(
+    pages: *const PageList,
+    tag: terminal.point.Tag,
+) ?terminal.point.Coordinate {
+    const br_pin = pages.getBottomRight(tag) orelse return null;
+    const br_point = pages.pointFromPin(tag, br_pin) orelse return null;
+    return br_point.coord();
+}
+
+fn hyperlinkTable(cell: PageList.Cell) void {
+    if (!cimgui.c.ImGui_BeginTable(
+        "cell_hyperlink",
+        2,
+        cimgui.c.ImGuiTableFlags_None,
+    )) return;
+    defer cimgui.c.ImGui_EndTable();
+
+    const page = &cell.node.data;
+    const link_id = page.lookupHyperlink(cell.cell) orelse {
+        cimgui.c.ImGui_TableNextRow();
+        _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+        cimgui.c.ImGui_Text("Status");
+        _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+        cimgui.c.ImGui_TextDisabled("(missing link data)");
+        return;
+    };
+
+    const entry = page.hyperlink_set.get(page.memory, link_id);
+
+    cimgui.c.ImGui_TableNextRow();
+    _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+    cimgui.c.ImGui_Text("ID");
+    _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+    switch (entry.id) {
+        .implicit => |value| cimgui.c.ImGui_Text("implicit %d", value),
+        .explicit => |slice| {
+            const id = slice.slice(page.memory);
+            if (id.len == 0) {
+                cimgui.c.ImGui_TextDisabled("(empty)");
+            } else {
+                cimgui.c.ImGui_Text("%.*s", id.len, id.ptr);
+            }
+        },
+    }
+
+    cimgui.c.ImGui_TableNextRow();
+    _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+    cimgui.c.ImGui_Text("URI");
+    _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+    const uri = entry.uri.slice(page.memory);
+    if (uri.len == 0) {
+        cimgui.c.ImGui_TextDisabled("(empty)");
+    } else {
+        cimgui.c.ImGui_Text("%.*s", uri.len, uri.ptr);
+    }
+
+    cimgui.c.ImGui_TableNextRow();
+    _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+    cimgui.c.ImGui_Text("Ref Count");
+    _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+    const refs = page.hyperlink_set.refCount(page.memory, link_id);
+    cimgui.c.ImGui_Text("%d", refs);
+}
+
+fn graphemeTable(cell: PageList.Cell) void {
+    if (!cimgui.c.ImGui_BeginTable(
+        "cell_grapheme",
+        2,
+        cimgui.c.ImGuiTableFlags_None,
+    )) return;
+    defer cimgui.c.ImGui_EndTable();
+
+    const page = &cell.node.data;
+    const cps = page.lookupGrapheme(cell.cell) orelse {
+        cimgui.c.ImGui_TableNextRow();
+        _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+        cimgui.c.ImGui_Text("Status");
+        _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+        cimgui.c.ImGui_TextDisabled("(missing grapheme data)");
+        return;
+    };
+
+    cimgui.c.ImGui_TableNextRow();
+    _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+    cimgui.c.ImGui_Text("Extra Codepoints");
+    _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+    if (cps.len == 0) {
+        cimgui.c.ImGui_TextDisabled("(none)");
+        return;
+    }
+
+    var buf: [96]u8 = undefined;
+    if (cimgui.c.ImGui_BeginListBox("##grapheme_list", .{ .x = 0, .y = 0 })) {
+        defer cimgui.c.ImGui_EndListBox();
+        for (cps) |cp| {
+            const label = std.fmt.bufPrintZ(&buf, "U+{X}", .{cp}) catch "U+?";
+            _ = cimgui.c.ImGui_SelectableEx(
+                label.ptr,
+                false,
+                cimgui.c.ImGuiSelectableFlags_None,
+                .{ .x = 0, .y = 0 },
+            );
+        }
+    }
+}
+
+/// Cell inspector widget.
+pub const CellInfo = struct {
+    pub const empty: CellInfo = .{};
+
+    pub fn draw(
+        _: *const CellInfo,
+        cell: PageList.Cell,
+        point: terminal.Point,
+    ) void {
+        if (!cimgui.c.ImGui_BeginTable(
+            "cell_info",
+            3,
+            cimgui.c.ImGuiTableFlags_BordersInnerV |
+                cimgui.c.ImGuiTableFlags_RowBg |
+                cimgui.c.ImGuiTableFlags_SizingFixedFit,
+        )) return;
+        defer cimgui.c.ImGui_EndTable();
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Grid Position");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("The cell's X/Y coordinates in the selected region.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            const coord = point.coord();
+            cimgui.c.ImGui_Text("(%d, %d)", coord.x, coord.y);
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Page Location");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Row and column indices within the backing page.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            cimgui.c.ImGui_Text("row=%d col=%d", cell.row_idx, cell.col_idx);
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Content");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Content tag describing how the cell data is stored.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            cimgui.c.ImGui_Text("%s", @tagName(cell.cell.content_tag).ptr);
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Codepoint");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Primary Unicode codepoint for the cell.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            const cp = cell.cell.codepoint();
+            if (cp == 0) {
+                cimgui.c.ImGui_TextDisabled("(empty)");
+            } else {
+                cimgui.c.ImGui_Text("U+%04X", @as(u32, cp));
+            }
+        }
+
+        if (cell.cell.hasGrapheme()) {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Grapheme");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Extra codepoints that combine with the primary codepoint to form the grapheme cluster.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            if (cimgui.c.ImGui_BeginListBox("##cell_grapheme", .{ .x = 0, .y = 0 })) {
+                defer cimgui.c.ImGui_EndListBox();
+                if (cell.node.data.lookupGrapheme(cell.cell)) |cps| {
+                    var buf: [96]u8 = undefined;
+                    for (cps) |cp| {
+                        const label = std.fmt.bufPrintZ(&buf, "U+{X}", .{cp}) catch "U+?";
+                        _ = cimgui.c.ImGui_SelectableEx(
+                            label.ptr,
+                            false,
+                            cimgui.c.ImGuiSelectableFlags_None,
+                            .{ .x = 0, .y = 0 },
+                        );
+                    }
+                } else {
+                    _ = cimgui.c.ImGui_SelectableEx(
+                        "(missing)",
+                        false,
+                        cimgui.c.ImGuiSelectableFlags_None,
+                        .{ .x = 0, .y = 0 },
+                    );
+                }
+            }
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Width Property");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Character width property (narrow, wide, spacer, etc.).");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            cimgui.c.ImGui_Text("%s", @tagName(cell.cell.wide).ptr);
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Row Flags");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Flags set on the row containing this cell.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            const row = cell.row;
+            if (row.wrap or row.wrap_continuation or row.grapheme or row.styled or row.hyperlink) {
+                if (row.wrap) {
+                    cimgui.c.ImGui_TextColored(.{ .x = 0.4, .y = 0.8, .z = 1.0, .w = 1.0 }, "wrap");
+                    cimgui.c.ImGui_SameLine();
+                }
+                if (row.wrap_continuation) {
+                    cimgui.c.ImGui_TextColored(.{ .x = 0.4, .y = 0.8, .z = 1.0, .w = 1.0 }, "cont");
+                    cimgui.c.ImGui_SameLine();
+                }
+                if (row.grapheme) {
+                    cimgui.c.ImGui_TextColored(.{ .x = 0.9, .y = 0.7, .z = 0.3, .w = 1.0 }, "grapheme");
+                    cimgui.c.ImGui_SameLine();
+                }
+                if (row.styled) {
+                    cimgui.c.ImGui_TextColored(.{ .x = 0.7, .y = 0.9, .z = 0.5, .w = 1.0 }, "styled");
+                    cimgui.c.ImGui_SameLine();
+                }
+                if (row.hyperlink) {
+                    cimgui.c.ImGui_TextColored(.{ .x = 0.8, .y = 0.6, .z = 1.0, .w = 1.0 }, "link");
+                    cimgui.c.ImGui_SameLine();
+                }
+            } else {
+                cimgui.c.ImGui_TextDisabled("(none)");
+            }
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Style ID");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Internal style reference ID for this cell.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            cimgui.c.ImGui_Text("%d", cell.cell.style_id);
+        }
+
+        {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Style");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("Resolved style for the cell (colors, attributes, etc.).");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+            if (cell.cell.style_id == stylepkg.default_id) {
+                cimgui.c.ImGui_TextDisabled("(default)");
+            } else {
+                cimgui.c.ImGui_TextDisabled("(see below)");
+            }
+        }
+
+        if (cell.cell.hyperlink) {
+            cimgui.c.ImGui_TableNextRow();
+            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+            cimgui.c.ImGui_Text("Hyperlink");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+            widgets.helpMarker("OSC8 hyperlink ID associated with this cell.");
+            _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+
+            const link_id = cell.node.data.lookupHyperlink(cell.cell) orelse 0;
+            cimgui.c.ImGui_Text("id=%d", link_id);
+        }
+    }
+};

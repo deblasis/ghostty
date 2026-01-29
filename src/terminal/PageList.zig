@@ -5091,7 +5091,7 @@ pub const Pin = struct {
     }
 };
 
-const Cell = struct {
+pub const Cell = struct {
     node: *List.Node,
     row: *pagepkg.Row,
     cell: *pagepkg.Cell,

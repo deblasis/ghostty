@@ -6,20 +6,21 @@ const cimgui = @import("dcimgui");
 const widgets = @import("../widgets.zig");
 const units = @import("../units.zig");
 const terminal = @import("../../terminal/main.zig");
+const stylepkg = @import("../../terminal/style.zig");
 
 /// Window names for the screen dockspace.
 const window_info = "Info";
-const window_grid = "Grid";
+const window_cell = "Cell";
 const window_pagelist = "PageList";
 
 /// Screen information inspector widget.
 pub const Info = struct {
     pagelist: widgets.pagelist.Inspector,
-    grid: Grid,
+    cell_chooser: widgets.pagelist.CellChooser,
 
     pub const empty: Info = .{
         .pagelist = .empty,
-        .grid = .empty,
+        .cell_chooser = .empty,
     };
 
     /// Draw the screen info contents.
@@ -85,15 +86,15 @@ pub const Info = struct {
             )) internalStateTable(&screen.pages);
         }
 
-        // Grid window
-        grid: {
+        // Cell window
+        cell: {
             defer cimgui.c.ImGui_End();
             if (!cimgui.c.ImGui_Begin(
-                window_grid,
+                window_cell,
                 null,
                 cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
-            )) break :grid;
-            self.grid.draw(&screen.pages);
+            )) break :cell;
+            self.cell_chooser.draw(&screen.pages);
         }
 
         // PageList window
@@ -136,7 +137,7 @@ pub const Info = struct {
 
             // Dock windows into the space
             cimgui.ImGui_DockBuilderDockWindow(window_info, dockspace_id);
-            cimgui.ImGui_DockBuilderDockWindow(window_grid, dockspace_id);
+            cimgui.ImGui_DockBuilderDockWindow(window_cell, dockspace_id);
             cimgui.ImGui_DockBuilderDockWindow(window_pagelist, dockspace_id);
             cimgui.ImGui_DockBuilderFinish(dockspace_id);
         }
@@ -352,22 +353,3 @@ pub fn internalStateTable(
     _ = cimgui.c.ImGui_TableSetColumnIndex(1);
     cimgui.c.ImGui_Text("%s", @tagName(pages.viewport).ptr);
 }
-
-/// Grid inspector widget for a specific screen.
-pub const Grid = struct {
-    lookup_region: terminal.point.Tag,
-    lookup_coord: terminal.point.Coordinate,
-
-    pub const empty: Grid = .{
-        .lookup_region = .viewport,
-        .lookup_coord = .{ .x = 0, .y = 0 },
-    };
-
-    pub fn draw(
-        self: *Grid,
-        pages: *const terminal.PageList,
-    ) void {
-        _ = self;
-        _ = pages;
-    }
-};
