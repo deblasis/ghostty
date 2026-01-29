@@ -15,23 +15,27 @@ const window_imgui_demo = "Dear ImGui Demo";
 const window_keyboard = "Keyboard";
 const window_terminal = "Terminal";
 const window_surface = "Surface";
+const window_termio = "Terminal IO";
 
 pub const Inspector = struct {
     /// Internal GUI state
     surface_info: Info,
     key_stream: widgets.key.Stream,
     terminal_info: widgets.terminal.Info,
+    vt_stream: widgets.termio.Stream,
 
-    pub fn init(alloc: Allocator) !Inspector {
+    pub fn init(alloc: Allocator, surface: *Surface) !Inspector {
         return .{
             .surface_info = .empty,
             .key_stream = try .init(alloc),
             .terminal_info = .empty,
+            .vt_stream = try .init(alloc, surface),
         };
     }
 
     pub fn deinit(self: *Inspector, alloc: Allocator) void {
         self.key_stream.deinit(alloc);
+        self.vt_stream.deinit(alloc);
     }
 
     pub fn draw(
@@ -96,6 +100,22 @@ pub const Inspector = struct {
                     surface.alloc,
                 );
             }
+
+            // Terminal IO window
+            {
+                const open = cimgui.c.ImGui_Begin(
+                    window_termio,
+                    null,
+                    cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+                );
+                defer cimgui.c.ImGui_End();
+                if (open) {
+                    self.vt_stream.draw(
+                        surface.alloc,
+                        &t.colors.palette.current,
+                    );
+                }
+            }
         }
 
         if (first_render) {
@@ -136,6 +156,7 @@ pub const Inspector = struct {
             cimgui.ImGui_DockBuilderDockWindow(window_terminal, dock_id_main);
             cimgui.ImGui_DockBuilderDockWindow(window_surface, dock_id_main);
             cimgui.ImGui_DockBuilderDockWindow(window_keyboard, dock_id_main);
+            cimgui.ImGui_DockBuilderDockWindow(window_termio, dock_id_main);
             cimgui.ImGui_DockBuilderDockWindow(window_imgui_demo, dock_id_main);
             cimgui.ImGui_DockBuilderFinish(dockspace_id);
         }

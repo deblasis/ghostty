@@ -7,6 +7,7 @@ pub const screen = @import("widgets/screen.zig");
 pub const style = @import("widgets/style.zig");
 pub const surface = @import("widgets/surface.zig");
 pub const terminal = @import("widgets/terminal.zig");
+pub const termio = @import("widgets/termio.zig");
 
 /// Draws a "(?)" disabled text marker that shows some help text
 /// on hover.
