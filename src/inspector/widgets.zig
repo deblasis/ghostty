@@ -1,5 +1,6 @@
 const cimgui = @import("dcimgui");
 
+pub const page = @import("widgets/page.zig");
 pub const pagelist = @import("widgets/pagelist.zig");
 pub const screen = @import("widgets/screen.zig");
 pub const style = @import("widgets/style.zig");
