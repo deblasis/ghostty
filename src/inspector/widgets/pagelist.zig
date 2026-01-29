@@ -61,9 +61,9 @@ pub const Inspector = struct {
                 row_offset -= page.size.rows;
                 index -= 1;
 
-                // Use our node pointer, which is guaranteed to be unique
-                // in this hierarchy, as the ID.
-                cimgui.c.ImGui_PushIDPtr(node);
+                // We use our location as the ID so that even if reallocations
+                // happen we remain open if we're open already.
+                cimgui.c.ImGui_PushIDInt(@intCast(index));
                 defer cimgui.c.ImGui_PopID();
 
                 // Open up the tree node.
