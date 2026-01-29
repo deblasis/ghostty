@@ -1,6 +1,6 @@
 const std = @import("std");
 pub const cell = @import("cell.zig");
-pub const key = @import("key.zig");
+pub const key = @import("widgets/key.zig");
 
 pub const termio = @import("termio.zig");
 

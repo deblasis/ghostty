@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const assert = @import("../../quirks.zig").inlineAssert;
 const Allocator = std.mem.Allocator;
 const cimgui = @import("dcimgui");
+const inspector = @import("../main.zig");
 const widgets = @import("../widgets.zig");
 const input = @import("../../input.zig");
 const renderer = @import("../../renderer.zig");
@@ -11,20 +12,33 @@ const Surface = @import("../../Surface.zig");
 
 /// This is discovered via the hardcoded string in the ImGui demo window.
 const window_imgui_demo = "Dear ImGui Demo";
+const window_keyboard = "Keyboard";
 const window_terminal = "Terminal";
 const window_surface = "Surface";
 
 pub const Inspector = struct {
     /// Internal GUI state
     surface_info: Info,
+    key_stream: widgets.key.Stream,
     terminal_info: widgets.terminal.Info,
 
-    pub const empty: Inspector = .{
-        .surface_info = .empty,
-        .terminal_info = .empty,
-    };
+    pub fn init(alloc: Allocator) !Inspector {
+        return .{
+            .surface_info = .empty,
+            .key_stream = try .init(alloc),
+            .terminal_info = .empty,
+        };
+    }
 
-    pub fn draw(self: *Inspector, surface: *const Surface, mouse: Mouse) void {
+    pub fn deinit(self: *Inspector, alloc: Allocator) void {
+        self.key_stream.deinit(alloc);
+    }
+
+    pub fn draw(
+        self: *Inspector,
+        surface: *const Surface,
+        mouse: Mouse,
+    ) void {
         // Create our dockspace first. If we had to setup our dockspace,
         // then it is a first render.
         const dockspace_id = cimgui.c.ImGui_GetID("Main Dockspace");
@@ -68,6 +82,20 @@ pub const Inspector = struct {
                     mouse,
                 );
             }
+
+            // Keyboard info window
+            {
+                const open = cimgui.c.ImGui_Begin(
+                    window_keyboard,
+                    null,
+                    cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+                );
+                defer cimgui.c.ImGui_End();
+                self.key_stream.draw(
+                    open,
+                    surface.alloc,
+                );
+            }
         }
 
         if (first_render) {
@@ -107,6 +135,7 @@ pub const Inspector = struct {
             const dock_id_main: cimgui.c.ImGuiID = dockspace_id;
             cimgui.ImGui_DockBuilderDockWindow(window_terminal, dock_id_main);
             cimgui.ImGui_DockBuilderDockWindow(window_surface, dock_id_main);
+            cimgui.ImGui_DockBuilderDockWindow(window_keyboard, dock_id_main);
             cimgui.ImGui_DockBuilderDockWindow(window_imgui_demo, dock_id_main);
             cimgui.ImGui_DockBuilderFinish(dockspace_id);
         }

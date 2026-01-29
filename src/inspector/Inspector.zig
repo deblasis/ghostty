@@ -10,15 +10,12 @@ const builtin = @import("builtin");
 const cimgui = @import("dcimgui");
 const Surface = @import("../Surface.zig");
 const font = @import("../font/main.zig");
-const input = @import("../input.zig");
-const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const inspector = @import("main.zig");
 const widgets = @import("widgets.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_cell = "Cell";
-const window_keyboard = "Keyboard";
 const window_termio = "Terminal IO";
 const window_imgui_demo = "Dear ImGui Demo";
 
@@ -36,9 +33,6 @@ mouse: widgets.surface.Mouse = .{},
 /// A selected cell.
 cell: CellInspect = .{ .idle = {} },
 
-/// The list of keyboard events
-key_events: inspector.key.EventRing,
-
 /// The VT stream
 vt_events: inspector.termio.VTEventRing,
 vt_stream: inspector.termio.Stream,
@@ -53,7 +47,7 @@ need_scroll_to_selected: bool = false,
 is_keyboard_selection: bool = false,
 
 // ImGui state
-gui: widgets.surface.Inspector = .empty,
+gui: widgets.surface.Inspector,
 
 /// Enum representing keyboard navigation actions
 const KeyAction = enum {
@@ -152,31 +146,26 @@ pub fn setup() void {
 }
 
 pub fn init(surface: *Surface) !Inspector {
-    var key_buf = try inspector.key.EventRing.init(surface.alloc, 2);
-    errdefer key_buf.deinit(surface.alloc);
-
     var vt_events = try inspector.termio.VTEventRing.init(surface.alloc, 2);
     errdefer vt_events.deinit(surface.alloc);
 
     var vt_handler = inspector.termio.VTHandler.init(surface);
     errdefer vt_handler.deinit();
 
+    var gui: widgets.surface.Inspector = try .init(surface.alloc);
+    errdefer gui.deinit(surface.alloc);
+
     return .{
         .surface = surface,
-        .key_events = key_buf,
+        .gui = gui,
         .vt_events = vt_events,
         .vt_stream = .initAlloc(surface.alloc, vt_handler),
     };
 }
 
 pub fn deinit(self: *Inspector) void {
+    self.gui.deinit(self.surface.alloc);
     self.cell.deinit();
-
-    {
-        var it = self.key_events.iterator(.forward);
-        while (it.next()) |v| v.deinit(self.surface.alloc);
-        self.key_events.deinit(self.surface.alloc);
-    }
 
     {
         var it = self.vt_events.iterator(.forward);
@@ -190,17 +179,19 @@ pub fn deinit(self: *Inspector) void {
 /// Record a keyboard event.
 pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
     const max_capacity = 50;
-    self.key_events.append(ev) catch |err| switch (err) {
-        error.OutOfMemory => if (self.key_events.capacity() < max_capacity) {
+
+    const events: *widgets.key.EventRing = &self.gui.key_stream.events;
+    events.append(ev) catch |err| switch (err) {
+        error.OutOfMemory => if (events.capacity() < max_capacity) {
             // We're out of memory, but we can allocate to our capacity.
-            const new_capacity = @min(self.key_events.capacity() * 2, max_capacity);
-            try self.key_events.resize(self.surface.alloc, new_capacity);
-            try self.key_events.append(ev);
+            const new_capacity = @min(events.capacity() * 2, max_capacity);
+            try events.resize(self.surface.alloc, new_capacity);
+            try events.append(ev);
         } else {
-            var it = self.key_events.iterator(.forward);
+            var it = events.iterator(.forward);
             if (it.next()) |old_ev| old_ev.deinit(self.surface.alloc);
-            self.key_events.deleteOldest(1);
-            try self.key_events.append(ev);
+            events.deleteOldest(1);
+            try events.append(ev);
         },
 
         else => return err,
@@ -214,7 +205,10 @@ pub fn recordPtyRead(self: *Inspector, data: []const u8) !void {
 
 /// Render the frame.
 pub fn render(self: *Inspector) void {
-    self.gui.draw(self.surface, self.mouse);
+    self.gui.draw(
+        self.surface,
+        self.mouse,
+    );
     if (true) return;
 
     const dock_id = cimgui.c.ImGui_DockSpaceOverViewport();
@@ -231,7 +225,6 @@ pub fn render(self: *Inspector) void {
             .surface = self.surface,
             .mouse = self.mouse,
         });
-        self.renderKeyboardWindow();
         self.renderTermioWindow();
         self.renderCellWindow();
     }
@@ -262,7 +255,6 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     // Surface is docked first so it appears as the first tab.
     cimgui.ImGui_DockBuilderDockWindow(inspector.surface.Window.name, dock_id_main);
     cimgui.ImGui_DockBuilderDockWindow(inspector.terminal.Window.name, dock_id_main);
-    cimgui.ImGui_DockBuilderDockWindow(window_keyboard, dock_id_main);
     cimgui.ImGui_DockBuilderDockWindow(window_termio, dock_id_main);
     cimgui.ImGui_DockBuilderDockWindow(window_cell, dock_id_main);
     cimgui.ImGui_DockBuilderDockWindow(window_imgui_demo, dock_id_main);
@@ -329,63 +321,6 @@ fn renderCellWindow(self: *Inspector) void {
         selected.col,
         selected.row,
     );
-}
-
-fn renderKeyboardWindow(self: *Inspector) void {
-    // Start our window. If we're collapsed we do nothing.
-    defer cimgui.c.ImGui_End();
-    if (!cimgui.c.ImGui_Begin(
-        window_keyboard,
-        null,
-        cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
-    )) return;
-
-    list: {
-        if (self.key_events.empty()) {
-            cimgui.c.ImGui_Text("No recorded key events. Press a key with the " ++
-                "terminal focused to record it.");
-            break :list;
-        }
-
-        if (cimgui.c.ImGui_Button("Clear")) {
-            var it = self.key_events.iterator(.forward);
-            while (it.next()) |v| v.deinit(self.surface.alloc);
-            self.key_events.clear();
-            self.vt_stream.handler.current_seq = 1;
-        }
-
-        cimgui.c.ImGui_Separator();
-
-        _ = cimgui.c.ImGui_BeginTable(
-            "table_key_events",
-            1,
-            //cimgui.c.ImGuiTableFlags_ScrollY |
-            cimgui.c.ImGuiTableFlags_RowBg |
-                cimgui.c.ImGuiTableFlags_Borders,
-        );
-        defer cimgui.c.ImGui_EndTable();
-
-        var it = self.key_events.iterator(.reverse);
-        while (it.next()) |ev| {
-            // Need to push an ID so that our selectable is unique.
-            cimgui.c.ImGui_PushIDPtr(ev);
-            defer cimgui.c.ImGui_PopID();
-
-            cimgui.c.ImGui_TableNextRow();
-            _ = cimgui.c.ImGui_TableSetColumnIndex(0);
-
-            var buf: [1024]u8 = undefined;
-            const label = ev.label(&buf) catch "Key Event";
-            _ = cimgui.c.ImGui_SelectableBoolPtr(
-                label.ptr,
-                &ev.imgui_state.selected,
-                cimgui.c.ImGuiSelectableFlags_None,
-            );
-
-            if (!ev.imgui_state.selected) continue;
-            ev.render();
-        }
-    } // table
 }
 
 /// Helper function to check keyboard state and determine navigation action.
