@@ -11,6 +11,9 @@ pub fn inspector(page: *const terminal.Page) void {
     cimgui.c.ImGui_SeparatorText("Managed Memory");
     managedMemory(page);
 
+    cimgui.c.ImGui_SeparatorText("Styles");
+    stylesList(page);
+
     cimgui.c.ImGui_SeparatorText("Rows");
     rowsTable(page);
 }
@@ -276,6 +279,70 @@ fn rowsTable(page: *const terminal.Page) void {
 
         _ = cimgui.c.ImGui_TableSetColumnIndex(9);
         flagCell(row.kitty_virtual_placeholder);
+    }
+}
+
+fn stylesList(page: *const Page) void {
+    const items = page.styles.items.ptr(page.memory)[0..page.styles.layout.cap];
+
+    var count: usize = 0;
+    for (items, 0..) |item, index| {
+        if (index == 0) continue;
+        if (item.meta.ref == 0) continue;
+        count += 1;
+    }
+
+    if (count == 0) {
+        cimgui.c.ImGui_TextDisabled("(no styles in use)");
+        return;
+    }
+
+    const visible_rows: usize = @min(count, 8);
+    const row_height: f32 = cimgui.c.ImGui_GetTextLineHeightWithSpacing();
+    const child_height: f32 = row_height * (@as(f32, @floatFromInt(visible_rows)) + 2.0);
+
+    defer cimgui.c.ImGui_EndChild();
+    if (!cimgui.c.ImGui_BeginChild(
+        "##page_styles",
+        .{ .x = 0.0, .y = child_height },
+        cimgui.c.ImGuiChildFlags_Borders,
+        cimgui.c.ImGuiWindowFlags_None,
+    )) return;
+
+    if (!cimgui.c.ImGui_BeginTable(
+        "##page_styles_table",
+        3,
+        cimgui.c.ImGuiTableFlags_BordersInnerV |
+            cimgui.c.ImGuiTableFlags_RowBg |
+            cimgui.c.ImGuiTableFlags_SizingFixedFit,
+    )) return;
+    defer cimgui.c.ImGui_EndTable();
+
+    cimgui.c.ImGui_TableSetupScrollFreeze(0, 1);
+    cimgui.c.ImGui_TableSetupColumn("ID", cimgui.c.ImGuiTableColumnFlags_WidthFixed);
+    cimgui.c.ImGui_TableSetupColumn("Refs", cimgui.c.ImGuiTableColumnFlags_WidthFixed);
+    cimgui.c.ImGui_TableSetupColumn("Style", cimgui.c.ImGuiTableColumnFlags_WidthStretch);
+    cimgui.c.ImGui_TableHeadersRow();
+
+    for (items, 0..) |item, index| {
+        if (index == 0) continue;
+        if (item.meta.ref == 0) continue;
+
+        cimgui.c.ImGui_TableNextRow();
+        cimgui.c.ImGui_PushIDInt(@intCast(index));
+        defer cimgui.c.ImGui_PopID();
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(0);
+        cimgui.c.ImGui_Text("%d", index);
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(1);
+        cimgui.c.ImGui_Text("%d", item.meta.ref);
+
+        _ = cimgui.c.ImGui_TableSetColumnIndex(2);
+        if (cimgui.c.ImGui_TreeNodeEx("Details", cimgui.c.ImGuiTreeNodeFlags_None)) {
+            defer cimgui.c.ImGui_TreePop();
+            widgets.style.table(item.value, null);
+        }
     }
 }
 
