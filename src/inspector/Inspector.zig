@@ -22,10 +22,6 @@ const window_imgui_demo = "Dear ImGui Demo";
 /// The surface that we're inspecting.
 surface: *Surface,
 
-/// This is used to track whether we're rendering for the first time. This
-/// is used to set up the initial window positions.
-first_render: bool = true,
-
 /// Mouse state that we track in addition to normal mouse states that
 /// Ghostty always knows about.
 mouse: widgets.surface.Mouse = .{},
@@ -126,7 +122,7 @@ pub fn setup() void {
 }
 
 pub fn init(surface: *Surface) !Inspector {
-    var gui: widgets.surface.Inspector = try .init(surface.alloc, surface);
+    var gui: widgets.surface.Inspector = try .init(surface.alloc);
     errdefer gui.deinit(surface.alloc);
 
     return .{
@@ -141,7 +137,7 @@ pub fn deinit(self: *Inspector) void {
 }
 
 /// Record a keyboard event.
-pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
+pub fn recordKeyEvent(self: *Inspector, ev: inspector.KeyEvent) !void {
     const max_capacity = 50;
 
     const events: *widgets.key.EventRing = &self.gui.key_stream.events;
@@ -163,7 +159,20 @@ pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
 }
 
 /// Record data read from the pty.
-pub fn recordPtyRead(self: *Inspector, data: []const u8) !void {
+pub fn recordPtyRead(
+    self: *Inspector,
+    alloc: Allocator,
+    t: *terminal.Terminal,
+    data: []const u8,
+) !void {
+    // We need to setup our state so that capture works properly.
+    const handler: *widgets.termio.VTHandler = &self.gui.vt_stream.parser_stream.handler;
+    handler.state = .{
+        .alloc = alloc,
+        .terminal = t,
+        .events = &self.gui.vt_stream.events,
+    };
+
     try self.gui.vt_stream.parser_stream.nextSlice(data);
 }
 
@@ -173,58 +182,9 @@ pub fn render(self: *Inspector) void {
         self.surface,
         self.mouse,
     );
-    if (true) return;
-
-    const dock_id = cimgui.c.ImGui_DockSpaceOverViewport();
-
-    // Render all of our data. We hold the mutex for this duration. This is
-    // expensive but this is an initial implementation until it doesn't work
-    // anymore.
-    {
-        self.surface.renderer_state.mutex.lock();
-        defer self.surface.renderer_state.mutex.unlock();
-        const t = self.surface.renderer_state.terminal;
-        self.windows.terminal.render(t);
-        self.windows.surface.render(.{
-            .surface = self.surface,
-            .mouse = self.mouse,
-        });
-        self.renderTermioWindow();
-        self.renderCellWindow();
-    }
-
-    // In debug we show the ImGui demo window so we can easily view available
-    // widgets and such.
-    if (builtin.mode == .Debug) {
-        var show: bool = true;
-        cimgui.c.ImGui_ShowDemoWindow(&show);
-    }
-
-    // On first render we set up the layout. We can actually do this at
-    // the end of the frame, allowing the individual rendering to also
-    // observe the first render flag.
-    if (self.first_render) {
-        self.first_render = false;
-        self.setupLayout(dock_id);
-    }
 }
 
-fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
-    _ = self;
-
-    // Our initial focus
-    cimgui.c.ImGui_SetWindowFocusStr(inspector.terminal.Window.name);
-
-    // Setup our initial layout - all windows in a single dock as tabs.
-    // Surface is docked first so it appears as the first tab.
-    cimgui.ImGui_DockBuilderDockWindow(inspector.surface.Window.name, dock_id_main);
-    cimgui.ImGui_DockBuilderDockWindow(inspector.terminal.Window.name, dock_id_main);
-    cimgui.ImGui_DockBuilderDockWindow(window_termio, dock_id_main);
-    cimgui.ImGui_DockBuilderDockWindow(window_cell, dock_id_main);
-    cimgui.ImGui_DockBuilderDockWindow(window_imgui_demo, dock_id_main);
-    cimgui.ImGui_DockBuilderFinish(dock_id_main);
-}
-
+/// TODO: OLD, REMOVE EVENTUALLY ONCE WE MIGRATE FUNCTIONALITY
 fn renderCellWindow(self: *Inspector) void {
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.ImGui_End();

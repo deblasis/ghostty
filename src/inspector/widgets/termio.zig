@@ -39,7 +39,7 @@ pub const VTEvent = struct {
     /// Initialize the event information for the given parser action.
     pub fn init(
         alloc: Allocator,
-        surface: *Surface,
+        t: *const terminal.Terminal,
         action: terminal.Parser.Action,
     ) !VTEvent {
         var md = Metadata.init(alloc);
@@ -59,8 +59,6 @@ pub const VTEvent = struct {
             .dcs_hook, .dcs_put, .dcs_unhook => .dcs,
             .apc_start, .apc_put, .apc_end => .apc,
         };
-
-        const t = surface.renderer_state.terminal;
 
         return .{
             .kind = kind,
@@ -308,29 +306,43 @@ pub const VTEvent = struct {
 
 /// Our VT stream handler.
 pub const VTHandler = struct {
-    /// The surface that the inspector is attached to. We use this instead
-    /// of the inspector because this is pointer-stable.
-    surface: *Surface,
+    /// The capture state, must be set before use. If null, then
+    /// events are dropped.
+    state: ?State,
 
-    /// True if the handler is currently recording.
-    active: bool = true,
+    /// True to pause this artificially.
+    paused: bool,
 
     /// Current sequence number
-    current_seq: usize = 1,
+    current_seq: usize,
 
     /// Exclude certain actions by tag.
-    filter_exclude: ActionTagSet = .initMany(&.{.print}),
-    filter_text: cimgui.c.ImGuiTextFilter = .{},
+    filter_exclude: ActionTagSet,
+    filter_text: cimgui.c.ImGuiTextFilter,
 
-    const ActionTagSet = std.EnumSet(terminal.Parser.Action.Tag);
+    pub const ActionTagSet = std.EnumSet(terminal.Parser.Action.Tag);
 
-    pub fn init(surface: *Surface) VTHandler {
-        return .{
-            .surface = surface,
-        };
-    }
+    pub const State = struct {
+        /// The allocator to use for the events.
+        alloc: Allocator,
+
+        /// The terminal state at the time of the event.
+        terminal: *const terminal.Terminal,
+
+        /// The event ring to write events to.
+        events: *VTEventRing,
+    };
+
+    pub const init: VTHandler = .{
+        .state = null,
+        .paused = false,
+        .current_seq = 1,
+        .filter_exclude = .initMany(&.{.print}),
+        .filter_text = .{},
+    };
 
     pub fn deinit(self: *VTHandler) void {
+        // Required for the parser stream interface
         _ = self;
     }
 
@@ -345,16 +357,17 @@ pub const VTHandler = struct {
 
     /// This is called with every single terminal action.
     pub fn handleManually(self: *VTHandler, action: terminal.Parser.Action) !bool {
-        const insp = self.surface.inspector orelse return false;
-        const vt_events = &insp.gui.vt_stream.events;
+        const state: *State = if (self.state) |*s| s else return true;
+        const alloc = state.alloc;
+        const vt_events = state.events;
 
         // We always increment the sequence number, even if we're paused or
         // filter out the event. This helps show the user that there is a gap
         // between events and roughly how large that gap was.
         defer self.current_seq +%= 1;
 
-        // If we're pausing, then we ignore all events.
-        if (!self.active) return true;
+        // If we're manually paused, we ignore all events.
+        if (self.paused) return true;
 
         // We ignore certain action types that are too noisy.
         switch (action) {
@@ -367,8 +380,11 @@ pub const VTHandler = struct {
         if (self.filter_exclude.contains(std.meta.activeTag(action))) return true;
 
         // Build our event
-        const alloc = self.surface.alloc;
-        var ev = try VTEvent.init(alloc, self.surface, action);
+        var ev: VTEvent = try .init(
+            alloc,
+            state.terminal,
+            action,
+        );
         ev.seq = self.current_seq;
         errdefer ev.deinit(alloc);
 
@@ -383,11 +399,11 @@ pub const VTHandler = struct {
             error.OutOfMemory => if (vt_events.capacity() < max_capacity) {
                 // We're out of memory, but we can allocate to our capacity.
                 const new_capacity = @min(vt_events.capacity() * 2, max_capacity);
-                try vt_events.resize(self.surface.alloc, new_capacity);
+                try vt_events.resize(alloc, new_capacity);
                 try vt_events.append(ev);
             } else {
                 var it = vt_events.iterator(.forward);
-                if (it.next()) |old_ev| old_ev.deinit(self.surface.alloc);
+                if (it.next()) |old_ev| old_ev.deinit(alloc);
                 vt_events.deleteOldest(1);
                 try vt_events.append(ev);
             },
@@ -420,11 +436,11 @@ pub const Stream = struct {
     /// Flag indicating whether the selection was made by keyboard
     is_keyboard_selection: bool = false,
 
-    pub fn init(alloc: Allocator, surface: *Surface) !Stream {
+    pub fn init(alloc: Allocator) !Stream {
         var events: VTEventRing = try .init(alloc, 2);
         errdefer events.deinit(alloc);
 
-        var handler = VTHandler.init(surface);
+        var handler: VTHandler = .init;
         errdefer handler.deinit();
 
         return .{
@@ -451,12 +467,12 @@ pub const Stream = struct {
         const popup_filter = "Filter";
 
         list: {
-            const pause_play: [:0]const u8 = if (handler.active)
+            const pause_play: [:0]const u8 = if (!handler.paused)
                 "Pause##pause_play"
             else
                 "Resume##pause_play";
             if (cimgui.c.ImGui_Button(pause_play.ptr)) {
-                handler.active = !handler.active;
+                handler.paused = !handler.paused;
             }
 
             cimgui.c.ImGui_SameLineEx(0, cimgui.c.ImGui_GetStyle().*.ItemInnerSpacing.x);

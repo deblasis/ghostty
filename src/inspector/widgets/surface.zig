@@ -24,12 +24,12 @@ pub const Inspector = struct {
     terminal_info: widgets.terminal.Info,
     vt_stream: widgets.termio.Stream,
 
-    pub fn init(alloc: Allocator, surface: *Surface) !Inspector {
+    pub fn init(alloc: Allocator) !Inspector {
         return .{
             .surface_info = .empty,
             .key_stream = try .init(alloc),
             .terminal_info = .empty,
-            .vt_stream = try .init(alloc, surface),
+            .vt_stream = try .init(alloc),
         };
     }
 

@@ -694,7 +694,11 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
     // below but at least users only pay for it if they're using the inspector.
     if (self.renderer_state.inspector) |insp| {
         for (buf, 0..) |byte, i| {
-            insp.recordPtyRead(buf[i .. i + 1]) catch |err| {
+            insp.recordPtyRead(
+                self.alloc,
+                &self.terminal,
+                buf[i .. i + 1],
+            ) catch |err| {
                 log.err("error recording pty read in inspector err={}", .{err});
             };
 

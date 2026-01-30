@@ -2618,7 +2618,7 @@ pub fn keyCallback(
     defer crash.sentry.thread_state = null;
 
     // Setup our inspector event if we have an inspector.
-    var insp_ev: ?inspectorpkg.key.Event = if (self.inspector != null) ev: {
+    var insp_ev: ?inspectorpkg.KeyEvent = if (self.inspector != null) ev: {
         var copy = event;
         copy.utf8 = "";
         if (event.utf8.len > 0) copy.utf8 = try self.alloc.dupe(u8, event.utf8);
@@ -2798,7 +2798,7 @@ pub fn keyCallback(
 fn maybeHandleBinding(
     self: *Surface,
     event: input.KeyEvent,
-    insp_ev: ?*inspectorpkg.key.Event,
+    insp_ev: ?*inspectorpkg.KeyEvent,
 ) !?InputEffect {
     switch (event.action) {
         // Release events never trigger a binding but we need to check if
@@ -3131,7 +3131,7 @@ fn endKeySequence(
 fn encodeKey(
     self: *Surface,
     event: input.KeyEvent,
-    insp_ev: ?*inspectorpkg.key.Event,
+    insp_ev: ?*inspectorpkg.KeyEvent,
 ) !?termio.Message.WriteReq {
     const write_req: termio.Message.WriteReq = req: {
         // Build our encoding options, which requires the lock.
