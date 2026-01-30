@@ -803,7 +803,7 @@ pub fn deinit(self: *Surface) void {
     self.io.deinit();
 
     if (self.inspector) |v| {
-        v.deinit();
+        v.deinit(self.alloc);
         self.alloc.destroy(v);
     }
 
@@ -879,8 +879,10 @@ pub fn activateInspector(self: *Surface) !void {
     // Setup the inspector
     const ptr = try self.alloc.create(inspectorpkg.Inspector);
     errdefer self.alloc.destroy(ptr);
-    ptr.* = try inspectorpkg.Inspector.init(self);
+    ptr.* = try inspectorpkg.Inspector.init(self.alloc);
+    errdefer ptr.deinit(self.alloc);
     self.inspector = ptr;
+    errdefer self.inspector = null;
 
     // Put the inspector onto the render state
     {
@@ -912,7 +914,7 @@ pub fn deactivateInspector(self: *Surface) void {
     self.queueIo(.{ .inspector = false }, .unlocked);
 
     // Deinit the inspector
-    insp.deinit();
+    insp.deinit(self.alloc);
     self.alloc.destroy(insp);
     self.inspector = null;
 }
@@ -2635,7 +2637,7 @@ pub fn keyCallback(
             break :ev;
         };
 
-        if (insp.recordKeyEvent(ev)) {
+        if (insp.recordKeyEvent(self.alloc, ev)) {
             self.queueRender() catch {};
         } else |err| {
             log.warn("error adding key event to inspector err={}", .{err});

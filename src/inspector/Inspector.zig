@@ -19,9 +19,6 @@ const window_cell = "Cell";
 const window_termio = "Terminal IO";
 const window_imgui_demo = "Dear ImGui Demo";
 
-/// The surface that we're inspecting.
-surface: *Surface,
-
 /// Mouse state that we track in addition to normal mouse states that
 /// Ghostty always knows about.
 mouse: widgets.surface.Mouse = .{},
@@ -121,23 +118,23 @@ pub fn setup() void {
     }
 }
 
-pub fn init(surface: *Surface) !Inspector {
-    var gui: widgets.surface.Inspector = try .init(surface.alloc);
-    errdefer gui.deinit(surface.alloc);
-
-    return .{
-        .surface = surface,
-        .gui = gui,
-    };
+pub fn init(alloc: Allocator) !Inspector {
+    var gui: widgets.surface.Inspector = try .init(alloc);
+    errdefer gui.deinit(alloc);
+    return .{ .gui = gui };
 }
 
-pub fn deinit(self: *Inspector) void {
-    self.gui.deinit(self.surface.alloc);
+pub fn deinit(self: *Inspector, alloc: Allocator) void {
+    self.gui.deinit(alloc);
     self.cell.deinit();
 }
 
 /// Record a keyboard event.
-pub fn recordKeyEvent(self: *Inspector, ev: inspector.KeyEvent) !void {
+pub fn recordKeyEvent(
+    self: *Inspector,
+    alloc: Allocator,
+    ev: inspector.KeyEvent,
+) Allocator.Error!void {
     const max_capacity = 50;
 
     const events: *widgets.key.EventRing = &self.gui.key_stream.events;
@@ -145,11 +142,11 @@ pub fn recordKeyEvent(self: *Inspector, ev: inspector.KeyEvent) !void {
         error.OutOfMemory => if (events.capacity() < max_capacity) {
             // We're out of memory, but we can allocate to our capacity.
             const new_capacity = @min(events.capacity() * 2, max_capacity);
-            try events.resize(self.surface.alloc, new_capacity);
+            try events.resize(alloc, new_capacity);
             try events.append(ev);
         } else {
             var it = events.iterator(.forward);
-            if (it.next()) |old_ev| old_ev.deinit(self.surface.alloc);
+            if (it.next()) |old_ev| old_ev.deinit(alloc);
             events.deleteOldest(1);
             try events.append(ev);
         },
@@ -177,9 +174,12 @@ pub fn recordPtyRead(
 }
 
 /// Render the frame.
-pub fn render(self: *Inspector) void {
+pub fn render(
+    self: *Inspector,
+    surface: *Surface,
+) void {
     self.gui.draw(
-        self.surface,
+        surface,
         self.mouse,
     );
 }

@@ -1061,7 +1061,7 @@ pub const Inspector = struct {
             render: {
                 const surface = &self.surface.core_surface;
                 const inspector = surface.inspector orelse break :render;
-                inspector.render();
+                inspector.render(surface);
             }
 
             // Render
