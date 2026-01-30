@@ -295,8 +295,7 @@ pub const Stream = struct {
 
         cimgui.c.ImGui_Separator();
 
-        const table_flags = cimgui.c.ImGuiTableFlags_RowBg |
-            cimgui.c.ImGuiTableFlags_Borders |
+        const table_flags = cimgui.c.ImGuiTableFlags_Borders |
             cimgui.c.ImGuiTableFlags_Resizable |
             cimgui.c.ImGuiTableFlags_ScrollY |
             cimgui.c.ImGuiTableFlags_SizingFixedFit;
@@ -305,8 +304,8 @@ pub const Stream = struct {
         defer cimgui.c.ImGui_EndTable();
 
         cimgui.c.ImGui_TableSetupScrollFreeze(0, 1);
-        cimgui.c.ImGui_TableSetupColumnEx("Action", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 60, 0);
-        cimgui.c.ImGui_TableSetupColumnEx("Key", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 100, 0);
+        cimgui.c.ImGui_TableSetupColumnEx("Action", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 80, 0);
+        cimgui.c.ImGui_TableSetupColumnEx("Key", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 160, 0);
         cimgui.c.ImGui_TableSetupColumnEx("Mods", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 150, 0);
         cimgui.c.ImGui_TableSetupColumnEx("UTF-8", cimgui.c.ImGuiTableColumnFlags_WidthFixed, 80, 0);
         cimgui.c.ImGui_TableSetupColumnEx("PTY Encoding", cimgui.c.ImGuiTableColumnFlags_WidthStretch, 0, 0);
@@ -319,18 +318,43 @@ pub const Stream = struct {
             defer cimgui.c.ImGui_PopID();
 
             cimgui.c.ImGui_TableNextRow();
+            const row_min_y = cimgui.c.ImGui_GetCursorScreenPos().y;
 
-            // Action
+            // Set row background color based on action
+            cimgui.c.ImGui_TableSetBgColor(cimgui.c.ImGuiTableBgTarget_RowBg0, actionColor(ev.event.action), -1);
+
+            // Action column with colored text
             _ = cimgui.c.ImGui_TableSetColumnIndex(0);
-            cimgui.c.ImGui_Text("%s", @tagName(ev.event.action).ptr);
+            const action_text_color: cimgui.c.ImVec4 = switch (ev.event.action) {
+                .press => .{ .x = 0.4, .y = 1.0, .z = 0.4, .w = 1.0 }, // Green
+                .release => .{ .x = 0.6, .y = 0.6, .z = 1.0, .w = 1.0 }, // Blue
+                .repeat => .{ .x = 1.0, .y = 1.0, .z = 0.4, .w = 1.0 }, // Yellow
+            };
+            cimgui.c.ImGui_TextColored(action_text_color, "%s", @tagName(ev.event.action).ptr);
 
-            // Key
+            // Key column with consistent key coloring
             _ = cimgui.c.ImGui_TableSetColumnIndex(1);
             const key_name = switch (ev.event.key) {
                 .unidentified => if (ev.event.utf8.len > 0) ev.event.utf8 else @tagName(ev.event.key),
                 else => @tagName(ev.event.key),
             };
-            cimgui.c.ImGui_Text("%s", key_name.ptr);
+            const key_rgba = keyColor(ev.event.key);
+            const key_color: cimgui.c.ImVec4 = .{
+                .x = @as(f32, @floatFromInt(key_rgba & 0xFF)) / 255.0,
+                .y = @as(f32, @floatFromInt((key_rgba >> 8) & 0xFF)) / 255.0,
+                .z = @as(f32, @floatFromInt((key_rgba >> 16) & 0xFF)) / 255.0,
+                .w = 1.0,
+            };
+            cimgui.c.ImGui_TextColored(key_color, "%s", key_name.ptr);
+
+            // Composing indicator
+            if (ev.event.composing) {
+                cimgui.c.ImGui_SameLine();
+                cimgui.c.ImGui_TextColored(.{ .x = 1.0, .y = 0.6, .z = 0.0, .w = 1.0 }, "*");
+                if (cimgui.c.ImGui_IsItemHovered(cimgui.c.ImGuiHoveredFlags_None)) {
+                    cimgui.c.ImGui_SetTooltip("Composing (dead key)");
+                }
+            }
 
             // Mods
             _ = cimgui.c.ImGui_TableSetColumnIndex(2);
@@ -429,6 +453,83 @@ pub const Stream = struct {
                 binding_writer.writeByte(0) catch {};
                 cimgui.c.ImGui_Text("%s", &binding_buf);
             }
+
+            // Row hover highlight
+            const row_max_y = cimgui.c.ImGui_GetCursorScreenPos().y;
+            const mouse_pos = cimgui.c.ImGui_GetMousePos();
+            if (mouse_pos.y >= row_min_y and mouse_pos.y < row_max_y) {
+                cimgui.c.ImGui_TableSetBgColor(cimgui.c.ImGuiTableBgTarget_RowBg1, 0x1AFFFFFF, -1);
+            }
         }
     }
 };
+
+/// Returns row background color for an action (ABGR format for ImGui)
+fn actionColor(action: input.Action) u32 {
+    return switch (action) {
+        .press => 0x1A4A6F4A, // Muted sage green
+        .release => 0x1A6A5A5A, // Muted slate gray
+        .repeat => 0x1A4A5A6F, // Muted warm brown
+    };
+}
+
+/// Generate a consistent color for a key based on its enum value.
+/// Uses HSV color space with fixed saturation and value for pleasing colors.
+fn keyColor(key: input.Key) u32 {
+    const key_int: u32 = @intCast(@intFromEnum(key));
+    const hue: f32 = @as(f32, @floatFromInt(key_int *% 47)) / 256.0;
+    return hsvToRgba(hue, 0.5, 0.9, 1.0);
+}
+
+/// Convert HSV (hue 0-1, saturation 0-1, value 0-1) to RGBA u32.
+fn hsvToRgba(h: f32, s: f32, v: f32, a: f32) u32 {
+    var r: f32 = undefined;
+    var g: f32 = undefined;
+    var b: f32 = undefined;
+
+    const i: u32 = @intFromFloat(h * 6.0);
+    const f = h * 6.0 - @as(f32, @floatFromInt(i));
+    const p = v * (1.0 - s);
+    const q = v * (1.0 - f * s);
+    const t = v * (1.0 - (1.0 - f) * s);
+
+    switch (i % 6) {
+        0 => {
+            r = v;
+            g = t;
+            b = p;
+        },
+        1 => {
+            r = q;
+            g = v;
+            b = p;
+        },
+        2 => {
+            r = p;
+            g = v;
+            b = t;
+        },
+        3 => {
+            r = p;
+            g = q;
+            b = v;
+        },
+        4 => {
+            r = t;
+            g = p;
+            b = v;
+        },
+        else => {
+            r = v;
+            g = p;
+            b = q;
+        },
+    }
+
+    const ri: u32 = @intFromFloat(r * 255.0);
+    const gi: u32 = @intFromFloat(g * 255.0);
+    const bi: u32 = @intFromFloat(b * 255.0);
+    const ai: u32 = @intFromFloat(a * 255.0);
+
+    return (ai << 24) | (bi << 16) | (gi << 8) | ri;
+}
