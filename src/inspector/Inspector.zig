@@ -162,15 +162,11 @@ pub fn recordPtyRead(
     t: *terminal.Terminal,
     data: []const u8,
 ) !void {
-    // We need to setup our state so that capture works properly.
-    const handler: *widgets.termio.VTHandler = &self.gui.vt_stream.parser_stream.handler;
-    handler.state = .{
-        .alloc = alloc,
-        .terminal = t,
-        .events = &self.gui.vt_stream.events,
-    };
-
-    try self.gui.vt_stream.parser_stream.nextSlice(data);
+    try self.gui.vt_stream.recordPtyRead(
+        alloc,
+        t,
+        data,
+    );
 }
 
 /// Render the frame.
