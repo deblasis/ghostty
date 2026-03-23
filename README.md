@@ -21,12 +21,16 @@
   </p>
 </p>
 
-## Windows Support (Fork)
-
-This fork is focused on building Windows support for Ghostty, following
-[Mitchell's architectural direction](https://github.com/ghostty-org/ghostty/discussions/2563).
-Work is performed in stacked feature branches to keep scope small, iterate
-quickly, and produce tightly scoped PRs suitable for upstream review.
+> [!IMPORTANT]
+> ## This is a Windows Support Fork
+>
+> This fork is focused on building **Windows support** for Ghostty, following
+> [Mitchell's architectural direction](https://github.com/ghostty-org/ghostty/discussions/2563).
+> Work is performed in **stacked feature branches** (`001-*`, `002-*`, ...) to keep
+> scope small, iterate quickly, and produce tightly scoped PRs suitable for upstream review.
+>
+> **Status:** Early — fixing compilation blockers and building the foundation for a
+> native Win32 + C++ GUI layer wrapping `libghostty`.
 
 ## About
 
