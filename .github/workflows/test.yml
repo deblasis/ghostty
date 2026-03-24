@@ -271,7 +271,6 @@ jobs:
         dir: ${{ fromJSON(needs.list-examples.outputs.cmake) }}
     name: Example ${{ matrix.dir }} (Windows)
     runs-on: windows-2025
-    continue-on-error: true
     timeout-minutes: 45
     needs: [test, list-examples]
     steps:
@@ -527,7 +526,6 @@ jobs:
 
   build-libghostty-vt-windows:
     runs-on: windows-2025
-    continue-on-error: true
     timeout-minutes: 45
     needs: test
     steps:
@@ -537,7 +535,6 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
 
-      # TODO: Work towards passing the full test suite on Windows.
       - name: Test libghostty-vt
         run: zig build test-lib-vt
 
