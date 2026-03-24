@@ -22,97 +22,66 @@
 </p>
 
 > [!IMPORTANT]
-> ## Ghostty for Windows (Soft Fork)
+> ## This is a Windows Support Fork
 >
-> <p align="center">🍬🍴</p>
+> This fork is focused on building **Windows support** for Ghostty, following
+> [Mitchell's architectural direction](https://github.com/ghostty-org/ghostty/discussions/2563).
+> Work is performed in **stacked feature branches** (`001-*`, `002-*`, ...) to keep
+> scope small, iterate quickly, and produce tightly scoped PRs suitable for upstream review.
 >
-> This is a soft fork focused on bringing Ghostty to Windows.
-> The `windows` branch is the default and contains all Windows-specific work
-> rebased on top of upstream `main`, which is synced daily.
+> **Status:** Early 🥚
 >
-> **Status:** Foundation done, working on renderer and app shell
+> The goal is a native Windows experience consistent with the philosophy applied to macOS and Linux - Ghostty should feel like it was built for Windows first.
 >
-> The Windows app is a native C# GUI wrapping `libghostty.dll`, same architecture
-> as macOS where Swift wraps `libghostty`. All terminal emulation stays in Zig.
-> The C# layer handles windowing, input, and platform integration via P/Invoke.
+> The Windows app will be a native C# GUI wrapping `libghostty`, following the same architecture as macOS where SwiftUI wraps `libghostty`. 
+> This approach enables beautiful native UI with full access to Win32, DirectX, and DirectWrite APIs while keeping all terminal emulation logic in the shared Zig core. 
 >
-> ### Building
+> I did consider C++ for a second and a half but I believe C# is the right call here both for Developer friendliness and for LLM training data available for Desktop/UI related efforts.
+> Also, I am more familiar with C# personally and the tradeoffs in terms of performance should be negligeable because the hot path is handled by zig anyway.
 >
-> Prerequisites: [Zig](https://ziglang.org/) (version in `build.zig.zon`), [Just](https://github.com/casey/just)
+> Speed of development matters more.
 >
-> ```bash
-> just              # Run tests + build DLL
-> just test         # Run all Zig tests
-> just test-lib-vt  # Fast: test libghostty-vt only
-> just build-dll    # Build libghostty.dll
-> just sync         # Rebase on latest upstream
-> ```
+> ### TODO
+> 
+> **Foundation**
 >
-> See [docs/windows/tooling.md](docs/windows/tooling.md) for why Just and how CI (I should call it DisContinous Integration) works.
+> - [x] `zig build test` working on Windows
+> - [x] CI for Windows tests
+> - [x] Shared dependencies building (FreeType, HarfBuzz, etc.)
+> - [x] ConPTY (Windows Pseudo Console) API bindings
+> - [ ] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS) 
+> - [ ] Windows CI running without `continue-on-error`
+> 
+> **Minimal Viable Terminal**
 >
-> ### Branching Model
+> - [ ] OpenGL + FreeType MVP (stepping stone to native backends)
+> - [ ] C# app runtime wrapping `libghostty`
+> - [ ] ConPTY integration with terminal I/O
+> - [ ] Keyboard and mouse input handling
+> - [ ] Clipboard support
+> 
+> **Native Backends**
 >
-> - `main` - mirror of upstream `ghostty-org/ghostty`, synced daily, if it's a good day
-> - `windows` (default) - all Windows work rebased on upstream
-> - Feature branches - branch off `windows`, PR back into `windows`
+> - [ ] DirectWrite font discovery and rasterization
+> - [ ] Direct3D renderer (replacing OpenGL)
+> - [ ] Per-monitor DPI awareness
+> - [ ] Windows dark/light mode theming
+> - [ ] IME support
 >
-> ### What is done
+> **Feature Parity**
 >
-> **Build infrastructure** (17 PRs merged upstream)
->
-> - [x] `zig build test` passing on Windows (2604 tests, 53 skipped)
-> - [x] All shared dependencies building (FreeType, HarfBuzz, zlib, oniguruma, glslang, etc.)
-> - [x] `zig build test-lib-vt` passing on all platforms
-> - [x] Windows CI running without `continue-on-error`
-> - [x] Backslash path handling in config parsing
-> - [x] CRLF line ending fix for comptime parsing + `.gitattributes` normalization
-> - [x] `ghostty.dll` building on Windows (CRT init fix for MSVC DLL mode)
-> - [x] DLL init regression test and build instructions
-> - [x] Full Windows CI test suite
->
-> **DX11 renderer infrastructure** (in fork)
->
-> - [x] COM interface definitions (d3d11, dxgi) with vtable bindings
-> - [x] DX11 device lifecycle, swap chain for XAML composition
-> - [x] Instanced cell grid renderer with pre-compiled HLSL shaders
-> - [x] Backend enum with `directx11` variant
->
-> **SwapChainPanel spike** (in fork, [demo video](https://www.youtube.com/watch?v=-Cn9mlxX_GA))
->
-> - [x] DX11 swap chain created from Zig, bound to WinUI 3 SwapChainPanel
-> - [x] Instanced cell grid rendering, bitmap font, animated demo scenes, resize, DPI
->
-> **App scaffold** (in fork)
->
-> - [x] C# WinUI 3 project scaffold (`windows/Ghostty/`)
-> - [x] P/Invoke bindings for libghostty C API
-> - [x] `--version` flag working from command line
-> - [x] Interop test suite (7 tests against the real DLL)
->
-> ### What is next
->
-> - [ ] Implement GenericRenderer GraphicsAPI contract for DX11
-> - [ ] Windows platform enum and C# scaffold integration
-> - [ ] DirectWrite font backend
-> - [ ] ConPTY shell spawning
-> - [ ] Keyboard, mouse, clipboard
-> - [ ] Per-monitor DPI, dark/light mode theming
->
-> **Feature parity** (later)
->
-> - [ ] Multi-window, tabs, splits
-> - [ ] Native settings UI, desktop notifications
+> - [ ] Multi-window, tabbing, and splits
+> - [ ] Native settings UI
+> - [ ] Desktop notifications
 > - [ ] Quick terminal, command palette, global keybinds
-> - [ ] Installer packages (MSI, MSIX, winget), auto-update
+> - [ ] System tray integration
 >
-> ### History
->
-> This fork started as an upstream contribution effort. 17 PRs were merged
-> into ghostty-org/ghostty covering build fixes, CI, and DLL infrastructure.
-> The project continues as a soft fork - upstream doesn't have capacity to
-> maintain Windows-specific changes right now, so here we are.
-> GitHub Actions are disabled for this fork because we are poor and just.
-> I mean, we use `just` for insanity checks.
+> **Distribution**
+> 
+> - [ ] Installer packages (MSI, MSIX, winget)
+> - [ ] Auto-update system
+> - [ ] Crash reporting
+> - [ ] Release CI
 
 ## About
 
