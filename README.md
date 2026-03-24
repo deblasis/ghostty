@@ -21,6 +21,68 @@
   </p>
 </p>
 
+> [!IMPORTANT]
+> ## This is a Windows Support Fork
+>
+> This fork is focused on building **Windows support** for Ghostty, following
+> [Mitchell's architectural direction](https://github.com/ghostty-org/ghostty/discussions/2563).
+> Work is performed in **stacked feature branches** (`001-*`, `002-*`, ...) to keep
+> scope small, iterate quickly, and produce tightly scoped PRs suitable for upstream review.
+>
+> **Status:** Early 🥚
+>
+> The goal is a native Windows experience consistent with the philosophy applied to macOS and Linux - Ghostty should feel like it was built for Windows first.
+>
+> The Windows app will be a native C# GUI wrapping `libghostty`, following the same architecture as macOS where SwiftUI wraps `libghostty`. 
+> This approach enables beautiful native UI with full access to Win32, DirectX, and DirectWrite APIs while keeping all terminal emulation logic in the shared Zig core. 
+>
+> I did consider C++ for a second and a half but I believe C# is the right call here both for Developer friendliness and for LLM training data available for Desktop/UI related efforts.
+> Also, I am more familiar with C# personally and the tradeoffs in terms of performance should be negligeable because the hot path is handled by zig anyway.
+>
+> Speed of development matters more.
+>
+> ### TODO
+> 
+> **Foundation**
+>
+> - [x] `zig build test` working on Windows
+> - [x] CI for Windows tests
+> - [x] Shared dependencies building (FreeType, HarfBuzz, etc.)
+> - [x] ConPTY (Windows Pseudo Console) API bindings
+> - [ ] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS) 
+> - [ ] Windows CI running without `continue-on-error`
+> 
+> **Minimal Viable Terminal**
+>
+> - [ ] OpenGL + FreeType MVP (stepping stone to native backends)
+> - [ ] C# app runtime wrapping `libghostty`
+> - [ ] ConPTY integration with terminal I/O
+> - [ ] Keyboard and mouse input handling
+> - [ ] Clipboard support
+> 
+> **Native Backends**
+>
+> - [ ] DirectWrite font discovery and rasterization
+> - [ ] Direct3D renderer (replacing OpenGL)
+> - [ ] Per-monitor DPI awareness
+> - [ ] Windows dark/light mode theming
+> - [ ] IME support
+>
+> **Feature Parity**
+>
+> - [ ] Multi-window, tabbing, and splits
+> - [ ] Native settings UI
+> - [ ] Desktop notifications
+> - [ ] Quick terminal, command palette, global keybinds
+> - [ ] System tray integration
+>
+> **Distribution**
+> 
+> - [ ] Installer packages (MSI, MSIX, winget)
+> - [ ] Auto-update system
+> - [ ] Crash reporting
+> - [ ] Release CI
+
 ## About
 
 Ghostty is a terminal emulator that differentiates itself by being
