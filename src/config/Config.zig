@@ -6777,6 +6777,13 @@ pub const Keybinds = struct {
                 .{ .inspector = .toggle },
             );
 
+            // Performance overlay
+            try self.set.put(
+                alloc,
+                .{ .key = .{ .unicode = '`' }, .mods = .{ .shift = true, .ctrl = true } },
+                .toggle_perf_overlay,
+            );
+
             // Terminal
             try self.set.put(
                 alloc,

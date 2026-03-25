@@ -64,6 +64,9 @@ pub const Message = union(enum) {
     /// Activate or deactivate the inspector.
     inspector: bool,
 
+    /// Toggle the performance overlay.
+    toggle_perf_overlay,
+
     /// The macOS display ID has changed for the window.
     macos_display_id: u32,
 

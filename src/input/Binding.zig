@@ -648,6 +648,9 @@ pub const Action = union(enum) {
     /// Valid arguments: `toggle`, `show`, `hide`.
     inspector: InspectorMode,
 
+    /// Toggle the performance overlay (FPS/frame time graph).
+    toggle_perf_overlay,
+
     /// Show the GTK inspector.
     ///
     /// Has no effect on macOS.
@@ -1391,6 +1394,7 @@ pub const Action = union(enum) {
             .resize_split,
             .equalize_splits,
             .inspector,
+            .toggle_perf_overlay,
             => .surface,
         };
     }

@@ -5639,6 +5639,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             },
         ),
 
+        .toggle_perf_overlay => {
+            _ = self.renderer_thread.mailbox.push(.{ .toggle_perf_overlay = {} }, .{ .forever = {} });
+            try self.queueRender();
+        },
+
         .close_surface => self.close(),
 
         .close_window => return try self.rt_app.performAction(

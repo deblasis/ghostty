@@ -549,6 +549,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle the inspector.",
         }},
 
+        .toggle_perf_overlay => comptime &.{.{
+            .action = .toggle_perf_overlay,
+            .title = "Toggle Performance Overlay",
+            .description = "Toggle the performance overlay showing FPS and frame time.",
+        }},
+
         .show_gtk_inspector => comptime &.{.{
             .action = .show_gtk_inspector,
             .title = "Show the GTK Inspector",
