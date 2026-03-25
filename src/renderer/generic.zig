@@ -18,6 +18,7 @@ const constraintWidth = cellpkg.constraintWidth;
 const isCovering = cellpkg.isCovering;
 const rowNeverExtendBg = @import("row.zig").neverExtendBg;
 const Overlay = @import("Overlay.zig");
+const PerfOverlay = @import("perf_overlay.zig");
 const imagepkg = @import("image.zig");
 const ImageState = imagepkg.State;
 const shadertoy = @import("shadertoy.zig");
@@ -230,6 +231,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// Our overlay state, if any.
         overlay: ?Overlay = null,
+
+        /// Performance overlay state (FPS graph).
+        perf_overlay: PerfOverlay,
 
         const HighlightTag = enum(u8) {
             search_match,
@@ -784,6 +788,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .api = api,
                 .swap_chain = swap_chain,
                 .display_link = display_link,
+                .perf_overlay = try PerfOverlay.init(alloc),
             };
 
             try result.initShaders();
@@ -825,6 +830,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.deinitShaders();
 
             self.api.deinit();
+
+            self.perf_overlay.deinit(self.alloc);
 
             self.* = undefined;
         }
@@ -1011,7 +1018,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// True if our renderer has animations so that a higher frequency
         /// timer is used.
         pub fn hasAnimations(self: *const Self) bool {
-            return self.has_custom_shaders;
+            return self.has_custom_shaders or self.perf_overlay.enabled;
         }
 
         /// True if our renderer is using vsync. If true, the renderer or apprt
@@ -1441,6 +1448,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             //     );
             // }
 
+            // Record frame time for perf overlay (always, so buffer is warm on toggle).
+            if (std.time.Instant.now()) |now| {
+                self.perf_overlay.recordFrameTime(now);
+            } else |_| {
+                if (!self.perf_overlay.instant_failed) {
+                    self.perf_overlay.instant_failed = true;
+                    log.warn("std.time.Instant.now() failed, perf overlay timing disabled", .{});
+                }
+            }
+
             // We hold a the draw mutex to prevent changes to any
             // data we access while we're in the middle of drawing.
             self.draw_mutex.lock();
@@ -1687,6 +1704,39 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     &pass,
                     .overlay,
                 );
+
+                // Performance overlay — render and composite.
+                if (self.perf_overlay.enabled) {
+                    if (self.perf_overlay.renderOverlay(self.alloc)) |maybe_pending| {
+                        if (maybe_pending) |pending| {
+                            // Position top-right with margin.
+                            const po_margin: i32 = 10;
+                            const surf_w: i32 = @intCast(surface_size.width);
+                            const img_w: i32 = @intCast(pending.width);
+                            const x: i32 = if (surf_w > img_w + po_margin) surf_w - img_w - po_margin else 0;
+
+                            self.images.perfOverlayUpdate(self.alloc, .{
+                                .pending_image = pending,
+                                .x = x,
+                                .y = po_margin,
+                            }) catch |err| {
+                                log.warn("error updating perf overlay image: {}", .{err});
+                            };
+                        }
+                    } else |err| {
+                        log.warn("error rendering perf overlay: {}", .{err});
+                    }
+
+                    self.images.draw(
+                        &self.api,
+                        self.shaders.pipelines.image,
+                        &pass,
+                        .perf_overlay,
+                    );
+                } else {
+                    // Clean up perf overlay image when disabled.
+                    self.images.perfOverlayUpdate(self.alloc, null) catch {};
+                }
             }
 
             // If we have custom shaders, then we render them.

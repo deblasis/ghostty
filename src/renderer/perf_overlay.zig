@@ -143,7 +143,7 @@ pub fn renderOverlay(self: *PerfOverlay, alloc: Allocator) !?Image.Pending {
 
     // Lazy-init the surface on first use, reuse afterward.
     if (self.overlay_surface == null) {
-        self.overlay_surface = z2d.Surface.initPixel(
+        self.overlay_surface = try z2d.Surface.initPixel(
             .{ .rgba = .{ .r = 0, .g = 0, .b = 0, .a = 0 } },
             alloc,
             overlay_width,

@@ -236,8 +236,8 @@ pub const State = struct {
 
     pub const PerfOverlayPending = struct {
         pending_image: Image.Pending,
-        x: u32,
-        y: u32,
+        x: i32,
+        y: i32,
     };
 
     /// Update perf overlay state. Null value deletes any existing overlay.
