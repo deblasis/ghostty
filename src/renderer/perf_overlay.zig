@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const datastruct = @import("../datastruct/main.zig");
+const z2d = @import("z2d");
+const Image = @import("image.zig").Image;
 
 const PerfOverlay = @This();
 
@@ -10,12 +12,22 @@ const buffer_capacity = 36_000;
 /// The number of downsampled buckets for visualization.
 const bucket_count = 100;
 
+/// Overlay dimensions in pixels.
+const overlay_width: i32 = 220;
+const overlay_height: i32 = 110;
+const graph_height: i32 = 50;
+const overlay_margin: i32 = 8;
+const bar_width: i32 = 2;
+
 pub const FrameTimeRing = datastruct.CircBuf(f32, 0.0);
 
 enabled: bool = false,
 frame_times: FrameTimeRing,
 last_instant: ?std.time.Instant = null,
 instant_failed: bool = false,
+
+/// Pre-allocated z2d surface, created on first use, reused across frames.
+overlay_surface: ?z2d.Surface = null,
 
 pub const Stats = struct {
     fps: f32 = 0,
@@ -34,6 +46,7 @@ pub fn init(alloc: Allocator) Allocator.Error!PerfOverlay {
 }
 
 pub fn deinit(self: *PerfOverlay, alloc: Allocator) void {
+    if (self.overlay_surface) |*sfc| sfc.deinit(alloc);
     self.frame_times.deinit(alloc);
 }
 
@@ -111,6 +124,85 @@ pub fn computeStats(self: *const PerfOverlay) Stats {
     }
 
     return stats;
+}
+
+/// Draw a filled rectangle using line segments (z2d has no rectangle primitive).
+fn drawRect(ctx: *z2d.Context, x: f64, y: f64, w: f64, h: f64) !void {
+    try ctx.moveTo(x, y);
+    try ctx.lineTo(x + w, y);
+    try ctx.lineTo(x + w, y + h);
+    try ctx.lineTo(x, y + h);
+    try ctx.closePath();
+}
+
+/// Render the performance overlay to an image.
+/// Returns null if there is no data to display.
+pub fn renderOverlay(self: *PerfOverlay, alloc: Allocator) !?Image.Pending {
+    const stats = self.computeStats();
+    if (stats.bucket_count_valid == 0) return null;
+
+    // Lazy-init the surface on first use, reuse afterward.
+    if (self.overlay_surface == null) {
+        self.overlay_surface = z2d.Surface.initPixel(
+            .{ .rgba = .{ .r = 0, .g = 0, .b = 0, .a = 0 } },
+            alloc,
+            overlay_width,
+            overlay_height,
+        );
+    }
+
+    var sfc = &self.overlay_surface.?;
+
+    // Clear to fully transparent.
+    sfc.paintPixel(.{ .rgba = .{ .r = 0, .g = 0, .b = 0, .a = 0 } });
+
+    var ctx: z2d.Context = .init(alloc, sfc);
+    defer ctx.deinit();
+
+    ctx.setAntiAliasingMode(.none);
+
+    // Semi-transparent dark background.
+    const bg_color: z2d.Pixel = .{ .rgba = .{ .r = 20, .g = 20, .b = 20, .a = 200 } };
+    try drawRect(&ctx, 0, 0, @floatFromInt(overlay_width), @floatFromInt(overlay_height));
+    ctx.setSourceToPixel(bg_color);
+    try ctx.fill();
+
+    // Draw bars for each valid bucket.
+    const margin_f: f64 = @floatFromInt(overlay_margin);
+    const graph_h: f64 = @floatFromInt(graph_height);
+    const bw: f64 = @floatFromInt(bar_width);
+    // Bars start at the bottom of the graph area.
+    const graph_bottom: f64 = @as(f64, @floatFromInt(overlay_height)) - margin_f;
+
+    // Cap at 33ms (~30fps) for full bar height.
+    const max_ms_cap: f64 = 33.0;
+
+    for (0..stats.bucket_count_valid) |i| {
+        const ms: f64 = @floatCast(stats.buckets[i] * 1000.0);
+        const ratio = @min(ms / max_ms_cap, 1.0);
+        const bar_h = ratio * graph_h;
+        const x = margin_f + @as(f64, @floatFromInt(i)) * bw;
+        const y = graph_bottom - bar_h;
+
+        // Color based on frame time thresholds.
+        const bar_color: z2d.Pixel = if (ms < 12.0)
+            .{ .rgba = .{ .r = 80, .g = 220, .b = 80, .a = 255 } } // green
+        else if (ms < 20.0)
+            .{ .rgba = .{ .r = 220, .g = 220, .b = 40, .a = 255 } } // yellow
+        else
+            .{ .rgba = .{ .r = 220, .g = 40, .b = 40, .a = 255 } }; // red
+
+        try drawRect(&ctx, x, y, bw, bar_h);
+        ctx.setSourceToPixel(bar_color);
+        try ctx.fill();
+    }
+
+    return .{
+        .width = @intCast(sfc.getWidth()),
+        .height = @intCast(sfc.getHeight()),
+        .pixel_format = .rgba,
+        .data = @ptrCast(sfc.image_surface_rgba.buf.ptr),
+    };
 }
 
 test "empty buffer stats" {
