@@ -29,7 +29,7 @@
 > Work is performed in **stacked feature branches** (`001-*`, `002-*`, ...) to keep
 > scope small, iterate quickly, and produce tightly scoped PRs suitable for upstream review.
 >
-> **Status:** Early 🥚
+> **Status:** Foundation Complete 🐣 — Build infrastructure merged upstream (13+ PRs), full test suite passing
 >
 > The goal is a native Windows experience consistent with the philosophy applied to macOS and Linux - Ghostty should feel like it was built for Windows first.
 >
@@ -49,24 +49,34 @@
 > - [x] CI for Windows tests
 > - [x] Shared dependencies building (FreeType, HarfBuzz, etc.)
 > - [x] ConPTY (Windows Pseudo Console) API bindings
-> - [x] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS) 
+> - [x] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS)
 > - [x] Windows CI running without `continue-on-error`
+> - [ ] Backslash path handling in config parsing — [upstream PR #11782](https://github.com/ghostty-org/ghostty/pull/11782) - open
+> - [ ] Full test suite CI job (`zig build -Dapp-runtime=none test`) — I just have to PR it, waiting on 11782 - ready
+> - [ ] Research & __Assisted__ Development ™️
 > 
 > **Minimal Viable Terminal**
 >
-> - [ ] OpenGL + FreeType MVP (stepping stone to native backends)
-> - [ ] C# app runtime wrapping `libghostty`
-> - [ ] ConPTY integration with terminal I/O
-> - [ ] Keyboard and mouse input handling
+> **Native Windows App (C# + WinUI 3 + libghostty)**
+>
+> Architecture: C# wraps libghostty.dll, mirroring macOS (Swift wraps libghostty).
+> WinUI 3 provides native Fluent Design chrome. DirectX swap chain hosts
+> libghostty's rendering. ConPTY hosts shells.
+>
+> - [ ] libghostty.dll building on Windows (`zig build -Demit-lib`)
+> - [ ] C# WinUI 3 scaffold with SwapChainPanel
+> - [ ] P/Invoke bindings to libghostty C API
+> - [ ] ConPTY shell spawning via CreatePseudoConsole
+> - [ ] DirectX 11 swap chain → libghostty renderer integration
+> - [ ] Keyboard and mouse input forwarding
 > - [ ] Clipboard support
 > 
-> **Native Backends**
+> **Native Integration**
 >
-> - [ ] DirectWrite font discovery and rasterization
-> - [ ] Direct3D renderer (replacing OpenGL)
+> - [ ] DirectWrite font discovery (enumerate system fonts → file paths for libghostty)
 > - [ ] Per-monitor DPI awareness
-> - [ ] Windows dark/light mode theming
-> - [ ] IME support
+> - [ ] Windows dark/light mode theming (Mica/Acrylic tiering: solid → mica → acrylic-in-shader)
+> - [ ] IME support (Text Services Foundation)
 >
 > **Feature Parity**
 >
