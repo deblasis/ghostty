@@ -105,30 +105,27 @@ pub fn checkGhosttyHEnum(
     try std.testing.expect(info.@"enum".tag_type == c_int);
     try std.testing.expect(info.@"enum".is_exhaustive == true);
 
-    @setEvalBranchQuota(1000000);
+    @setEvalBranchQuota(100_000);
 
     const c = @import("ghostty.h");
 
     var set: std.EnumSet(T) = .initFull();
 
-    const c_decls = @typeInfo(c).@"struct".decls;
     const enum_fields = info.@"enum".fields;
 
     inline for (enum_fields) |field| {
-        const upper_name = comptime u: {
-            var buf: [128]u8 = undefined;
-            break :u std.ascii.upperString(&buf, field.name);
+        const expected_name: *const [prefix.len + field.name.len]u8 = comptime e: {
+            var buf: [prefix.len + field.name.len]u8 = undefined;
+            @memcpy(buf[0..prefix.len], prefix);
+            for (buf[prefix.len..], field.name) |*d, s| {
+                d.* = std.ascii.toUpper(s);
+            }
+            break :e &buf;
         };
 
-        inline for (c_decls) |decl| {
-            if (!comptime std.mem.startsWith(u8, decl.name, prefix)) continue;
-
-            const suffix = decl.name[prefix.len..];
-
-            if (!comptime std.mem.eql(u8, suffix, upper_name)) continue;
-
-            std.testing.expectEqual(field.value, @field(c, decl.name)) catch |e| {
-                std.log.err(@typeName(T) ++ " key " ++ field.name ++ " does not have the same backing int as " ++ decl.name, .{});
+        if (@hasDecl(c, expected_name)) {
+            std.testing.expectEqual(field.value, @field(c, expected_name)) catch |e| {
+                std.log.err(@typeName(T) ++ " key " ++ field.name ++ " does not have the same backing int as " ++ expected_name, .{});
                 return e;
             };
 

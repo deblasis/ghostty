@@ -1,10 +1,13 @@
 const std = @import("std");
+const build_options = @import("terminal_options");
+const lib = @import("../lib/main.zig");
+const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
 
 /// The color scheme reported in response to a CSI ? 996 n query.
-pub const ColorScheme = enum {
-    light,
-    dark,
-};
+pub const ColorScheme = lib.Enum(lib_target, &.{
+    "light",
+    "dark",
+});
 
 /// An enum(u16) of the available device status requests.
 pub const Request = dsr_enum: {
