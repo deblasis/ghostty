@@ -1,23 +1,34 @@
+using System.Runtime.InteropServices;
 using Ghostty.Interop;
 
 namespace Ghostty;
 
 /// <summary>
 /// Custom entry point to handle CLI actions before launching the GUI.
-/// Mirrors the macOS pattern: ghostty_init → ghostty_cli_try_action → GUI.
+/// Mirrors the macOS pattern: ghostty_init -> ghostty_cli_try_action -> GUI.
 /// Since ghostty_init currently crashes in Windows DLLs (Zig global state bug),
 /// we handle --version directly in C# using ghostty_info().
 /// </summary>
-public static class Program
+public static partial class Program
 {
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AttachConsole(int dwProcessId);
+
+    private const int ATTACH_PARENT_PROCESS = -1;
+
     [global::System.STAThread]
     static void Main(string[] args)
     {
         if (args.Contains("--version"))
         {
+            // WinExe apps don't have a console. Attach to the parent's
+            // console (the shell that launched us) so output is visible.
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            Console.SetOut(new System.IO.StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+
             var info = NativeMethods.Info();
-            var version = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                info.Version, (int)info.VersionLen);
+            var version = Marshal.PtrToStringUTF8(info.Version, (int)info.VersionLen);
             Console.WriteLine(version);
             return;
         }
