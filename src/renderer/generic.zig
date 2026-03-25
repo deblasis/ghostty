@@ -1707,32 +1707,35 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 // Performance overlay — render and composite.
                 if (self.perf_overlay.enabled) {
-                    if (self.perf_overlay.renderOverlay(self.alloc)) |maybe_pending| {
-                        if (maybe_pending) |pending| {
-                            // Position top-right with margin.
-                            const po_margin: i32 = 10;
-                            const surf_w: i32 = @intCast(surface_size.width);
-                            const img_w: i32 = @intCast(pending.width);
-                            const x: i32 = if (surf_w > img_w + po_margin) surf_w - img_w - po_margin else 0;
+                    const min_size: u32 = 240; // overlay_width + margins
+                    if (surface_size.width >= min_size and surface_size.height >= min_size) {
+                        if (self.perf_overlay.renderOverlay(self.alloc)) |maybe_pending| {
+                            if (maybe_pending) |pending| {
+                                // Position top-right with margin.
+                                const po_margin: i32 = 10;
+                                const surf_w: i32 = @intCast(surface_size.width);
+                                const img_w: i32 = @intCast(pending.width);
+                                const x: i32 = if (surf_w > img_w + po_margin) surf_w - img_w - po_margin else 0;
 
-                            self.images.perfOverlayUpdate(self.alloc, .{
-                                .pending_image = pending,
-                                .x = x,
-                                .y = po_margin,
-                            }) catch |err| {
-                                log.warn("error updating perf overlay image: {}", .{err});
-                            };
+                                self.images.perfOverlayUpdate(self.alloc, .{
+                                    .pending_image = pending,
+                                    .x = x,
+                                    .y = po_margin,
+                                }) catch |err| {
+                                    log.warn("error updating perf overlay image: {}", .{err});
+                                };
+                            }
+                        } else |err| {
+                            log.warn("error rendering perf overlay: {}", .{err});
                         }
-                    } else |err| {
-                        log.warn("error rendering perf overlay: {}", .{err});
-                    }
 
-                    self.images.draw(
-                        &self.api,
-                        self.shaders.pipelines.image,
-                        &pass,
-                        .perf_overlay,
-                    );
+                        self.images.draw(
+                            &self.api,
+                            self.shaders.pipelines.image,
+                            &pass,
+                            .perf_overlay,
+                        );
+                    }
                 } else {
                     // Clean up perf overlay image when disabled.
                     self.images.perfOverlayUpdate(self.alloc, null) catch {};
