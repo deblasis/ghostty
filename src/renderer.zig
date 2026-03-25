@@ -59,6 +59,7 @@ test {
 
     _ = cursor;
     _ = message;
+    _ = @import("renderer/perf_overlay.zig");
     _ = shadertoy;
     _ = size;
     _ = Thread;
