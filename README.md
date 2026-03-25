@@ -49,8 +49,8 @@
 > - [x] CI for Windows tests
 > - [x] Shared dependencies building (FreeType, HarfBuzz, etc.)
 > - [x] ConPTY (Windows Pseudo Console) API bindings
-> - [ ] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS) 
-> - [ ] Windows CI running without `continue-on-error`
+> - [x] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS) 
+> - [x] Windows CI running without `continue-on-error`
 > 
 > **Minimal Viable Terminal**
 >
