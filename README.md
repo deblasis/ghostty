@@ -51,9 +51,10 @@
 > - [x] ConPTY (Windows Pseudo Console) API bindings
 > - [x] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS)
 > - [x] Windows CI running without `continue-on-error`
+> - [x] Visual Studio 2026 reinstalled, career deja-vu, nice, the new and the old collide
 > - [ ] Backslash path handling in config parsing — [upstream PR #11782](https://github.com/ghostty-org/ghostty/pull/11782) - open
 > - [ ] Full test suite CI job (`zig build -Dapp-runtime=none test`) — I just have to PR it, waiting on 11782 - ready
-> - [ ] Research & __Assisted__ Development ™️
+> - [ ] Research & __Assisted__ Development ™️ - Experimenting with a bunch of options, with the best candidate (on paper) outlined below
 > 
 > **Minimal Viable Terminal**
 >
