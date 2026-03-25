@@ -1,10 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const build_options = @import("terminal_options");
-const lib = @import("../lib/main.zig");
+const lib = @import("lib.zig");
 const size = @import("size.zig");
-
-const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
 
 /// The possible reference locations for a point. When someone says "(42, 80)"
 /// in the context of a terminal, that could mean multiple things: it is in the
@@ -12,7 +9,7 @@ const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
 /// cursor is? the entire scrollback history? etc.
 ///
 /// This tag is used to differentiate those cases.
-pub const Tag = lib.Enum(lib_target, &.{
+pub const Tag = lib.Enum(lib.target, &.{
     // Top-left is part of the active area where a running program can
     // jump the cursor and make changes. The active area is the "editable"
     // part of the screen.
@@ -70,7 +67,7 @@ pub const Point = union(Tag) {
     }
 
     const c_union = lib.TaggedUnion(
-        lib_target,
+        lib.target,
         @This(),
         // Padding: largest variant is Coordinate (u16 + u32 = 6 bytes).
         // Use [2]u64 (16 bytes) for future expansion.

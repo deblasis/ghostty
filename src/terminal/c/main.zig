@@ -1,5 +1,5 @@
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const lib = @import("../lib.zig");
+const CAllocator = lib.alloc.Allocator;
 
 const buildpkg = @import("build_info.zig");
 pub const allocator = @import("allocator.zig");

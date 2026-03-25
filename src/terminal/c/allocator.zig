@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const lib = @import("../lib.zig");
+const CAllocator = lib.alloc.Allocator;
 
 /// Allocate a buffer of `len` bytes using the given allocator
 /// (or the default allocator if NULL).
@@ -11,8 +11,8 @@ const CAllocator = lib_alloc.Allocator;
 pub fn alloc(
     alloc_: ?*const CAllocator,
     len: usize,
-) callconv(.c) ?[*]u8 {
-    const allocator = lib_alloc.default(alloc_);
+) callconv(lib.calling_conv) ?[*]u8 {
+    const allocator = lib.alloc.default(alloc_);
     const buf = allocator.alloc(u8, len) catch return null;
     return buf.ptr;
 }
@@ -26,16 +26,16 @@ pub fn free(
     alloc_: ?*const CAllocator,
     ptr: ?[*]u8,
     len: usize,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const mem = ptr orelse return;
-    const allocator = lib_alloc.default(alloc_);
+    const allocator = lib.alloc.default(alloc_);
     allocator.free(mem[0..len]);
 }
 
 test "alloc returns non-null" {
-    const ptr = alloc(&lib_alloc.test_allocator, 16);
+    const ptr = alloc(&lib.alloc.test_allocator, 16);
     try testing.expect(ptr != null);
-    free(&lib_alloc.test_allocator, ptr, 16);
+    free(&lib.alloc.test_allocator, ptr, 16);
 }
 
 test "alloc with null allocator" {
@@ -45,23 +45,23 @@ test "alloc with null allocator" {
 }
 
 test "alloc zero length" {
-    const ptr = alloc(&lib_alloc.test_allocator, 0);
-    defer free(&lib_alloc.test_allocator, ptr, 0);
+    const ptr = alloc(&lib.alloc.test_allocator, 0);
+    defer free(&lib.alloc.test_allocator, ptr, 0);
 }
 
 test "free null pointer" {
-    free(&lib_alloc.test_allocator, null, 0);
+    free(&lib.alloc.test_allocator, null, 0);
 }
 
 test "free allocated memory" {
-    const allocator = lib_alloc.default(&lib_alloc.test_allocator);
+    const allocator = lib.alloc.default(&lib.alloc.test_allocator);
     const mem = try allocator.alloc(u8, 16);
-    free(&lib_alloc.test_allocator, mem.ptr, mem.len);
+    free(&lib.alloc.test_allocator, mem.ptr, mem.len);
 }
 
 test "free with null allocator" {
     // null allocator falls back to the default (test allocator in tests)
-    const allocator = lib_alloc.default(null);
+    const allocator = lib.alloc.default(null);
     const mem = try allocator.alloc(u8, 8);
     free(null, mem.ptr, mem.len);
 }

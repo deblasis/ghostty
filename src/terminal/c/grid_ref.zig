@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const lib = @import("../lib.zig");
 const page = @import("../page.zig");
 const PageList = @import("../PageList.zig");
 const size = @import("../size.zig");
@@ -40,7 +41,7 @@ pub const CGridRef = extern struct {
 pub fn grid_ref_cell(
     ref: *const CGridRef,
     out: ?*cell_c.CCell,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const p = ref.toPin() orelse return .invalid_value;
     if (out) |o| o.* = @bitCast(p.rowAndCell().cell.*);
     return .success;
@@ -49,7 +50,7 @@ pub fn grid_ref_cell(
 pub fn grid_ref_row(
     ref: *const CGridRef,
     out: ?*row_c.CRow,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const p = ref.toPin() orelse return .invalid_value;
     if (out) |o| o.* = @bitCast(p.rowAndCell().row.*);
     return .success;
@@ -60,7 +61,7 @@ pub fn grid_ref_graphemes(
     out_buf: ?[*]u32,
     buf_len: usize,
     out_len: *usize,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const p = ref.toPin() orelse return .invalid_value;
     const cell = p.rowAndCell().cell;
 
@@ -91,7 +92,7 @@ pub fn grid_ref_graphemes(
 pub fn grid_ref_style(
     ref: *const CGridRef,
     out: ?*style_c.Style,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const p = ref.toPin() orelse return .invalid_value;
     if (out) |o| {
         const cell = p.rowAndCell().cell;

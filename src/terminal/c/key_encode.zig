@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const lib = @import("../lib.zig");
+const CAllocator = lib.alloc.Allocator;
 const key_encode = @import("../../input/key_encode.zig");
 const key_event = @import("key_event.zig");
 const KittyFlags = @import("../../terminal/kitty/key.zig").Flags;
@@ -25,8 +25,8 @@ pub const Encoder = ?*KeyEncoderWrapper;
 pub fn new(
     alloc_: ?*const CAllocator,
     result: *Encoder,
-) callconv(.c) Result {
-    const alloc = lib_alloc.default(alloc_);
+) callconv(lib.calling_conv) Result {
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(KeyEncoderWrapper) catch
         return .out_of_memory;
     ptr.* = .{
@@ -37,7 +37,7 @@ pub fn new(
     return .success;
 }
 
-pub fn free(encoder_: Encoder) callconv(.c) void {
+pub fn free(encoder_: Encoder) callconv(lib.calling_conv) void {
     const wrapper = encoder_ orelse return;
     const alloc = wrapper.alloc;
     alloc.destroy(wrapper);
@@ -72,7 +72,7 @@ pub fn setopt(
     encoder_: Encoder,
     option: Option,
     value: ?*const anyopaque,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
             log.warn("setopt invalid option value={d}", .{@intFromEnum(option)});
@@ -120,7 +120,7 @@ fn setoptTyped(
 pub fn setopt_from_terminal(
     encoder_: Encoder,
     terminal_: Terminal,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const wrapper = encoder_ orelse return;
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     wrapper.opts = .fromTerminal(t);
@@ -132,7 +132,7 @@ pub fn encode(
     out_: ?[*]u8,
     out_len: usize,
     out_written: *usize,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     // Attempt to write to this buffer
     var writer: std.Io.Writer = .fixed(if (out_) |out| out[0..out_len] else &.{});
     key_encode.encode(
@@ -165,7 +165,7 @@ test "alloc" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     free(e);
@@ -175,7 +175,7 @@ test "setopt bool" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -197,7 +197,7 @@ test "setopt kitty flags" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -218,7 +218,7 @@ test "setopt macos option as alt" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -240,7 +240,7 @@ test "setopt_from_terminal" {
     // Create encoder
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -248,7 +248,7 @@ test "setopt_from_terminal" {
     // Create terminal
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -274,7 +274,7 @@ test "setopt_from_terminal null" {
     const terminal_c = @import("terminal.zig");
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -284,7 +284,7 @@ test "setopt_from_terminal null" {
     // Valid encoder with null terminal
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -297,7 +297,7 @@ test "encode: kitty ctrl release with ctrl mod set" {
     // Create encoder
     var encoder: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &encoder,
     ));
     defer free(encoder);
@@ -318,7 +318,7 @@ test "encode: kitty ctrl release with ctrl mod set" {
     // Create key event
     var event: key_event.Event = undefined;
     try testing.expectEqual(Result.success, key_event.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &event,
     ));
     defer key_event.free(event);

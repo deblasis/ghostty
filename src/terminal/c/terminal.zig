@@ -1,8 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-const lib = @import("../../lib/main.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const lib = @import("../lib.zig");
+const CAllocator = lib.alloc.Allocator;
 const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
@@ -55,39 +54,39 @@ const Effects = struct {
     da_features_buf: [64]device_attributes.Primary.Feature = undefined,
 
     /// C function pointer type for the write_pty callback.
-    pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
+    pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the bell callback.
-    pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+    pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the color_scheme callback.
     /// Returns true and fills out_scheme if a color scheme is available,
     /// or returns false to silently ignore the query.
-    pub const ColorSchemeFn = *const fn (Terminal, ?*anyopaque, *device_status.ColorScheme) callconv(.c) bool;
+    pub const ColorSchemeFn = *const fn (Terminal, ?*anyopaque, *device_status.ColorScheme) callconv(lib.calling_conv) bool;
 
     /// C function pointer type for the enquiry callback.
     /// Returns the response bytes. The memory must remain valid
     /// until the callback returns.
-    pub const EnquiryFn = *const fn (Terminal, ?*anyopaque) callconv(.c) lib.String;
+    pub const EnquiryFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) lib.String;
 
     /// C function pointer type for the xtversion callback.
     /// Returns the version string (e.g. "ghostty 1.2.3"). The memory
     /// must remain valid until the callback returns. An empty string
     /// (len=0) causes the default "libghostty" to be reported.
-    pub const XtversionFn = *const fn (Terminal, ?*anyopaque) callconv(.c) lib.String;
+    pub const XtversionFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) lib.String;
 
     /// C function pointer type for the title_changed callback.
-    pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+    pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the size callback.
     /// Returns true and fills out_size if size is available,
     /// or returns false to silently ignore the query.
-    pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(.c) bool;
+    pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(lib.calling_conv) bool;
 
     /// C function pointer type for the device_attributes callback.
     /// Returns true and fills out_attrs if attributes are available,
     /// or returns false to silently ignore the query.
-    pub const DeviceAttributesFn = *const fn (Terminal, ?*anyopaque, *CDeviceAttributes) callconv(.c) bool;
+    pub const DeviceAttributesFn = *const fn (Terminal, ?*anyopaque, *CDeviceAttributes) callconv(lib.calling_conv) bool;
 
     /// C-compatible device attributes struct.
     /// C: GhosttyDeviceAttributes
@@ -221,7 +220,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Terminal,
     opts: Options,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     result.* = new_(alloc_, opts) catch |err| {
         result.* = null;
         return switch (err) {
@@ -239,7 +238,7 @@ fn new_(
 ) NewError!*TerminalWrapper {
     if (opts.cols == 0 or opts.rows == 0) return error.InvalidValue;
 
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const t = alloc.create(ZigTerminal) catch
         return error.OutOfMemory;
     errdefer alloc.destroy(t);
@@ -282,7 +281,7 @@ pub fn vt_write(
     terminal_: Terminal,
     ptr: [*]const u8,
     len: usize,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     wrapper.stream.nextSlice(ptr[0..len]);
 }
@@ -322,7 +321,7 @@ pub fn set(
     terminal_: Terminal,
     option: Option,
     value: ?*const anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
             log.warn("terminal_set invalid option value={d}", .{@intFromEnum(option)});
@@ -374,7 +373,7 @@ pub const ScrollViewport = ZigTerminal.ScrollViewport.C;
 pub fn scroll_viewport(
     terminal_: Terminal,
     behavior: ScrollViewport,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.scrollViewport(switch (behavior.tag) {
         .top => .top,
@@ -389,7 +388,7 @@ pub fn resize(
     rows: size.CellCountInt,
     cell_width_px: u32,
     cell_height_px: u32,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const wrapper = terminal_ orelse return .invalid_value;
     const t = wrapper.terminal;
     if (cols == 0 or rows == 0) return .invalid_value;
@@ -423,7 +422,7 @@ pub fn resize(
     return .success;
 }
 
-pub fn reset(terminal_: Terminal) callconv(.c) void {
+pub fn reset(terminal_: Terminal) callconv(lib.calling_conv) void {
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.fullReset();
 }
@@ -432,7 +431,7 @@ pub fn mode_get(
     terminal_: Terminal,
     tag: modes.ModeTag.Backing,
     out_value: *bool,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
@@ -444,7 +443,7 @@ pub fn mode_set(
     terminal_: Terminal,
     tag: modes.ModeTag.Backing,
     value: bool,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
@@ -500,7 +499,7 @@ pub fn get(
     terminal_: Terminal,
     data: TerminalData,
     out: ?*anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(TerminalData, @intFromEnum(data)) catch {
             log.warn("terminal_get invalid data value={d}", .{@intFromEnum(data)});
@@ -561,7 +560,7 @@ pub fn grid_ref(
     terminal_: Terminal,
     pt: point.Point.C,
     out_ref: ?*grid_ref_c.CGridRef,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const zig_pt: point.Point = switch (pt.tag) {
         .active => .{ .active = pt.value.active },
@@ -575,7 +574,7 @@ pub fn grid_ref(
     return .success;
 }
 
-pub fn free(terminal_: Terminal) callconv(.c) void {
+pub fn free(terminal_: Terminal) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     const t = wrapper.terminal;
 
@@ -589,7 +588,7 @@ pub fn free(terminal_: Terminal) callconv(.c) void {
 test "new/free" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -606,7 +605,7 @@ test "new invalid value" {
     var t: Terminal = null;
 
     try testing.expectEqual(Result.invalid_value, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 0,
@@ -617,7 +616,7 @@ test "new invalid value" {
     try testing.expect(t == null);
 
     try testing.expectEqual(Result.invalid_value, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -635,7 +634,7 @@ test "free null" {
 test "scroll_viewport" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 5,
@@ -691,7 +690,7 @@ test "scroll_viewport null" {
 test "reset" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -716,7 +715,7 @@ test "reset null" {
 test "resize" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -738,7 +737,7 @@ test "resize null" {
 test "resize invalid value" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -755,7 +754,7 @@ test "resize invalid value" {
 test "mode_get and mode_set" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -801,7 +800,7 @@ test "mode_set null" {
 test "mode_get unknown mode" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -819,7 +818,7 @@ test "mode_get unknown mode" {
 test "mode_set unknown mode" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -836,7 +835,7 @@ test "mode_set unknown mode" {
 test "vt_write" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -856,7 +855,7 @@ test "vt_write" {
 test "vt_write split escape sequence" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -881,7 +880,7 @@ test "vt_write split escape sequence" {
 test "get cols and rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -902,7 +901,7 @@ test "get cols and rows" {
 test "get cursor position" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -930,7 +929,7 @@ test "get null" {
 test "get cursor_visible" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -954,7 +953,7 @@ test "get cursor_visible" {
 test "get active_screen" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -972,7 +971,7 @@ test "get active_screen" {
 test "get kitty_keyboard_flags" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -996,7 +995,7 @@ test "get kitty_keyboard_flags" {
 test "get mouse_tracking" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1046,7 +1045,7 @@ test "get mouse_tracking" {
 test "get total_rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1064,7 +1063,7 @@ test "get total_rows" {
 test "get scrollback_rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1088,7 +1087,7 @@ test "get scrollback_rows" {
 test "get invalid" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1104,7 +1103,7 @@ test "get invalid" {
 test "grid_ref" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1142,7 +1141,7 @@ test "grid_ref null terminal" {
 test "set write_pty callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1162,7 +1161,7 @@ test "set write_pty callback" {
             last_userdata = null;
         }
 
-        fn writePty(_: Terminal, ud: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, ud: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
             last_userdata = ud;
@@ -1185,7 +1184,7 @@ test "set write_pty callback" {
 test "set write_pty without callback ignores queries" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1202,7 +1201,7 @@ test "set write_pty without callback ignores queries" {
 test "set write_pty null clears callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1214,7 +1213,7 @@ test "set write_pty null clears callback" {
 
     const S = struct {
         var called: bool = false;
-        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(lib.calling_conv) void {
             called = true;
         }
     };
@@ -1231,7 +1230,7 @@ test "set write_pty null clears callback" {
 test "set bell callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1245,7 +1244,7 @@ test "set bell callback" {
         var bell_count: usize = 0;
         var last_userdata: ?*anyopaque = null;
 
-        fn bell(_: Terminal, ud: ?*anyopaque) callconv(.c) void {
+        fn bell(_: Terminal, ud: ?*anyopaque) callconv(lib.calling_conv) void {
             bell_count += 1;
             last_userdata = ud;
         }
@@ -1271,7 +1270,7 @@ test "set bell callback" {
 test "bell without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1288,7 +1287,7 @@ test "bell without callback is silent" {
 test "set enquiry callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1306,13 +1305,13 @@ test "set enquiry callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
         const response = "OK";
-        fn enquiry(_: Terminal, _: ?*anyopaque) callconv(.c) lib.String {
+        fn enquiry(_: Terminal, _: ?*anyopaque) callconv(lib.calling_conv) lib.String {
             return .{ .ptr = response, .len = response.len };
         }
     };
@@ -1330,7 +1329,7 @@ test "set enquiry callback" {
 test "enquiry without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1347,7 +1346,7 @@ test "enquiry without callback is silent" {
 test "set xtversion callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1365,13 +1364,13 @@ test "set xtversion callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
         const version = "myterm 1.0";
-        fn xtversion(_: Terminal, _: ?*anyopaque) callconv(.c) lib.String {
+        fn xtversion(_: Terminal, _: ?*anyopaque) callconv(lib.calling_conv) lib.String {
             return .{ .ptr = version, .len = version.len };
         }
     };
@@ -1390,7 +1389,7 @@ test "set xtversion callback" {
 test "xtversion without callback reports default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1408,7 +1407,7 @@ test "xtversion without callback reports default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1426,7 +1425,7 @@ test "xtversion without callback reports default" {
 test "set title_changed callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1440,7 +1439,7 @@ test "set title_changed callback" {
         var title_count: usize = 0;
         var last_userdata: ?*anyopaque = null;
 
-        fn titleChanged(_: Terminal, ud: ?*anyopaque) callconv(.c) void {
+        fn titleChanged(_: Terminal, ud: ?*anyopaque) callconv(lib.calling_conv) void {
             title_count += 1;
             last_userdata = ud;
         }
@@ -1465,7 +1464,7 @@ test "set title_changed callback" {
 test "title_changed without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1482,7 +1481,7 @@ test "title_changed without callback is silent" {
 test "set size callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1500,12 +1499,12 @@ test "set size callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn sizeCb(_: Terminal, _: ?*anyopaque, out_size: *size_report.Size) callconv(.c) bool {
+        fn sizeCb(_: Terminal, _: ?*anyopaque, out_size: *size_report.Size) callconv(lib.calling_conv) bool {
             out_size.* = .{
                 .rows = 24,
                 .columns = 80,
@@ -1529,7 +1528,7 @@ test "set size callback" {
 test "size without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1546,7 +1545,7 @@ test "size without callback is silent" {
 test "set device_attributes callback primary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1564,12 +1563,12 @@ test "set device_attributes callback primary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 64,
@@ -1600,7 +1599,7 @@ test "set device_attributes callback primary" {
 test "set device_attributes callback secondary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1618,12 +1617,12 @@ test "set device_attributes callback secondary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 62,
@@ -1654,7 +1653,7 @@ test "set device_attributes callback secondary" {
 test "set device_attributes callback tertiary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1672,12 +1671,12 @@ test "set device_attributes callback tertiary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 62,
@@ -1708,7 +1707,7 @@ test "set device_attributes callback tertiary" {
 test "device_attributes without callback uses default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1726,7 +1725,7 @@ test "device_attributes without callback uses default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1744,7 +1743,7 @@ test "device_attributes without callback uses default" {
 test "device_attributes callback returns false uses default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1762,12 +1761,12 @@ test "device_attributes callback returns false uses default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, _: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, _: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             return false;
         }
     };
@@ -1785,7 +1784,7 @@ test "device_attributes callback returns false uses default" {
 test "set and get title" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1824,7 +1823,7 @@ test "set and get title" {
 test "set and get pwd" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1856,7 +1855,7 @@ test "set and get pwd" {
 test "get title set via vt_write" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1877,7 +1876,7 @@ test "get title set via vt_write" {
 test "resize updates pixel dimensions" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1897,7 +1896,7 @@ test "resize updates pixel dimensions" {
 test "resize pixel overflow saturates" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1917,7 +1916,7 @@ test "resize pixel overflow saturates" {
 test "resize disables synchronized output" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1937,7 +1936,7 @@ test "resize disables synchronized output" {
 test "resize sends in-band size report" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1955,7 +1954,7 @@ test "resize sends in-band size report" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1978,7 +1977,7 @@ test "resize sends in-band size report" {
 test "resize no size report without mode 2048" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1990,7 +1989,7 @@ test "resize no size report without mode 2048" {
 
     const S = struct {
         var called: bool = false;
-        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(lib.calling_conv) void {
             called = true;
         }
     };
@@ -2006,7 +2005,7 @@ test "resize no size report without mode 2048" {
 test "resize in-band report without write_pty callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2028,7 +2027,7 @@ test "resize null terminal" {
 test "resize zero cols" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2044,7 +2043,7 @@ test "resize zero cols" {
 test "resize zero rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2060,7 +2059,7 @@ test "resize zero rows" {
 test "grid_ref out of bounds" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,

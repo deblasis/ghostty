@@ -1,10 +1,8 @@
 const std = @import("std");
-const build_options = @import("terminal_options");
-const lib = @import("../lib/main.zig");
-const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
+const lib = @import("lib.zig");
 
 /// The color scheme reported in response to a CSI ? 996 n query.
-pub const ColorScheme = lib.Enum(lib_target, &.{
+pub const ColorScheme = lib.Enum(lib.target, &.{
     "light",
     "dark",
 });

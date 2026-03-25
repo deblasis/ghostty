@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const lib = @import("../lib.zig");
 const build_options = @import("terminal_options");
 const Result = @import("result.zig").Result;
 
@@ -34,7 +35,7 @@ pub const BuildInfo = enum(c_int) {
 pub fn get(
     data: BuildInfo,
     out: ?*anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(BuildInfo, @intFromEnum(data)) catch {
             log.warn("build_info invalid data value={d}", .{@intFromEnum(data)});

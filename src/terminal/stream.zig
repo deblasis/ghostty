@@ -5,7 +5,7 @@ const assert = @import("../quirks.zig").inlineAssert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const simd = @import("../simd/main.zig");
-const lib = @import("../lib/main.zig");
+const lib = @import("lib.zig");
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
@@ -28,8 +28,6 @@ const log = std.log.scoped(.stream);
 /// debugging an issue in the SIMD code then you'll need to
 /// do something else.
 const debug = false;
-
-const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
 
 /// The possible actions that can be emitted by the Stream
 /// function for handling.
@@ -129,7 +127,7 @@ pub const Action = union(Key) {
     semantic_prompt: SemanticPrompt,
 
     pub const Key = lib.Enum(
-        lib_target,
+        lib.target,
         &.{
             "print",
             "print_repeat",
@@ -229,7 +227,7 @@ pub const Action = union(Key) {
 
     /// C ABI functions.
     const c_union = lib.TaggedUnion(
-        lib_target,
+        lib.target,
         @This(),
         // TODO: Before shipping an ABI-compatible libghostty, verify this.
         // This was just arbitrarily chosen for now.
@@ -254,7 +252,7 @@ pub const Action = union(Key) {
         }
     };
 
-    pub const InvokeCharset = lib.Struct(lib_target, struct {
+    pub const InvokeCharset = lib.Struct(lib.target, struct {
         bank: charsets.ActiveSlot,
         charset: charsets.Slots,
         locking: bool,
@@ -384,7 +382,7 @@ pub const Action = union(Key) {
         }
     };
 
-    pub const ConfigureCharset = lib.Struct(lib_target, struct {
+    pub const ConfigureCharset = lib.Struct(lib.target, struct {
         slot: charsets.Slots,
         charset: charsets.Charset,
     });

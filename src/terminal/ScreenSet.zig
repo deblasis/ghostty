@@ -9,16 +9,13 @@ const ScreenSet = @This();
 
 const std = @import("std");
 const assert = @import("../quirks.zig").inlineAssert;
-const build_options = @import("terminal_options");
-const lib = @import("../lib/main.zig");
+const lib = @import("lib.zig");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Screen = @import("Screen.zig");
 
-const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
-
 /// The possible keys for screens in the screen set.
-pub const Key = lib.Enum(lib_target, &.{
+pub const Key = lib.Enum(lib.target, &.{
     "primary",
     "alternate",
 });

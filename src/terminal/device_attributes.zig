@@ -1,11 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
-const build_options = @import("terminal_options");
-const lib = @import("../lib/main.zig");
-const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
+const lib = @import("lib.zig");
 
 /// The device attribute request type (CSI c).
-pub const Req = lib.Enum(lib_target, &.{
+pub const Req = lib.Enum(lib.target, &.{
     "primary", // Blank
     "secondary", // >
     "tertiary", // =

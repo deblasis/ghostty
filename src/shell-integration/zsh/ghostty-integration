@@ -157,6 +157,11 @@ _ghostty_deferred_init() {
                 # unconditionally add mark1 and markB.
                 builtin local mark2=$'%{\e]133;P;k=s\a%}'
                 builtin local markB=$'%{\e]133;B\a%}'
+                # If PS1 ends with a bare '%', it combines with the '{'
+                # in markB to form a '%{' prompt escape, swallowing the
+                # marker and producing a visible '{'. Fix by doubling the
+                # trailing '%' so it becomes a literal '%%'.
+                [[ $PS1 == *[^%]% || $PS1 == % ]] && PS1=$PS1%
                 PS1=${mark1}${PS1}${markB}
 
                 # Handle multiline prompts by marking newline-separated
@@ -170,6 +175,7 @@ _ghostty_deferred_init() {
                 fi
 
                 # PS2 mark is needed when clearing the prompt on resize
+                [[ $PS2 == *[^%]% || $PS2 == % ]] && PS2=$PS2%
                 PS2=${mark2}${PS2}${markB}
 
                 # Save the marked PS1 so we can detect modifications

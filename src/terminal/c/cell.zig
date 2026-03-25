@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const lib = @import("../lib.zig");
 const page = @import("../page.zig");
 const Cell = page.Cell;
 const color = @import("../color.zig");
@@ -102,7 +103,7 @@ pub fn get(
     cell_: CCell,
     data: CellData,
     out: ?*anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(CellData, @intFromEnum(data)) catch {
             return .invalid_value;
