@@ -14,7 +14,12 @@
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <RootNamespace>Ghostty</RootNamespace>
+        <!-- Avoid collision with the native ghostty.dll (case-insensitive on Windows) -->
+        <AssemblyName>Ghostty.App</AssemblyName>
+        <!-- Use our custom Program.Main to handle CLI args before GUI launch -->
+        <DefineConstants>DISABLE_XAML_GENERATED_MAIN</DefineConstants>
 
         <!-- App Options -->
         <UseRidGraph>true</UseRidGraph>
@@ -43,7 +48,18 @@
         <Manifest Include="$(ApplicationManifest)" />
     </ItemGroup>
 
-    <!-- 
+    <!--
+        Copy ghostty.dll from the Zig build output to the C# output directory.
+        Build libghostty first: zig build -Dapp-runtime=none -Demit-exe=false
+    -->
+    <Target Name="CopyGhosttyDll" AfterTargets="Build"
+            Condition="Exists('$(MSBuildThisFileDirectory)..\..\zig-out\lib\ghostty.dll')">
+        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\zig-out\lib\ghostty.dll"
+              DestinationFolder="$(OutputPath)"
+              SkipUnchangedFiles="true" />
+    </Target>
+
+    <!--
         Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
         Tools extension to be activated for this project even if the Windows App SDK Nuget
         package has not yet been restored.
