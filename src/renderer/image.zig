@@ -35,6 +35,7 @@ pub const State = struct {
 
     /// Overlays
     overlay_placements: std.ArrayListUnmanaged(Placement),
+    perf_overlay_placements: std.ArrayListUnmanaged(Placement),
 
     pub const empty: State = .{
         .images = .empty,
@@ -43,6 +44,7 @@ pub const State = struct {
         .kitty_text_end = 0,
         .kitty_virtual = false,
         .overlay_placements = .empty,
+        .perf_overlay_placements = .empty,
     };
 
     pub fn deinit(self: *State, alloc: Allocator) void {
@@ -53,6 +55,7 @@ pub const State = struct {
         }
         self.kitty_placements.deinit(alloc);
         self.overlay_placements.deinit(alloc);
+        self.perf_overlay_placements.deinit(alloc);
     }
 
     /// Upload any images to the GPU that need to be uploaded,
@@ -95,6 +98,7 @@ pub const State = struct {
         kitty_below_text,
         kitty_above_text,
         overlay,
+        perf_overlay,
     };
 
     /// Draw the given named set of placements.
@@ -113,6 +117,7 @@ pub const State = struct {
             .kitty_below_text => self.kitty_placements.items[self.kitty_bg_end..self.kitty_text_end],
             .kitty_above_text => self.kitty_placements.items[self.kitty_text_end..],
             .overlay => self.overlay_placements.items,
+            .perf_overlay => self.perf_overlay_placements.items,
         };
 
         for (placements) |p| {
@@ -229,6 +234,49 @@ pub const State = struct {
         });
     }
 
+    pub const PerfOverlayPending = struct {
+        pending_image: Image.Pending,
+        x: u32,
+        y: u32,
+    };
+
+    /// Update perf overlay state. Null value deletes any existing overlay.
+    pub fn perfOverlayUpdate(
+        self: *State,
+        alloc: Allocator,
+        pending: ?PerfOverlayPending,
+    ) !void {
+        const p = pending orelse {
+            if (self.images.getPtr(.perf_overlay)) |data| {
+                data.image.markForUnload();
+            }
+            return;
+        };
+
+        const transmit_time = try std.time.Instant.now();
+
+        self.perf_overlay_placements.clearRetainingCapacity();
+        try self.perf_overlay_placements.ensureUnusedCapacity(alloc, 1);
+
+        try self.prepImage(alloc, .perf_overlay, transmit_time, p.pending_image);
+        errdefer comptime unreachable;
+
+        self.perf_overlay_placements.appendAssumeCapacity(.{
+            .image_id = .perf_overlay,
+            .x = p.x,
+            .y = p.y,
+            .z = 0,
+            .width = p.pending_image.width,
+            .height = p.pending_image.height,
+            .cell_offset_x = 0,
+            .cell_offset_y = 0,
+            .source_x = 0,
+            .source_y = 0,
+            .source_width = p.pending_image.width,
+            .source_height = p.pending_image.height,
+        });
+    }
+
     /// Returns true if the Kitty graphics state requires an update based
     /// on the terminal state and our internal state.
     ///
@@ -281,6 +329,7 @@ pub const State = struct {
                     },
 
                     .overlay => {},
+                    .perf_overlay => {},
                 }
             }
         }
@@ -661,6 +710,9 @@ pub const Id = union(enum) {
     /// image for now. In the future we can support layers here if we want.
     overlay,
 
+    /// Performance overlay.
+    perf_overlay,
+
     /// Z-ordering tie-breaker for images with the same z value.
     pub fn zLessThan(lhs: Id, rhs: Id) bool {
         // If our tags aren't the same, we sort by tag.
@@ -670,6 +722,7 @@ pub const Id = union(enum) {
                 .kitty => true,
 
                 .overlay => false,
+                .perf_overlay => false,
             };
         }
 
@@ -681,6 +734,7 @@ pub const Id = union(enum) {
 
             // No sensical ordering
             .overlay => return false,
+            .perf_overlay => return false,
         }
     }
 };
