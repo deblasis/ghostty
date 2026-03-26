@@ -121,6 +121,11 @@ add_custom_target(zig_build_lib_vt ALL
     DEPENDS "${GHOSTTY_VT_SHARED_LIBRARY}" "${GHOSTTY_VT_STATIC_LIBRARY}"
 )
 
+# Tell CMake's clean target to also remove Zig's output directory.
+set_property(DIRECTORY APPEND PROPERTY
+    ADDITIONAL_CLEAN_FILES "${ZIG_OUT_DIR}"
+)
+
 # --- IMPORTED library targets ------------------------------------------------
 
 # Shared
