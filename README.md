@@ -26,73 +26,68 @@
 >
 > This fork is focused on building **Windows support** for Ghostty, following
 > [Mitchell's architectural direction](https://github.com/ghostty-org/ghostty/discussions/2563).
-> Work is performed in **stacked feature branches** (`001-*`, `002-*`, ...) to keep
-> scope small, iterate quickly, and produce tightly scoped PRs suitable for upstream review.
+> Work is done in **stacked feature branches** (`018-*`, `019-*`, ...) to keep
+> scope small and produce tightly scoped PRs for upstream review.
 >
-> **Status:** Foundation Complete 🐣 — Build infrastructure merged upstream (13+ PRs), full test suite passing
+> **Status:** Foundation done, working on integration
 >
-> The goal is a native Windows experience consistent with the philosophy applied to macOS and Linux - Ghostty should feel like it was built for Windows first.
+> The goal is a native Windows experience that feels like Ghostty was built
+> for Windows first, consistent with the philosophy applied to macOS and Linux.
 >
-> The Windows app will be a native C# GUI wrapping `libghostty`, following the same architecture as macOS where SwiftUI wraps `libghostty`. 
-> This approach enables beautiful native UI with full access to Win32, DirectX, and DirectWrite APIs while keeping all terminal emulation logic in the shared Zig core. 
+> The Windows app is a native C# GUI wrapping `libghostty.dll`, same architecture
+> as macOS where Swift wraps `libghostty`. All terminal emulation stays in Zig.
+> The C# layer handles windowing, input, and platform integration via P/Invoke.
 >
-> I did consider C++ for a second and a half but I believe C# is the right call here both for Developer friendliness and for LLM training data available for Desktop/UI related efforts.
-> Also, I am more familiar with C# personally and the tradeoffs in terms of performance should be negligeable because the hot path is handled by zig anyway.
+> ### What is done
 >
-> Speed of development matters more.
+> **Build infrastructure** (merged upstream, 13+ PRs)
 >
-> ### TODO
-> 
-> **Foundation**
->
-> - [x] `zig build test` working on Windows
-> - [x] CI for Windows tests
-> - [x] Shared dependencies building (FreeType, HarfBuzz, etc.)
-> - [x] ConPTY (Windows Pseudo Console) API bindings
-> - [x] `zig build test-lib-vt` fully passing on Windows (and Linux and MacOS)
+> - [x] `zig build test` passing on Windows (2604 tests, 53 skipped)
+> - [x] All shared dependencies building (FreeType, HarfBuzz, zlib, oniguruma, glslang, etc.)
+> - [x] `zig build test-lib-vt` passing on all platforms
 > - [x] Windows CI running without `continue-on-error`
-> - [x] Visual Studio 2026 reinstalled, career deja-vu, nice, the new and the old collide
-> - [ ] Backslash path handling in config parsing — [upstream PR #11782](https://github.com/ghostty-org/ghostty/pull/11782) - open
-> - [ ] Full test suite CI job (`zig build -Dapp-runtime=none test`) — I just have to PR it, waiting on 11782 - ready
-> - [ ] Research & __Assisted__ Development ™️ - Experimenting with a bunch of options, with the best candidate (on paper) outlined below
-> 
-> **Minimal Viable Terminal**
+> - [x] Backslash path handling in config parsing (PR #11782 merged)
+> - [x] CRLF line ending fix for comptime parsing + `.gitattributes` normalization
 >
-> **Native Windows App (C# + WinUI 3 + libghostty)**
+> **App scaffold** (on fork, iterating)
 >
-> Architecture: C# wraps libghostty.dll, mirroring macOS (Swift wraps libghostty).
-> WinUI 3 provides native Fluent Design chrome. DirectX swap chain hosts
-> libghostty's rendering. ConPTY hosts shells.
+> - [x] `ghostty.dll` building on Windows (CRT linking fix for MSVC)
+> - [x] C# WinUI 3 project scaffold (`windows/Ghostty/`)
+> - [x] P/Invoke bindings for libghostty C API
+> - [x] `--version` flag working from command line
+> - [x] Interop test suite (7 tests against the real DLL)
 >
-> - [ ] libghostty.dll building on Windows (`zig build -Demit-lib`)
-> - [ ] C# WinUI 3 scaffold with SwapChainPanel
-> - [ ] P/Invoke bindings to libghostty C API
-> - [ ] ConPTY shell spawning via CreatePseudoConsole
-> - [ ] DirectX 11 swap chain → libghostty renderer integration
-> - [ ] Keyboard and mouse input forwarding
-> - [ ] Clipboard support
-> 
-> **Native Integration**
+> ### What is next
 >
-> - [ ] DirectWrite font discovery (enumerate system fonts → file paths for libghostty)
-> - [ ] Per-monitor DPI awareness
-> - [ ] Windows dark/light mode theming (Mica/Acrylic tiering: solid → mica → acrylic-in-shader)
-> - [ ] IME support (Text Services Foundation)
+> - [ ] Find an agreement on C# or not
 >
-> **Feature Parity**
+> **Integration** (figuring out how the pieces connect before adding more API surface)
 >
-> - [ ] Multi-window, tabbing, and splits
-> - [ ] Native settings UI
-> - [ ] Desktop notifications
+> - [ ] Fix Zig DLL global state bug. `ghostty_init` crashes because global
+>       mutable state ends up at address 0 in the DLL. Nobody has shipped the
+>       full libghostty as a shared library on Windows before, so this is new
+>       territory. `ghostty_info` (comptime constants) works fine.
+> - [ ] SwapChainPanel spike. Create a DX11 swap chain in C#, get something
+>       rendering through libghostty. This determines what data needs to cross
+>       the C#/Zig boundary (HWND? swap chain? both?) and answers the open
+>       question from upstream review.
+> - [ ] Come back with the platform struct once the data model is concrete,
+>       not placeholder.
+>
+> **After integration is proven**
+>
+> - [ ] DirectX 11 renderer in libghostty
+> - [ ] DirectWrite font backend
+> - [ ] ConPTY shell spawning
+> - [ ] Keyboard, mouse, clipboard
+> - [ ] Per-monitor DPI, dark/light mode theming
+>
+> **Feature parity** (later)
+>
+> - [ ] Multi-window, tabs, splits
+> - [ ] Native settings UI, desktop notifications
 > - [ ] Quick terminal, command palette, global keybinds
-> - [ ] System tray integration
->
-> **Distribution**
-> 
-> - [ ] Installer packages (MSI, MSIX, winget)
-> - [ ] Auto-update system
-> - [ ] Crash reporting
-> - [ ] Release CI
+> - [ ] Installer packages (MSI, MSIX, winget), auto-update
 
 ## About
 
