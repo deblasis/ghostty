@@ -17,7 +17,7 @@ public static partial class LibGhostty
     public static partial void SpikeResize(uint width, uint height);
 
     [LibraryImport(DllName, EntryPoint = "ghostty_spike_key_press")]
-    public static partial void SpikeKeyPress();
+    public static partial void SpikeKeyPress(uint virtualKey);
 
     [LibraryImport(DllName, EntryPoint = "ghostty_spike_dpi_changed")]
     public static partial void SpikeDpiChanged(float scale);

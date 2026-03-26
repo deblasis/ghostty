@@ -83,6 +83,7 @@ public partial class MainPage : Page
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (!_initialized) return;
-        LibGhostty.SpikeKeyPress();
+        LibGhostty.SpikeKeyPress((uint)e.Key);
+        e.Handled = true;
     }
 }

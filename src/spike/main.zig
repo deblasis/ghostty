@@ -9,18 +9,28 @@ const builtin = @import("builtin");
 const log = std.log.scoped(.spike);
 
 const Device = @import("../renderer/directx11/device.zig").Device;
-
-// Cornflower blue — the classic Direct3D "proof of life" clear colour.
-const cornflower_blue = [4]f32{ 0.39, 0.58, 0.93, 1.0 };
+const Pipeline = @import("../renderer/directx11/pipeline.zig").Pipeline;
+const Constants = @import("../renderer/directx11/pipeline.zig").Constants;
+const CellGrid = @import("../renderer/directx11/cell_grid.zig").CellGrid;
+const splash = @import("scenes/splash.zig");
 
 // Render-thread target: ~60 fps.
 const frame_ns: u64 = 16_666_667;
 
+// Cell size in pixels for the grid.
+// Small enough that bitmap font text (6 cells/char) fits at 960px width (~53 chars).
+const cell_px: f32 = 3.0;
+
 // Global spike state. There is exactly one DX11 device per process in this
 // spike, so a file-level singleton is fine.
 var g_device: ?Device = null;
+var g_pipeline: ?Pipeline = null;
+var g_grid: ?CellGrid = null;
 var g_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 var g_thread: ?std.Thread = null;
+var g_width: u32 = 960;
+var g_height: u32 = 640;
+
 
 /// ghostty_spike_init — create the D3D11 device and start the render thread.
 ///
@@ -37,29 +47,50 @@ pub export fn ghostty_spike_init(
         return false;
     }
 
+    g_width = width;
+    g_height = height;
+
     g_device = Device.init(panel_native, width, height, scale) catch |err| {
         log.err("Device.init failed: {}", .{err});
         return false;
     };
 
-    // Proof-of-life: clear to cornflower blue before the render thread starts
-    // so the panel shows colour immediately on init.
-    g_device.?.clearRenderTarget(cornflower_blue);
-    g_device.?.present() catch |err| {
-        log.warn("initial present failed: {}", .{err});
+    // Create the rendering pipeline (shaders, input layout, constant buffer).
+    g_pipeline = Pipeline.init(g_device.?.device) catch |err| {
+        log.err("Pipeline.init failed: {}", .{err});
+        g_device.?.deinit();
+        g_device = null;
+        return false;
     };
+
+    // Create the cell grid sized to fill the window.
+    const cols: u32 = @max(1, @as(u32, @intFromFloat(@as(f32, @floatFromInt(width)) / cell_px)));
+    const rows: u32 = @max(1, @as(u32, @intFromFloat(@as(f32, @floatFromInt(height)) / cell_px)));
+    g_grid = CellGrid.init(std.heap.page_allocator, g_device.?.device, cols, rows) catch |err| {
+        log.err("CellGrid.init failed: {}", .{err});
+        g_pipeline.?.deinit();
+        g_pipeline = null;
+        g_device.?.deinit();
+        g_device = null;
+        return false;
+    };
+
+    log.info("spike initialised: {}x{} @{d:.2}x, grid={}x{}", .{ width, height, scale, cols, rows });
 
     // Spawn the render thread.
     g_running.store(true, .release);
     g_thread = std.Thread.spawn(.{}, renderLoop, .{}) catch |err| {
         log.err("failed to spawn render thread: {}", .{err});
         g_running.store(false, .release);
+        g_grid.?.deinit();
+        g_grid = null;
+        g_pipeline.?.deinit();
+        g_pipeline = null;
         g_device.?.deinit();
         g_device = null;
         return false;
     };
 
-    log.info("spike initialised ({}x{} @{d:.2}x)", .{ width, height, scale });
     return true;
 }
 
@@ -70,6 +101,16 @@ pub export fn ghostty_spike_shutdown() callconv(.c) void {
     if (g_thread) |t| {
         t.join();
         g_thread = null;
+    }
+
+    if (g_grid) |*grid| {
+        grid.deinit();
+        g_grid = null;
+    }
+
+    if (g_pipeline) |*pipe| {
+        pipe.deinit();
+        g_pipeline = null;
     }
 
     if (g_device) |*dev| {
@@ -86,14 +127,14 @@ pub export fn ghostty_spike_shutdown() callconv(.c) void {
 pub export fn ghostty_spike_resize(width: u32, height: u32) callconv(.c) void {
     _ = width;
     _ = height;
-    // TODO: call Device.resize and recreate RTV
+    // TODO: call Device.resize, recreate CellGrid with new dimensions
 }
 
 /// ghostty_spike_key_press — forward a key event to the spike renderer.
-///
-/// TODO: implement once the scene framework is in place.
-pub export fn ghostty_spike_key_press() callconv(.c) void {
-    // TODO: handle key input
+pub export fn ghostty_spike_key_press(virtual_key: u32) callconv(.c) void {
+    // Opacity [ ] is handled in C# via Win32 SetLayeredWindowAttributes.
+    // Other keys will be used for scene control (Task 9).
+    _ = virtual_key;
 }
 
 /// ghostty_spike_dpi_changed — notify the spike renderer of a DPI change.
@@ -111,10 +152,38 @@ pub export fn ghostty_spike_dpi_changed(scale: f32) callconv(.c) void {
 fn renderLoop() void {
     log.debug("render thread started", .{});
 
-    while (g_running.load(.acquire)) {
-        const dev = &(g_device orelse break);
+    var timer = std.time.Timer.start() catch {
+        log.err("failed to start timer", .{});
+        return;
+    };
 
-        dev.clearRenderTarget(cornflower_blue);
+    while (g_running.load(.acquire)) {
+        var dev = &(g_device orelse break);
+        var pipe = &(g_pipeline orelse break);
+        var grid = &(g_grid orelse break);
+
+        const elapsed_ns = timer.read();
+        const time: f32 = @as(f32, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+
+        // Render the current scene into the cell grid.
+        splash.render(grid, time);
+
+        // Clear the render target to black.
+        dev.clearRenderTarget(.{ 0, 0, 0, 1 });
+
+        // Update pipeline constants.
+        pipe.updateConstants(dev.context, .{
+            .grid_size = .{ @floatFromInt(grid.cols), @floatFromInt(grid.rows) },
+            .cell_size_px = .{ cell_px, cell_px },
+            .viewport_size = .{ @floatFromInt(g_width), @floatFromInt(g_height) },
+            .time = time,
+        });
+
+        // Bind pipeline, upload cells, draw.
+        pipe.bind(dev.context);
+        grid.upload(dev.context);
+        grid.draw(dev.context);
+
         dev.present() catch |err| {
             log.err("present failed: {}; stopping render thread", .{err});
             break;
