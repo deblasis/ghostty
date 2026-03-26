@@ -12,7 +12,7 @@ const Device = @import("../renderer/directx11/device.zig").Device;
 const Pipeline = @import("../renderer/directx11/pipeline.zig").Pipeline;
 const Constants = @import("../renderer/directx11/pipeline.zig").Constants;
 const CellGrid = @import("../renderer/directx11/cell_grid.zig").CellGrid;
-const splash = @import("scenes/splash.zig");
+const Demo = @import("demo.zig").Demo;
 
 // Render-thread target: ~60 fps.
 const frame_ns: u64 = 16_666_667;
@@ -30,6 +30,7 @@ var g_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 var g_thread: ?std.Thread = null;
 var g_width: u32 = 960;
 var g_height: u32 = 640;
+var g_demo: Demo = .{};
 
 
 /// ghostty_spike_init — create the D3D11 device and start the render thread.
@@ -132,9 +133,8 @@ pub export fn ghostty_spike_resize(width: u32, height: u32) callconv(.c) void {
 
 /// ghostty_spike_key_press — forward a key event to the spike renderer.
 pub export fn ghostty_spike_key_press(virtual_key: u32) callconv(.c) void {
-    // Opacity [ ] is handled in C# via Win32 SetLayeredWindowAttributes.
-    // Other keys will be used for scene control (Task 9).
     _ = virtual_key;
+    g_demo.advance();
 }
 
 /// ghostty_spike_dpi_changed — notify the spike renderer of a DPI change.
@@ -156,6 +156,7 @@ fn renderLoop() void {
         log.err("failed to start timer", .{});
         return;
     };
+    var prev_ns: u64 = 0;
 
     while (g_running.load(.acquire)) {
         var dev = &(g_device orelse break);
@@ -163,10 +164,14 @@ fn renderLoop() void {
         var grid = &(g_grid orelse break);
 
         const elapsed_ns = timer.read();
+        const dt_ns = elapsed_ns - prev_ns;
+        prev_ns = elapsed_ns;
+        const dt: f64 = @as(f64, @floatFromInt(dt_ns)) / 1_000_000_000.0;
         const time: f32 = @as(f32, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
 
-        // Render the current scene into the cell grid.
-        splash.render(grid, time);
+        // Update and render the current demo scene.
+        g_demo.update(dt);
+        g_demo.render(grid);
 
         // Clear the render target to black.
         dev.clearRenderTarget(.{ 0, 0, 0, 1 });

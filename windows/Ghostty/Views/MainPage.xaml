@@ -10,6 +10,7 @@
     KeyDown="OnKeyDown">
 
     <SwapChainPanel x:Name="TerminalPanel"
+                    IsTabStop="true"
                     SizeChanged="OnPanelSizeChanged"
                     CompositionScaleChanged="OnCompositionScaleChanged" />
 </Page>

@@ -12,6 +12,15 @@ public partial class MainPage : Page
     {
         this.InitializeComponent();
         TerminalPanel.Loaded += OnPanelLoaded;
+
+        // Handle keys at the window level so focus doesn't matter.
+        this.Loaded += (_, _) =>
+        {
+            if (App.MainWindow?.Content is FrameworkElement root)
+            {
+                root.PreviewKeyDown += OnKeyDown;
+            }
+        };
     }
 
     private void OnPanelLoaded(object sender, RoutedEventArgs e)
@@ -58,6 +67,7 @@ public partial class MainPage : Page
             }
 
             _initialized = true;
+            TerminalPanel.Focus(FocusState.Programmatic);
             Console.WriteLine("[Ghostty] Initialization complete!");
         }
         finally
