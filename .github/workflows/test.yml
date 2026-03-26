@@ -109,6 +109,7 @@ jobs:
       - test-fuzz-libghostty
       - test-lib-vt
       - test-macos
+      - test-windows
       - pinact
       - prettier
       - swiftlint
@@ -1132,6 +1133,7 @@ jobs:
 
       - name: .NET interop tests
         run: dotnet test windows/Ghostty.Tests/Ghostty.Tests.csproj
+
 
   test-i18n:
     strategy:
