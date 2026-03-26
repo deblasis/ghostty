@@ -67,8 +67,7 @@ pub const DXGI_MATRIX_3X2_F = extern struct {
     _32: f32,
 };
 
-// --- Placeholder type for vtable slots we don't call ---
-const Reserved = *const fn () callconv(.winapi) void;
+const Reserved = com.Reserved;
 
 // =============================================================================
 // IDXGIObject — 7 methods total (3 IUnknown + 4 own)

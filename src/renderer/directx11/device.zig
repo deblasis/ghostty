@@ -29,14 +29,10 @@ pub const Device = struct {
         RenderTargetViewFailed,
     };
 
-    fn debugLog(comptime fmt: []const u8, args: anytype) void {
-        std.debug.print("[DX11] " ++ fmt ++ "\n", args);
-    }
-
     pub fn init(panel_native_ptr: *anyopaque, width: u32, height: u32, scale: f32) InitError!Device {
         _ = scale;
 
-        debugLog("init called: panel=0x{x}, size={}x{}", .{ @intFromPtr(panel_native_ptr), width, height });
+        log.info("init called: panel=0x{x}, size={}x{}", .{ @intFromPtr(panel_native_ptr), width, height });
 
         // Cast the opaque pointer to ISwapChainPanelNative.
         const panel_native: *dxgi.ISwapChainPanelNative = @ptrCast(@alignCast(panel_native_ptr));
@@ -45,7 +41,6 @@ pub const Device = struct {
         var device: ?*d3d11.ID3D11Device = null;
         var context: ?*d3d11.ID3D11DeviceContext = null;
         const feature_levels = [_]d3d11.D3D_FEATURE_LEVEL{.@"11_0"};
-        debugLog("calling D3D11CreateDevice...", .{});
         var hr = d3d11.D3D11CreateDevice(
             null, // default adapter
             .HARDWARE,
@@ -59,21 +54,22 @@ pub const Device = struct {
             &context,
         );
         if (com.FAILED(hr)) {
-            debugLog("D3D11CreateDevice FAILED: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+            log.err("D3D11CreateDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.DeviceCreationFailed;
         }
-        debugLog("D3D11CreateDevice OK: device=0x{x}", .{@intFromPtr(device.?)});
 
         const dev = device.?;
+        errdefer _ = dev.Release();
         const ctx = context.?;
+        errdefer _ = ctx.Release();
+
+        log.debug("D3D11CreateDevice OK: device=0x{x}", .{@intFromPtr(dev)});
 
         // QueryInterface device -> IDXGIDevice
         var dxgi_device_opt: ?*anyopaque = null;
         hr = dev.vtable.QueryInterface(dev, &dxgi.IDXGIDevice.IID, &dxgi_device_opt);
-        debugLog("QI for IDXGIDevice: hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or dxgi_device_opt == null) {
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("QI for IDXGIDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.QueryInterfaceFailed;
         }
         const dxgi_device: *dxgi.IDXGIDevice = @ptrCast(@alignCast(dxgi_device_opt.?));
@@ -82,10 +78,8 @@ pub const Device = struct {
         // Get the adapter from the DXGI device.
         var adapter: ?*dxgi.IDXGIAdapter = null;
         hr = dxgi_device.GetAdapter(&adapter);
-        debugLog("GetAdapter: hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or adapter == null) {
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("GetAdapter failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.GetAdapterFailed;
         }
         defer _ = adapter.?.Release();
@@ -93,10 +87,8 @@ pub const Device = struct {
         // Get IDXGIFactory2 from the adapter.
         var factory_opt: ?*anyopaque = null;
         hr = adapter.?.GetParent(&dxgi.IDXGIFactory2.IID, &factory_opt);
-        debugLog("GetParent(IDXGIFactory2): hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or factory_opt == null) {
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("GetParent(IDXGIFactory2) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.GetFactoryFailed;
         }
         const factory: *dxgi.IDXGIFactory2 = @ptrCast(@alignCast(factory_opt.?));
@@ -124,37 +116,28 @@ pub const Device = struct {
             null,
             &swap_chain,
         );
-        debugLog("CreateSwapChainForComposition: hr=0x{x}, sc_ptr={?}", .{ @as(u32, @bitCast(hr)), swap_chain });
         if (com.FAILED(hr) or swap_chain == null) {
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("CreateSwapChainForComposition failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.SwapChainCreationFailed;
         }
         const sc = swap_chain.?;
-        debugLog("swap chain unwrapped OK", .{});
+        errdefer _ = sc.Release();
 
         // Attach the swap chain to the SwapChainPanel.
-        debugLog("calling SetSwapChain...", .{});
-        const sc_as_base: ?*IDXGISwapChain = @ptrCast(sc);
-        hr = panel_native.SetSwapChain(sc_as_base);
-        debugLog("SetSwapChain: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+        hr = panel_native.SetSwapChain(@ptrCast(sc));
         if (com.FAILED(hr)) {
-            _ = sc.Release();
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("SetSwapChain failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.SetSwapChainFailed;
         }
+        errdefer _ = panel_native.SetSwapChain(null);
 
         // Get the back buffer and create a render target view.
-        debugLog("creating render target view...", .{});
         const rtv = createRenderTargetView(dev, sc) orelse {
-            debugLog("createRenderTargetView FAILED", .{});
-            _ = panel_native.SetSwapChain(null);
-            _ = sc.Release();
-            _ = ctx.Release();
-            _ = dev.Release();
+            log.err("createRenderTargetView failed", .{});
             return InitError.RenderTargetViewFailed;
         };
+
+        log.info("device initialised: {}x{}", .{ width, height });
 
         return Device{
             .device = dev,

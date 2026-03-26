@@ -28,6 +28,7 @@ var g_pipeline: ?Pipeline = null;
 var g_grid: ?CellGrid = null;
 var g_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 var g_thread: ?std.Thread = null;
+// Only accessed from the render thread (single-writer).
 var g_width: u32 = 960;
 var g_height: u32 = 640;
 var g_demo: Demo = .{};
@@ -166,8 +167,8 @@ fn renderLoop() void {
     var prev_ns: u64 = 0;
 
     while (g_running.load(.acquire)) {
-        var dev = &(g_device orelse break);
-        var pipe = &(g_pipeline orelse break);
+        const dev = &(g_device orelse break);
+        const pipe = &(g_pipeline orelse break);
         var grid = &(g_grid orelse break);
 
         // Handle pending resize from UI thread.

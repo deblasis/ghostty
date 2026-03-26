@@ -6,8 +6,7 @@ const HRESULT = com.HRESULT;
 const IUnknown = com.IUnknown;
 const DXGI_FORMAT = dxgi.DXGI_FORMAT;
 
-// --- Placeholder type for vtable slots we don't call ---
-const Reserved = *const fn () callconv(.winapi) void;
+const Reserved = com.Reserved;
 
 // --- Enums ---
 

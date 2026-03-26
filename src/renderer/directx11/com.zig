@@ -57,10 +57,5 @@ pub const IUnknown = extern struct {
     }
 };
 
-/// Helper to safely release a COM interface pointer and null it out.
-pub inline fn safeRelease(comptime T: type, ptr: *?*T) void {
-    if (ptr.*) |p| {
-        _ = @as(*IUnknown, @ptrCast(p)).Release();
-        ptr.* = null;
-    }
-}
+/// Stub vtable entry for COM methods not yet wrapped.
+pub const Reserved = *const fn () callconv(.winapi) void;

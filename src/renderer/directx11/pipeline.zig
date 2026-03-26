@@ -23,6 +23,11 @@ pub const Constants = extern struct {
     viewport_size: [2]f32,
     time: f32,
     _pad: f32 = 0,
+
+    comptime {
+        // D3D11 constant buffers must be a multiple of 16 bytes.
+        std.debug.assert(@sizeOf(Constants) % 16 == 0);
+    }
 };
 
 pub const Pipeline = struct {
