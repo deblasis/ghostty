@@ -178,7 +178,7 @@ pub const IDXGISwapChain1 = extern struct {
         SetFullscreenState: Reserved,
         GetFullscreenState: Reserved,
         GetDesc: Reserved,
-        ResizeBuffers: Reserved,
+        ResizeBuffers: *const fn (*IDXGISwapChain1, u32, u32, u32, DXGI_FORMAT, u32) callconv(.winapi) HRESULT,
         ResizeTarget: Reserved,
         GetContainingOutput: Reserved,
         GetFrameStatistics: Reserved,
@@ -203,6 +203,10 @@ pub const IDXGISwapChain1 = extern struct {
 
     pub inline fn GetBuffer(self: *IDXGISwapChain1, buffer: u32, riid: *const GUID, surface: *?*anyopaque) HRESULT {
         return self.vtable.GetBuffer(self, buffer, riid, surface);
+    }
+
+    pub inline fn ResizeBuffers(self: *IDXGISwapChain1, buffer_count: u32, width: u32, height: u32, format: DXGI_FORMAT, flags: u32) HRESULT {
+        return self.vtable.ResizeBuffers(self, buffer_count, width, height, format, flags);
     }
 
     pub inline fn Release(self: *IDXGISwapChain1) u32 {
@@ -292,6 +296,13 @@ pub const IDXGISwapChain2 = extern struct {
 // =============================================================================
 pub const IDXGIDevice = extern struct {
     vtable: *const VTable,
+
+    pub const IID = GUID{
+        .data1 = 0x54ec77fa,
+        .data2 = 0x1377,
+        .data3 = 0x44e6,
+        .data4 = .{ 0x8c, 0x32, 0x88, 0xfd, 0x5f, 0x44, 0xc8, 0x4c },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
