@@ -90,6 +90,12 @@ comptime {
     // Our benchmark API. We probably want to gate this on a build
     // config in the future but for now we always just export it.
     _ = @import("benchmark/main.zig").CApi;
+
+    // Spike demo exports — compile into ghostty.dll on Windows only.
+    // Remove before upstreaming.
+    if (builtin.os.tag == .windows) {
+        _ = @import("spike/main.zig");
+    }
 }
 
 /// ghostty_info_s
