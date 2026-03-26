@@ -7,6 +7,7 @@ const d3d11 = @import("d3d11.zig");
 const HRESULT = com.HRESULT;
 const GUID = com.GUID;
 const IUnknown = com.IUnknown;
+const IDXGISwapChain = dxgi.IDXGISwapChain;
 
 pub const Device = struct {
     device: *d3d11.ID3D11Device,
@@ -28,8 +29,14 @@ pub const Device = struct {
         RenderTargetViewFailed,
     };
 
+    fn debugLog(comptime fmt: []const u8, args: anytype) void {
+        std.debug.print("[DX11] " ++ fmt ++ "\n", args);
+    }
+
     pub fn init(panel_native_ptr: *anyopaque, width: u32, height: u32, scale: f32) InitError!Device {
         _ = scale;
+
+        debugLog("init called: panel=0x{x}, size={}x{}", .{ @intFromPtr(panel_native_ptr), width, height });
 
         // Cast the opaque pointer to ISwapChainPanelNative.
         const panel_native: *dxgi.ISwapChainPanelNative = @ptrCast(@alignCast(panel_native_ptr));
@@ -38,6 +45,7 @@ pub const Device = struct {
         var device: ?*d3d11.ID3D11Device = null;
         var context: ?*d3d11.ID3D11DeviceContext = null;
         const feature_levels = [_]d3d11.D3D_FEATURE_LEVEL{.@"11_0"};
+        debugLog("calling D3D11CreateDevice...", .{});
         var hr = d3d11.D3D11CreateDevice(
             null, // default adapter
             .HARDWARE,
@@ -51,9 +59,10 @@ pub const Device = struct {
             &context,
         );
         if (com.FAILED(hr)) {
-            log.err("D3D11CreateDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+            debugLog("D3D11CreateDevice FAILED: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return InitError.DeviceCreationFailed;
         }
+        debugLog("D3D11CreateDevice OK: device=0x{x}", .{@intFromPtr(device.?)});
 
         const dev = device.?;
         const ctx = context.?;
@@ -61,8 +70,8 @@ pub const Device = struct {
         // QueryInterface device -> IDXGIDevice
         var dxgi_device_opt: ?*anyopaque = null;
         hr = dev.vtable.QueryInterface(dev, &dxgi.IDXGIDevice.IID, &dxgi_device_opt);
+        debugLog("QI for IDXGIDevice: hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or dxgi_device_opt == null) {
-            log.err("QueryInterface for IDXGIDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             _ = ctx.Release();
             _ = dev.Release();
             return InitError.QueryInterfaceFailed;
@@ -73,8 +82,8 @@ pub const Device = struct {
         // Get the adapter from the DXGI device.
         var adapter: ?*dxgi.IDXGIAdapter = null;
         hr = dxgi_device.GetAdapter(&adapter);
+        debugLog("GetAdapter: hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or adapter == null) {
-            log.err("IDXGIDevice::GetAdapter failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             _ = ctx.Release();
             _ = dev.Release();
             return InitError.GetAdapterFailed;
@@ -84,8 +93,8 @@ pub const Device = struct {
         // Get IDXGIFactory2 from the adapter.
         var factory_opt: ?*anyopaque = null;
         hr = adapter.?.GetParent(&dxgi.IDXGIFactory2.IID, &factory_opt);
+        debugLog("GetParent(IDXGIFactory2): hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr) or factory_opt == null) {
-            log.err("IDXGIAdapter::GetParent(IDXGIFactory2) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             _ = ctx.Release();
             _ = dev.Release();
             return InitError.GetFactoryFailed;
@@ -115,20 +124,21 @@ pub const Device = struct {
             null,
             &swap_chain,
         );
+        debugLog("CreateSwapChainForComposition: hr=0x{x}, sc_ptr={?}", .{ @as(u32, @bitCast(hr)), swap_chain });
         if (com.FAILED(hr) or swap_chain == null) {
-            log.err("CreateSwapChainForComposition failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             _ = ctx.Release();
             _ = dev.Release();
             return InitError.SwapChainCreationFailed;
         }
         const sc = swap_chain.?;
+        debugLog("swap chain unwrapped OK", .{});
 
         // Attach the swap chain to the SwapChainPanel.
-        // SetSwapChain expects ?*IDXGISwapChain — cast through IDXGISwapChain since
-        // IDXGISwapChain1 inherits from IDXGISwapChain and they share the same vtable layout.
-        hr = panel_native.SetSwapChain(@ptrCast(sc));
+        debugLog("calling SetSwapChain...", .{});
+        const sc_as_base: ?*IDXGISwapChain = @ptrCast(sc);
+        hr = panel_native.SetSwapChain(sc_as_base);
+        debugLog("SetSwapChain: hr=0x{x}", .{@as(u32, @bitCast(hr))});
         if (com.FAILED(hr)) {
-            log.err("ISwapChainPanelNative::SetSwapChain failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             _ = sc.Release();
             _ = ctx.Release();
             _ = dev.Release();
@@ -136,7 +146,9 @@ pub const Device = struct {
         }
 
         // Get the back buffer and create a render target view.
+        debugLog("creating render target view...", .{});
         const rtv = createRenderTargetView(dev, sc) orelse {
+            debugLog("createRenderTargetView FAILED", .{});
             _ = panel_native.SetSwapChain(null);
             _ = sc.Release();
             _ = ctx.Release();

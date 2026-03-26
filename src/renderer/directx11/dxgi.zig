@@ -414,8 +414,8 @@ pub const IDXGIFactory1 = extern struct {
 };
 
 // =============================================================================
-// IDXGIFactory2 — 24 methods total (13 IDXGIFactory1 + 11 own)
-// Slot we call: CreateSwapChainForComposition (slot 23)
+// IDXGIFactory2 — 25 methods total (14 IDXGIFactory1 + 11 own)
+// Slot we call: CreateSwapChainForComposition (slot 24)
 // =============================================================================
 pub const IDXGIFactory2 = extern struct {
     vtable: *const VTable,
@@ -437,15 +437,16 @@ pub const IDXGIFactory2 = extern struct {
         SetPrivateDataInterface: Reserved,
         GetPrivateData: Reserved,
         GetParent: Reserved,
-        // IDXGIFactory (slots 7-10)
+        // IDXGIFactory (slots 7-11)
         EnumAdapters: Reserved,
         MakeWindowAssociation: Reserved,
         GetWindowAssociation: Reserved,
         CreateSwapChain: Reserved,
-        // IDXGIFactory1 (slots 11-12)
+        CreateSoftwareAdapter: Reserved, // <-- was missing, shifted all slots by 1!
+        // IDXGIFactory1 (slots 12-13)
         EnumAdapters1: Reserved,
         IsCurrent: Reserved,
-        // IDXGIFactory2 (slots 13-23)
+        // IDXGIFactory2 (slots 14-24)
         IsWindowedStereoEnabled: Reserved,
         CreateSwapChainForHwnd: Reserved,
         CreateSwapChainForCoreWindow: Reserved,

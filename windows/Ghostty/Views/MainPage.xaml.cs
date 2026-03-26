@@ -18,8 +18,30 @@ public partial class MainPage : Page
     {
         if (_initialized) return;
 
-        // Get ISwapChainPanelNative COM pointer
-        var panelNative = Marshal.GetComInterfaceForObject<SwapChainPanel, ISwapChainPanelNative>(TerminalPanel);
+        Console.WriteLine($"[Ghostty] Panel loaded: {TerminalPanel.ActualWidth}x{TerminalPanel.ActualHeight}, scale={TerminalPanel.CompositionScaleX}");
+
+        IntPtr panelNative;
+        try
+        {
+            panelNative = Marshal.GetComInterfaceForObject<SwapChainPanel, ISwapChainPanelNative>(TerminalPanel);
+            Console.WriteLine($"[Ghostty] Got ISwapChainPanelNative: 0x{panelNative:X}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Ghostty] COM QI failed: {ex.GetType().Name}: {ex.Message}");
+            // Fallback: try via IUnknown + QueryInterface
+            Console.WriteLine("[Ghostty] Trying IUnknown fallback...");
+            var unknown = Marshal.GetIUnknownForObject(TerminalPanel);
+            var iid = typeof(ISwapChainPanelNative).GUID;
+            var hr = Marshal.QueryInterface(unknown, ref iid, out panelNative);
+            Marshal.Release(unknown);
+            if (hr != 0)
+            {
+                Console.WriteLine($"[Ghostty] QI fallback also failed: HRESULT=0x{hr:X8}");
+                return;
+            }
+            Console.WriteLine($"[Ghostty] QI fallback worked: 0x{panelNative:X}");
+        }
 
         try
         {
@@ -27,14 +49,16 @@ public partial class MainPage : Page
             var height = (uint)Math.Max(1, TerminalPanel.ActualHeight);
             var scale = (float)TerminalPanel.CompositionScaleX;
 
+            Console.WriteLine($"[Ghostty] Calling ghostty_spike_init({panelNative:X}, {width}, {height}, {scale})");
             var ok = LibGhostty.SpikeInit(panelNative, width, height, scale);
+            Console.WriteLine($"[Ghostty] ghostty_spike_init returned: {ok}");
             if (!ok)
             {
-                System.Diagnostics.Debug.WriteLine("ghostty_spike_init failed");
                 return;
             }
 
             _initialized = true;
+            Console.WriteLine("[Ghostty] Initialization complete!");
         }
         finally
         {
