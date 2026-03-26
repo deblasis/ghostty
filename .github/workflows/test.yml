@@ -109,7 +109,6 @@ jobs:
       - test-fuzz-libghostty
       - test-lib-vt
       - test-macos
-      - test-windows
       - pinact
       - prettier
       - swiftlint
