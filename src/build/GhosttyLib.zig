@@ -132,6 +132,14 @@ pub fn initShared(
         lib.linkSystemLibrary("libucrt");
     }
 
+    // Link DirectX 11 libraries when building the DLL with the directx11 renderer.
+    if (deps.config.target.result.os.tag == .windows and
+        deps.config.renderer == .directx11)
+    {
+        lib.linkSystemLibrary("d3d11");
+        lib.linkSystemLibrary("dxgi");
+    }
+
     // Get our debug symbols
     const dsymutil: ?std.Build.LazyPath = dsymutil: {
         if (!deps.config.target.result.os.tag.isDarwin()) {
