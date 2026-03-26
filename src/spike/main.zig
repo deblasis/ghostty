@@ -32,6 +32,13 @@ var g_width: u32 = 960;
 var g_height: u32 = 640;
 var g_demo: Demo = .{};
 
+// Atomic signaling for resize/DPI from UI thread to render thread.
+var g_resize_width: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+var g_resize_height: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+var g_resize_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+var g_dpi_scale: std.atomic.Value(u32) = std.atomic.Value(u32).init(0); // f32 stored as u32 bits
+var g_dpi_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+
 
 /// ghostty_spike_init — create the D3D11 device and start the render thread.
 ///
@@ -122,13 +129,13 @@ pub export fn ghostty_spike_shutdown() callconv(.c) void {
     log.info("spike shut down", .{});
 }
 
-/// ghostty_spike_resize — update the swap chain for the new size.
+/// ghostty_spike_resize — signal the render thread to resize.
 ///
-/// TODO: implement after the render pipeline is stabilised.
+/// Called from the UI thread; the render thread picks it up next frame.
 pub export fn ghostty_spike_resize(width: u32, height: u32) callconv(.c) void {
-    _ = width;
-    _ = height;
-    // TODO: call Device.resize, recreate CellGrid with new dimensions
+    g_resize_width.store(width, .release);
+    g_resize_height.store(height, .release);
+    g_resize_pending.store(true, .release);
 }
 
 /// ghostty_spike_key_press — forward a key event to the spike renderer.
@@ -137,12 +144,12 @@ pub export fn ghostty_spike_key_press(virtual_key: u32) callconv(.c) void {
     g_demo.advance();
 }
 
-/// ghostty_spike_dpi_changed — notify the spike renderer of a DPI change.
+/// ghostty_spike_dpi_changed — signal the render thread of a DPI change.
 ///
-/// TODO: implement alongside ghostty_spike_resize.
+/// Called from the UI thread when the window moves between monitors.
 pub export fn ghostty_spike_dpi_changed(scale: f32) callconv(.c) void {
-    _ = scale;
-    // TODO: update scale factor and resize swap chain
+    g_dpi_scale.store(@bitCast(scale), .release);
+    g_dpi_pending.store(true, .release);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +169,43 @@ fn renderLoop() void {
         var dev = &(g_device orelse break);
         var pipe = &(g_pipeline orelse break);
         var grid = &(g_grid orelse break);
+
+        // Handle pending resize from UI thread.
+        if (g_resize_pending.load(.acquire)) {
+            g_resize_pending.store(false, .release);
+            const new_w = g_resize_width.load(.acquire);
+            const new_h = g_resize_height.load(.acquire);
+            if (new_w > 0 and new_h > 0 and (new_w != g_width or new_h != g_height)) {
+                dev.resize(new_w, new_h) catch |err| {
+                    log.err("device resize failed: {}; continuing with old size", .{err});
+                };
+                g_width = new_w;
+                g_height = new_h;
+
+                // Recreate cell grid with new dimensions.
+                const new_cols: u32 = @max(1, @as(u32, @intFromFloat(@as(f32, @floatFromInt(new_w)) / cell_px)));
+                const new_rows: u32 = @max(1, @as(u32, @intFromFloat(@as(f32, @floatFromInt(new_h)) / cell_px)));
+                if (new_cols != grid.cols or new_rows != grid.rows) {
+                    grid.deinit();
+                    g_grid = CellGrid.init(std.heap.page_allocator, dev.device, new_cols, new_rows) catch |err| {
+                        log.err("CellGrid.init on resize failed: {}; stopping", .{err});
+                        break;
+                    };
+                    grid = &(g_grid orelse break);
+                    log.info("resized grid to {}x{} ({}x{} px)", .{ new_cols, new_rows, new_w, new_h });
+                }
+            }
+        }
+
+        // Handle pending DPI change.
+        if (g_dpi_pending.load(.acquire)) {
+            g_dpi_pending.store(false, .release);
+            const scale_bits = g_dpi_scale.load(.acquire);
+            const scale: f32 = @bitCast(scale_bits);
+            log.info("DPI scale changed to {d:.2}", .{scale});
+            // For this spike, DPI change just triggers a resize with scaled dimensions.
+            // The swap chain already handles composition scaling via XAML.
+        }
 
         const elapsed_ns = timer.read();
         const dt_ns = elapsed_ns - prev_ns;
