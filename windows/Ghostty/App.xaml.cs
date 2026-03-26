@@ -1,4 +1,6 @@
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Navigation;
+using Windows.Graphics;
 namespace Ghostty;
 
 public partial class App : Application
@@ -25,6 +27,9 @@ public partial class App : Application
         }
 
         rootFrame.Navigate(typeof(Views.MainPage), e.Arguments);
+
+        // Reasonable default: 960x640 (roughly 80x24 terminal at typical cell sizes)
+        MainWindow.AppWindow.Resize(new SizeInt32(960, 640));
 
         MainWindow.Activate();
     }
