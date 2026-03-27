@@ -27,6 +27,20 @@
         <RuntimeIdentifiers Condition="$([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)')) &lt; 8">win10-x86;win10-x64;win10-arm64</RuntimeIdentifiers>
     </PropertyGroup>
 
+    <!-- Copy native Zig DLL to all output directories after build. -->
+    <Target Name="CopyNativeDll" AfterTargets="Build"
+            Condition="Exists('$(MSBuildThisFileDirectory)..\..\zig-out\lib\ghostty.dll')">
+        <ItemGroup>
+            <_NativeDllOutputDirs Include="$(OutputPath)" />
+            <_NativeDllOutputDirs Include="$(OutputPath)\win-x64" Condition="Exists('$(OutputPath)\win-x64')" />
+            <_NativeDllOutputDirs Include="$(OutputPath)\win-x86" Condition="Exists('$(OutputPath)\win-x86')" />
+            <_NativeDllOutputDirs Include="$(OutputPath)\win-arm64" Condition="Exists('$(OutputPath)\win-arm64')" />
+        </ItemGroup>
+        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\zig-out\lib\ghostty.dll"
+              DestinationFolder="%(_NativeDllOutputDirs.Identity)"
+              SkipUnchangedFiles="true" />
+    </Target>
+
     <ItemGroup>
         <Content Include="Assets\HelloWorld.png" />
         <Content Include="Assets\SplashScreen.scale-200.png" />

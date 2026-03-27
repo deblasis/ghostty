@@ -13,6 +13,7 @@ const Pipeline = @import("../renderer/directx11/pipeline.zig").Pipeline;
 const Constants = @import("../renderer/directx11/pipeline.zig").Constants;
 const CellGrid = @import("../renderer/directx11/cell_grid.zig").CellGrid;
 const Demo = @import("demo.zig").Demo;
+const FpsOverlay = @import("fps_overlay.zig");
 
 // Render-thread target: ~60 fps.
 const frame_ns: u64 = 16_666_667;
@@ -32,6 +33,7 @@ var g_thread: ?std.Thread = null;
 var g_width: u32 = 960;
 var g_height: u32 = 640;
 var g_demo: Demo = .{};
+var g_fps: FpsOverlay = .{};
 
 // Atomic signaling for resize/DPI from UI thread to render thread.
 var g_resize_width: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
@@ -218,6 +220,10 @@ fn renderLoop() void {
         g_demo.update(dt);
         g_demo.render(grid);
 
+        // FPS overlay on top of the scene.
+        g_fps.recordFrame(dt);
+        g_fps.render(grid);
+
         // Clear the render target to black.
         dev.clearRenderTarget(.{ 0, 0, 0, 1 });
 
@@ -239,8 +245,9 @@ fn renderLoop() void {
             break;
         };
 
-        std.Thread.sleep(frame_ns);
+        // Vsync in Present(1,0) paces us at ~60fps; no manual sleep needed.
     }
 
     log.debug("render thread stopped", .{});
 }
+
