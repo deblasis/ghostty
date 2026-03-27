@@ -71,17 +71,17 @@ pub const OSC = struct {
 pub fn parse(parser: *Parser, _: ?u8) ?*Command {
     assert(parser.state == .@"66");
 
-    const writer = parser.writer orelse {
+    const cap = if (parser.capture) |*c| c else {
         parser.state = .invalid;
         return null;
     };
 
     // Write a NUL byte to ensure that `text` is NUL-terminated
-    writer.writeByte(0) catch {
+    cap.writer.writeByte(0) catch {
         parser.state = .invalid;
         return null;
     };
-    const data = writer.buffered();
+    const data = cap.trailing();
 
     const payload_start = std.mem.indexOfScalar(u8, data, ';') orelse {
         log.warn("missing semicolon before payload", .{});

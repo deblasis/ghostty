@@ -88,6 +88,65 @@ extern "C" {
  * ### Registering effects and processing VT data
  * @snippet c-vt-effects/src/main.c effects-register
  *
+ * ## Color Theme
+ *
+ * The terminal maintains a set of colors used for rendering: a foreground
+ * color, a background color, a cursor color, and a 256-color palette. Each
+ * of these has two layers: a **default** value set by the embedder, and an
+ * **override** value that programs running in the terminal can set via OSC
+ * escape sequences (e.g. OSC 10/11/12 for foreground/background/cursor,
+ * OSC 4 for individual palette entries).
+ *
+ * ### Default Colors
+ *
+ * Use ghostty_terminal_set() with the color options to configure the
+ * default colors. These represent the theme or configuration chosen by
+ * the embedder. Passing `NULL` clears the default, leaving the color
+ * unset.
+ *
+ * | Option                                  | Input Type              | Description                          |
+ * |-----------------------------------------|-------------------------|--------------------------------------|
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND` | `GhosttyColorRgb*`      | Default foreground color             |
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND` | `GhosttyColorRgb*`      | Default background color             |
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_CURSOR`     | `GhosttyColorRgb*`      | Default cursor color                 |
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_PALETTE`    | `GhosttyColorRgb[256]*` | Default 256-color palette            |
+ *
+ * For the palette, passing `NULL` resets to the built-in default palette.
+ * The palette set operation preserves any per-index OSC overrides that
+ * programs have applied; only unmodified indices are updated.
+ *
+ * ### Reading colors
+ *
+ * Use ghostty_terminal_get() to read colors. There are two variants for
+ * each color: the **effective** value (which returns the OSC override if
+ * one is active, otherwise the default) and the **default** value (which
+ * ignores any OSC overrides).
+ *
+ * | Data                                              | Output Type             | Description                                    |
+ * |---------------------------------------------------|-------------------------|------------------------------------------------|
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_FOREGROUND`          | `GhosttyColorRgb*`      | Effective foreground (override or default)      |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_BACKGROUND`          | `GhosttyColorRgb*`      | Effective background (override or default)      |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_CURSOR`              | `GhosttyColorRgb*`      | Effective cursor (override or default)          |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_PALETTE`             | `GhosttyColorRgb[256]*` | Current palette (with any OSC overrides)        |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_FOREGROUND_DEFAULT`  | `GhosttyColorRgb*`      | Default foreground only (ignores OSC override)  |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_BACKGROUND_DEFAULT`  | `GhosttyColorRgb*`      | Default background only (ignores OSC override)  |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_CURSOR_DEFAULT`      | `GhosttyColorRgb*`      | Default cursor only (ignores OSC override)      |
+ * | `GHOSTTY_TERMINAL_DATA_COLOR_PALETTE_DEFAULT`     | `GhosttyColorRgb[256]*` | Default palette only (ignores OSC overrides)    |
+ *
+ * For foreground, background, and cursor colors, the getters return
+ * `GHOSTTY_NO_VALUE` if no color is configured (neither a default nor an
+ * OSC override). The palette getters always succeed since the palette
+ * always has a value (the built-in default if nothing else is set).
+ *
+ * ### Setting a color theme
+ * @snippet c-vt-colors/src/main.c colors-set-defaults
+ *
+ * ### Reading effective and default colors
+ * @snippet c-vt-colors/src/main.c colors-read
+ *
+ * ### Full example with OSC overrides
+ * @snippet c-vt-colors/src/main.c colors-main
+ *
  * @{
  */
 
@@ -434,6 +493,43 @@ typedef enum {
    * Input type: GhosttyString*
    */
   GHOSTTY_TERMINAL_OPT_PWD = 10,
+
+  /**
+   * Set the default foreground color.
+   *
+   * A NULL value pointer clears the default (unset).
+   *
+   * Input type: GhosttyColorRgb*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND = 11,
+
+  /**
+   * Set the default background color.
+   *
+   * A NULL value pointer clears the default (unset).
+   *
+   * Input type: GhosttyColorRgb*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND = 12,
+
+  /**
+   * Set the default cursor color.
+   *
+   * A NULL value pointer clears the default (unset).
+   *
+   * Input type: GhosttyColorRgb*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_CURSOR = 13,
+
+  /**
+   * Set the default 256-color palette.
+   *
+   * The value must point to an array of exactly 256 GhosttyColorRgb values.
+   * A NULL value pointer resets to the built-in default palette.
+   *
+   * Input type: GhosttyColorRgb[256]*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_PALETTE = 14,
 } GhosttyTerminalOption;
 
 /**
@@ -588,6 +684,74 @@ typedef enum {
    * Output type: uint32_t *
    */
   GHOSTTY_TERMINAL_DATA_HEIGHT_PX = 17,
+
+  /**
+   * The effective foreground color (override or default).
+   *
+   * Returns GHOSTTY_NO_VALUE if no foreground color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_FOREGROUND = 18,
+
+  /**
+   * The effective background color (override or default).
+   *
+   * Returns GHOSTTY_NO_VALUE if no background color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_BACKGROUND = 19,
+
+  /**
+   * The effective cursor color (override or default).
+   *
+   * Returns GHOSTTY_NO_VALUE if no cursor color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_CURSOR = 20,
+
+  /**
+   * The current 256-color palette.
+   *
+   * Output type: GhosttyColorRgb[256] *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_PALETTE = 21,
+
+  /**
+   * The default foreground color (ignoring any OSC override).
+   *
+   * Returns GHOSTTY_NO_VALUE if no default foreground color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_FOREGROUND_DEFAULT = 22,
+
+  /**
+   * The default background color (ignoring any OSC override).
+   *
+   * Returns GHOSTTY_NO_VALUE if no default background color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_BACKGROUND_DEFAULT = 23,
+
+  /**
+   * The default cursor color (ignoring any OSC override).
+   *
+   * Returns GHOSTTY_NO_VALUE if no default cursor color is set.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_CURSOR_DEFAULT = 24,
+
+  /**
+   * The default 256-color palette (ignoring any OSC overrides).
+   *
+   * Output type: GhosttyColorRgb[256] *
+   */
+  GHOSTTY_TERMINAL_DATA_COLOR_PALETTE_DEFAULT = 25,
 } GhosttyTerminalData;
 
 /**

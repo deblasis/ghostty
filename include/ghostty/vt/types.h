@@ -22,6 +22,8 @@ typedef enum {
     GHOSTTY_INVALID_VALUE = -2,
     /** Operation failed because the provided buffer was too small */
     GHOSTTY_OUT_OF_SPACE = -3,
+    /** The requested value has no value */
+    GHOSTTY_NO_VALUE = -4,
 } GhosttyResult;
 
 /**

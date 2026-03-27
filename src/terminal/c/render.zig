@@ -108,7 +108,7 @@ pub const Data = enum(c_int) {
             .row_iterator => RowIterator,
             .color_background, .color_foreground, .color_cursor => colorpkg.RGB.C,
             .color_cursor_has_value => bool,
-            .color_palette => [256]colorpkg.RGB.C,
+            .color_palette => colorpkg.PaletteC,
             .cursor_visual_style => CursorVisualStyle,
             .cursor_visible, .cursor_blinking, .cursor_password_input => bool,
             .cursor_viewport_has_value, .cursor_viewport_wide_tail => bool,
@@ -136,7 +136,7 @@ pub const Colors = extern struct {
     foreground: colorpkg.RGB.C,
     cursor: colorpkg.RGB.C,
     cursor_has_value: bool,
-    palette: [256]colorpkg.RGB.C,
+    palette: colorpkg.PaletteC,
 };
 
 pub fn new(
@@ -231,11 +231,7 @@ fn getTyped(
             out.* = cursor.cval();
         },
         .color_cursor_has_value => out.* = state.state.colors.cursor != null,
-        .color_palette => {
-            for (&out.*, state.state.colors.palette) |*dst, src| {
-                dst.* = src.cval();
-            }
-        },
+        .color_palette => out.* = colorpkg.paletteCval(&state.state.colors.palette),
         .cursor_visual_style => out.* = CursorVisualStyle.fromCursorStyle(state.state.cursor.visual_style),
         .cursor_visible => out.* = state.state.cursor.visible,
         .cursor_blinking => out.* = state.state.cursor.blinking,

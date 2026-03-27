@@ -17,6 +17,7 @@ const cell_c = @import("cell.zig");
 const row_c = @import("row.zig");
 const grid_ref_c = @import("grid_ref.zig");
 const style_c = @import("style.zig");
+const color = @import("../color.zig");
 const Result = @import("result.zig").Result;
 
 const Handler = @import("../stream_terminal.zig").Handler;
@@ -299,6 +300,10 @@ pub const Option = enum(c_int) {
     device_attributes = 8,
     title = 9,
     pwd = 10,
+    color_foreground = 11,
+    color_background = 12,
+    color_cursor = 13,
+    color_palette = 14,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -313,6 +318,8 @@ pub const Option = enum(c_int) {
             .title_changed => ?Effects.TitleChangedFn,
             .size_cb => ?Effects.SizeFn,
             .title, .pwd => ?*const lib.String,
+            .color_foreground, .color_background, .color_cursor => ?*const color.RGB.C,
+            .color_palette => ?*const color.PaletteC,
         };
     }
 };
@@ -362,6 +369,24 @@ fn setTyped(
         .pwd => {
             const str = if (value) |v| v.ptr[0..v.len] else "";
             wrapper.terminal.setPwd(str) catch return .out_of_memory;
+        },
+        .color_foreground => {
+            wrapper.terminal.colors.foreground.default = if (value) |v| .fromC(v.*) else null;
+            wrapper.terminal.flags.dirty.palette = true;
+        },
+        .color_background => {
+            wrapper.terminal.colors.background.default = if (value) |v| .fromC(v.*) else null;
+            wrapper.terminal.flags.dirty.palette = true;
+        },
+        .color_cursor => {
+            wrapper.terminal.colors.cursor.default = if (value) |v| .fromC(v.*) else null;
+            wrapper.terminal.flags.dirty.palette = true;
+        },
+        .color_palette => {
+            wrapper.terminal.colors.palette.changeDefault(
+                if (value) |v| color.paletteZval(v) else color.default,
+            );
+            wrapper.terminal.flags.dirty.palette = true;
         },
     }
     return .success;
@@ -477,6 +502,14 @@ pub const TerminalData = enum(c_int) {
     scrollback_rows = 15,
     width_px = 16,
     height_px = 17,
+    color_foreground = 18,
+    color_background = 19,
+    color_cursor = 20,
+    color_palette = 21,
+    color_foreground_default = 22,
+    color_background_default = 23,
+    color_cursor_default = 24,
+    color_palette_default = 25,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -491,6 +524,14 @@ pub const TerminalData = enum(c_int) {
             .title, .pwd => lib.String,
             .total_rows, .scrollback_rows => usize,
             .width_px, .height_px => u32,
+            .color_foreground,
+            .color_background,
+            .color_cursor,
+            .color_foreground_default,
+            .color_background_default,
+            .color_cursor_default,
+            => color.RGB.C,
+            .color_palette, .color_palette_default => color.PaletteC,
         };
     }
 };
@@ -551,6 +592,14 @@ fn getTyped(
         .scrollback_rows => out.* = t.screens.active.pages.total_rows - t.rows,
         .width_px => out.* = t.width_px,
         .height_px => out.* = t.height_px,
+        .color_foreground => out.* = (t.colors.foreground.get() orelse return .no_value).cval(),
+        .color_background => out.* = (t.colors.background.get() orelse return .no_value).cval(),
+        .color_cursor => out.* = (t.colors.cursor.get() orelse return .no_value).cval(),
+        .color_foreground_default => out.* = (t.colors.foreground.default orelse return .no_value).cval(),
+        .color_background_default => out.* = (t.colors.background.default orelse return .no_value).cval(),
+        .color_cursor_default => out.* = (t.colors.cursor.default orelse return .no_value).cval(),
+        .color_palette => out.* = color.paletteCval(&t.colors.palette.current),
+        .color_palette_default => out.* = color.paletteCval(&t.colors.palette.original),
     }
 
     return .success;
@@ -2074,4 +2123,233 @@ test "grid_ref out of bounds" {
         .tag = .active,
         .value = .{ .active = .{ .x = 100, .y = 0 } },
     }, &out_ref));
+}
+
+test "set and get color_foreground" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // Initially unset
+    var rgb: color.RGB.C = undefined;
+    try testing.expectEqual(Result.no_value, get(t, .color_foreground, @ptrCast(&rgb)));
+
+    // Set a value
+    const fg: color.RGB.C = .{ .r = 0xAA, .g = 0xBB, .b = 0xCC };
+    try testing.expectEqual(Result.success, set(t, .color_foreground, @ptrCast(&fg)));
+    try testing.expectEqual(Result.success, get(t, .color_foreground, @ptrCast(&rgb)));
+    try testing.expectEqual(fg, rgb);
+
+    // Clear with null
+    try testing.expectEqual(Result.success, set(t, .color_foreground, null));
+    try testing.expectEqual(Result.no_value, get(t, .color_foreground, @ptrCast(&rgb)));
+}
+
+test "set and get color_background" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var rgb: color.RGB.C = undefined;
+    try testing.expectEqual(Result.no_value, get(t, .color_background, @ptrCast(&rgb)));
+
+    const bg: color.RGB.C = .{ .r = 0x11, .g = 0x22, .b = 0x33 };
+    try testing.expectEqual(Result.success, set(t, .color_background, @ptrCast(&bg)));
+    try testing.expectEqual(Result.success, get(t, .color_background, @ptrCast(&rgb)));
+    try testing.expectEqual(bg, rgb);
+
+    try testing.expectEqual(Result.success, set(t, .color_background, null));
+    try testing.expectEqual(Result.no_value, get(t, .color_background, @ptrCast(&rgb)));
+}
+
+test "set and get color_cursor" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var rgb: color.RGB.C = undefined;
+    try testing.expectEqual(Result.no_value, get(t, .color_cursor, @ptrCast(&rgb)));
+
+    const cur: color.RGB.C = .{ .r = 0xFF, .g = 0x00, .b = 0x88 };
+    try testing.expectEqual(Result.success, set(t, .color_cursor, @ptrCast(&cur)));
+    try testing.expectEqual(Result.success, get(t, .color_cursor, @ptrCast(&rgb)));
+    try testing.expectEqual(cur, rgb);
+
+    try testing.expectEqual(Result.success, set(t, .color_cursor, null));
+    try testing.expectEqual(Result.no_value, get(t, .color_cursor, @ptrCast(&rgb)));
+}
+
+test "set and get color_palette" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // Get default palette
+    var palette: color.PaletteC = undefined;
+    try testing.expectEqual(Result.success, get(t, .color_palette, @ptrCast(&palette)));
+    try testing.expectEqual(color.default[0].cval(), palette[0]);
+
+    // Set custom palette
+    var custom: color.PaletteC = color.paletteCval(&color.default);
+    custom[0] = .{ .r = 0x12, .g = 0x34, .b = 0x56 };
+    try testing.expectEqual(Result.success, set(t, .color_palette, @ptrCast(&custom)));
+    try testing.expectEqual(Result.success, get(t, .color_palette, @ptrCast(&palette)));
+    try testing.expectEqual(custom[0], palette[0]);
+
+    // Reset with null restores default
+    try testing.expectEqual(Result.success, set(t, .color_palette, null));
+    try testing.expectEqual(Result.success, get(t, .color_palette, @ptrCast(&palette)));
+    try testing.expectEqual(color.default[0].cval(), palette[0]);
+}
+
+test "get color default vs effective with override" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const zt = t.?.terminal;
+    var rgb: color.RGB.C = undefined;
+
+    // Set defaults
+    const fg: color.RGB.C = .{ .r = 0xAA, .g = 0xBB, .b = 0xCC };
+    const bg: color.RGB.C = .{ .r = 0x11, .g = 0x22, .b = 0x33 };
+    const cur: color.RGB.C = .{ .r = 0xFF, .g = 0x00, .b = 0x88 };
+    try testing.expectEqual(Result.success, set(t, .color_foreground, @ptrCast(&fg)));
+    try testing.expectEqual(Result.success, set(t, .color_background, @ptrCast(&bg)));
+    try testing.expectEqual(Result.success, set(t, .color_cursor, @ptrCast(&cur)));
+
+    // Simulate OSC overrides
+    const override: color.RGB = .{ .r = 0x00, .g = 0x00, .b = 0x00 };
+    zt.colors.foreground.override = override;
+    zt.colors.background.override = override;
+    zt.colors.cursor.override = override;
+
+    // Effective returns override
+    try testing.expectEqual(Result.success, get(t, .color_foreground, @ptrCast(&rgb)));
+    try testing.expectEqual(override.cval(), rgb);
+    try testing.expectEqual(Result.success, get(t, .color_background, @ptrCast(&rgb)));
+    try testing.expectEqual(override.cval(), rgb);
+    try testing.expectEqual(Result.success, get(t, .color_cursor, @ptrCast(&rgb)));
+    try testing.expectEqual(override.cval(), rgb);
+
+    // Default returns original
+    try testing.expectEqual(Result.success, get(t, .color_foreground_default, @ptrCast(&rgb)));
+    try testing.expectEqual(fg, rgb);
+    try testing.expectEqual(Result.success, get(t, .color_background_default, @ptrCast(&rgb)));
+    try testing.expectEqual(bg, rgb);
+    try testing.expectEqual(Result.success, get(t, .color_cursor_default, @ptrCast(&rgb)));
+    try testing.expectEqual(cur, rgb);
+}
+
+test "get color default returns no_value when unset" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var rgb: color.RGB.C = undefined;
+    try testing.expectEqual(Result.no_value, get(t, .color_foreground_default, @ptrCast(&rgb)));
+    try testing.expectEqual(Result.no_value, get(t, .color_background_default, @ptrCast(&rgb)));
+    try testing.expectEqual(Result.no_value, get(t, .color_cursor_default, @ptrCast(&rgb)));
+}
+
+test "get color_palette_default vs current" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const zt = t.?.terminal;
+
+    // Set a custom default palette
+    var custom: color.PaletteC = color.paletteCval(&color.default);
+    custom[0] = .{ .r = 0x12, .g = 0x34, .b = 0x56 };
+    try testing.expectEqual(Result.success, set(t, .color_palette, @ptrCast(&custom)));
+
+    // Simulate OSC override on index 0
+    zt.colors.palette.set(0, .{ .r = 0xFF, .g = 0xFF, .b = 0xFF });
+
+    // Current palette returns the override
+    var palette: color.PaletteC = undefined;
+    try testing.expectEqual(Result.success, get(t, .color_palette, @ptrCast(&palette)));
+    try testing.expectEqual(color.RGB.C{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, palette[0]);
+
+    // Default palette returns the original
+    try testing.expectEqual(Result.success, get(t, .color_palette_default, @ptrCast(&palette)));
+    try testing.expectEqual(custom[0], palette[0]);
+}
+
+test "set color sets dirty flag" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const zt = t.?.terminal;
+    zt.flags.dirty.palette = false;
+
+    const fg: color.RGB.C = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF };
+    try testing.expectEqual(Result.success, set(t, .color_foreground, @ptrCast(&fg)));
+    try testing.expect(zt.flags.dirty.palette);
 }
