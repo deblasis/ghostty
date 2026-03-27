@@ -29,7 +29,7 @@
 > Work is done in **stacked feature branches** (`018-*`, `019-*`, ...) to keep
 > scope small and produce tightly scoped PRs for upstream review.
 >
-> **Status:** Foundation done, working on integration
+> **Status:** Foundation done, working on renderer and app shell
 >
 > The goal is a native Windows experience that feels like Ghostty was built
 > for Windows first, consistent with the philosophy applied to macOS and Linux.
@@ -49,34 +49,45 @@
 > - [x] Backslash path handling in config parsing (PR #11782 merged)
 > - [x] CRLF line ending fix for comptime parsing + `.gitattributes` normalization
 >
-> **App scaffold** (on fork, iterating)
+> **DLL and runtime** (on fork, PRs open upstream)
 >
-> - [x] `ghostty.dll` building on Windows (CRT linking fix for MSVC)
+> - [x] `ghostty.dll` building on Windows (PR #11856 -- CRT init fix for MSVC DLL mode)
+> - [x] DLL init regression test and build instructions (PR #11856)
+> - [x] Full Windows CI test suite (PR #11839)
+>
+> **SwapChainPanel spike** (on fork, branch [`024-windows/swapchain-spike`](https://github.com/deblasis/ghostty/tree/024-windows/swapchain-spike))
+>
+> - [x] DX11 swap chain created from Zig, bound to WinUI 3 SwapChainPanel
+>       via ISwapChainPanelNative
+> - [x] Instanced cell grid rendering, bitmap font, animated demo scenes,
+>       resize, DPI
+> - [x] Demo video: https://www.youtube.com/watch?v=-Cn9mlxX_GA
+>
+> **App scaffold** (on fork, closed upstream pending approach consensus)
+>
 > - [x] C# WinUI 3 project scaffold (`windows/Ghostty/`)
 > - [x] P/Invoke bindings for libghostty C API
 > - [x] `--version` flag working from command line
 > - [x] Interop test suite (7 tests against the real DLL)
+> - PRs #11841 and #11842 were closed by Mitchell -- the spike needed to
+>   happen first to answer open questions about the data model. These PRs
+>   still contain useful groundwork and lessons that inform the path forward.
 >
 > ### What is next
 >
-> - [ ] Find an agreement on C# or not
+> - [ ] C# or not -- seems like there is consensus but waiting on Mitchell's call
+> - [ ] HWND vs SwapChainPanel -- the spike proved SwapChainPanel works but
+>       this is still a POC. Waiting to see how it is received by the
+>       community and Mitchell.
+> - [ ] Come back with the platform struct once the data model is agreed on
 >
-> **Integration** (figuring out how the pieces connect before adding more API surface)
+> **DX11 renderer infrastructure** (PR #11886, open upstream)
 >
-> - [ ] Fix Zig DLL global state bug. `ghostty_init` crashes because global
->       mutable state ends up at address 0 in the DLL. Nobody has shipped the
->       full libghostty as a shared library on Windows before, so this is new
->       territory. `ghostty_info` (comptime constants) works fine.
-> - [ ] SwapChainPanel spike. Create a DX11 swap chain in C#, get something
->       rendering through libghostty. This determines what data needs to cross
->       the C#/Zig boundary (HWND? swap chain? both?) and answers the open
->       question from upstream review.
-> - [ ] Come back with the platform struct once the data model is concrete,
->       not placeholder.
+> - [ ] Extracted from the spike into upstream-ready code. Stacked on
+>       #11839 + #11856. Pending review.
 >
-> **After integration is proven**
+> **After approach is agreed on**
 >
-> - [ ] DirectX 11 renderer in libghostty
 > - [ ] DirectWrite font backend
 > - [ ] ConPTY shell spawning
 > - [ ] Keyboard, mouse, clipboard
