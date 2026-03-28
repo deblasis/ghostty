@@ -14,7 +14,7 @@ pub fn init(opts: Options) Error!@This() {
     @panic("TODO: DX11 Sampler.init");
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: @This()) void {
     _ = self;
     @panic("TODO: DX11 Sampler.deinit");
 }

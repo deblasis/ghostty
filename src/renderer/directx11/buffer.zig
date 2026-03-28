@@ -24,7 +24,7 @@ pub fn Buffer(comptime T: type) type {
             @panic("TODO: DX11 Buffer.initFill");
         }
 
-        pub fn deinit(self: *Self) void {
+        pub fn deinit(self: *const Self) void {
             _ = self;
             @panic("TODO: DX11 Buffer.deinit");
         }

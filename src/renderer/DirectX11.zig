@@ -7,15 +7,16 @@
 //! satisfied at compile time so that GenericRenderer(DirectX11) compiles.
 //! Infrastructure (COM bindings, device lifecycle, cell grid pipeline) is
 //! already in place from prior work in the directx11/ subdirectory.
+pub const DirectX11 = @This();
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
 const rendererpkg = @import("../renderer.zig");
+const Renderer = rendererpkg.GenericRenderer(DirectX11);
 const shadertoy = @import("shadertoy.zig");
-
-pub const DirectX11 = @This();
 
 // --- GraphicsAPI contract: types ---
 
@@ -94,8 +95,6 @@ pub fn drawFrameEnd(self: *DirectX11) void {
     _ = self;
     // No-op.
 }
-
-const Renderer = rendererpkg.GenericRenderer(DirectX11);
 
 pub fn initShaders(
     self: *const DirectX11,
