@@ -145,3 +145,10 @@ test "Buffer type instantiation compiles" {
     _ = buffer_mod.Buffer(extern struct { x: f32, y: f32 });
     _ = buffer_mod.Buffer(u8);
 }
+
+test "Texture Options has expected fields" {
+    const Texture = @import("Texture.zig");
+    try std.testing.expect(@hasField(Texture.Options, "device"));
+    try std.testing.expect(@hasField(Texture.Options, "context"));
+    try std.testing.expect(@hasField(Texture.Options, "format"));
+}
