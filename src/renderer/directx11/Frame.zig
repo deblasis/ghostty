@@ -40,7 +40,12 @@ pub inline fn renderPass(
             }
         }
     }
-    return .{ .context = null, .device = null };
+    const dev = if (self.renderer.api.device) |*d| d else null;
+    return RenderPass.begin(
+        if (dev) |d| d.context else null,
+        if (dev) |d| d.device else null,
+        .{ .attachments = attachments },
+    );
 }
 
 pub fn complete(self: *@This(), sync: bool) void {
