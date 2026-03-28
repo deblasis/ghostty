@@ -118,6 +118,84 @@ pub const D3D11_MAPPED_SUBRESOURCE = extern struct {
     DepthPitch: u32,
 };
 
+pub const D3D11_TEXTURE2D_DESC = extern struct {
+    Width: u32,
+    Height: u32,
+    MipLevels: u32,
+    ArraySize: u32,
+    Format: DXGI_FORMAT,
+    SampleDesc: dxgi.DXGI_SAMPLE_DESC,
+    Usage: D3D11_USAGE,
+    BindFlags: D3D11_BIND_FLAG,
+    CPUAccessFlags: D3D11_CPU_ACCESS_FLAG,
+    MiscFlags: u32,
+};
+
+pub const D3D11_SRV_DIMENSION = enum(u32) {
+    UNKNOWN = 0,
+    BUFFER = 1,
+    TEXTURE1D = 2,
+    TEXTURE1DARRAY = 3,
+    TEXTURE2D = 4,
+    TEXTURE2DARRAY = 5,
+    TEXTURE2DMS = 6,
+    TEXTURE2DMSARRAY = 7,
+    TEXTURE3D = 8,
+    TEXTURECUBE = 9,
+    TEXTURECUBEARRAY = 10,
+    BUFFEREX = 11,
+};
+
+/// Describes a shader resource view. We only support the Texture2D dimension.
+/// The full C type has a union of all SRV dimensions at offset 8 -- we model
+/// only Texture2D because that's all the font atlas needs. If other SRV types
+/// are needed later, this struct would need the full union.
+pub const D3D11_SHADER_RESOURCE_VIEW_DESC = extern struct {
+    Format: DXGI_FORMAT,
+    ViewDimension: D3D11_SRV_DIMENSION,
+    // Texture2D union member: { MostDetailedMip: u32, MipLevels: u32 }
+    // followed by padding to fill the 16-byte union.
+    MostDetailedMip: u32,
+    MipLevels: u32,
+    _pad: [2]u32 = .{ 0, 0 },
+};
+
+pub const D3D11_FILTER = enum(u32) {
+    MIN_MAG_MIP_POINT = 0,
+    MIN_MAG_MIP_LINEAR = 0x15,
+    _,
+};
+
+pub const D3D11_TEXTURE_ADDRESS_MODE = enum(u32) {
+    WRAP = 1,
+    MIRROR = 2,
+    CLAMP = 3,
+    BORDER = 4,
+    MIRROR_ONCE = 5,
+};
+
+pub const D3D11_SAMPLER_DESC = extern struct {
+    Filter: D3D11_FILTER,
+    AddressU: D3D11_TEXTURE_ADDRESS_MODE,
+    AddressV: D3D11_TEXTURE_ADDRESS_MODE,
+    AddressW: D3D11_TEXTURE_ADDRESS_MODE,
+    MipLODBias: f32,
+    MaxAnisotropy: u32,
+    ComparisonFunc: u32, // D3D11_COMPARISON_FUNC, not enumerated here
+    BorderColor: [4]f32,
+    MinLOD: f32,
+    MaxLOD: f32,
+};
+
+pub const D3D11_BOX = extern struct {
+    left: u32,
+    top: u32,
+    front: u32,
+    right: u32,
+    bottom: u32,
+    back: u32,
+};
+
 // ID3D11DeviceChild
 pub const ID3D11DeviceChild = extern struct {
     vtable: *const VTable,

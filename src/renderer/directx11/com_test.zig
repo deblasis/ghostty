@@ -60,6 +60,26 @@ test "D3D11_MAPPED_SUBRESOURCE size" {
     try std.testing.expectEqual(@sizeOf(d3d11.D3D11_MAPPED_SUBRESOURCE), expected);
 }
 
+test "D3D11_TEXTURE2D_DESC size" {
+    // D3D11_TEXTURE2D_DESC: 4 u32s + DXGI_FORMAT(u32) + DXGI_SAMPLE_DESC(8) + D3D11_USAGE(u32) + 3 u32s = 44 bytes.
+    try std.testing.expectEqual(@sizeOf(d3d11.D3D11_TEXTURE2D_DESC), 44);
+}
+
+test "D3D11_SHADER_RESOURCE_VIEW_DESC size" {
+    // Format(4) + ViewDimension(4) + union(16) = 24 bytes.
+    try std.testing.expectEqual(@sizeOf(d3d11.D3D11_SHADER_RESOURCE_VIEW_DESC), 24);
+}
+
+test "D3D11_SAMPLER_DESC size" {
+    // Filter(4) + 3 AddressMode(4 each) + MipLODBias(4) + MaxAnisotropy(4) + ComparisonFunc(4) + BorderColor(16) + MinLOD(4) + MaxLOD(4) = 52 bytes.
+    try std.testing.expectEqual(@sizeOf(d3d11.D3D11_SAMPLER_DESC), 52);
+}
+
+test "D3D11_BOX size" {
+    // 6 u32s = 24 bytes.
+    try std.testing.expectEqual(@sizeOf(d3d11.D3D11_BOX), 24);
+}
+
 // Verify vtable pointer layout - COM objects are a single pointer to a vtable.
 
 test "IDXGIDevice is a single vtable pointer" {
