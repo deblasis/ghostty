@@ -131,3 +131,17 @@ test "ID3D11Texture2D IID" {
     try std.testing.expectEqual(iid.data2, 0xd208);
     try std.testing.expectEqual(iid.data3, 0x4e89);
 }
+
+test "Buffer Options has device and context fields" {
+    const BufferOpts = @import("buffer.zig").Options;
+    try std.testing.expect(@hasField(BufferOpts, "device"));
+    try std.testing.expect(@hasField(BufferOpts, "context"));
+    try std.testing.expect(@hasField(BufferOpts, "bind_flags"));
+}
+
+test "Buffer type instantiation compiles" {
+    const buffer_mod = @import("buffer.zig");
+    _ = buffer_mod.Buffer(f32);
+    _ = buffer_mod.Buffer(extern struct { x: f32, y: f32 });
+    _ = buffer_mod.Buffer(u8);
+}
