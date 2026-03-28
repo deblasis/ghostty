@@ -152,3 +152,8 @@ test "Texture Options has expected fields" {
     try std.testing.expect(@hasField(Texture.Options, "context"));
     try std.testing.expect(@hasField(Texture.Options, "format"));
 }
+
+test "Sampler Options has device field" {
+    const Sampler = @import("Sampler.zig");
+    try std.testing.expect(@hasField(Sampler.Options, "device"));
+}
