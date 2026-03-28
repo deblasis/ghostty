@@ -9,6 +9,7 @@
 //! already in place from prior work in the directx11/ subdirectory.
 pub const DirectX11 = @This();
 
+const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
@@ -85,13 +86,15 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX11 {
     _ = alloc;
 
     const device = device: {
-        if (comptime @hasField(@TypeOf(opts.rt_surface.*), "platform")) {
+        if (comptime builtin.os.tag != .windows) {
+            break :device null;
+        } else {
             switch (opts.rt_surface.platform) {
                 .windows => |w| {
                     const surface: devicepkg.Surface = if (w.hwnd) |hwnd|
                         .{ .hwnd = hwnd }
                     else
-                        @panic("composition swap chain requires an ISwapChainPanelNative pointer");
+                        @panic("HWND surface requires a non-null hwnd");
 
                     const size = opts.size.screen;
                     break :device Device.init(surface, size.width, size.height) catch |err| {
@@ -101,8 +104,6 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX11 {
                 },
                 else => @panic("unsupported platform for DX11"),
             }
-        } else {
-            break :device null;
         }
     };
 

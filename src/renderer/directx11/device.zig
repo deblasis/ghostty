@@ -101,21 +101,22 @@ pub const Device = struct {
         var swap_chain: ?*dxgi.IDXGISwapChain1 = null;
         var panel_native: ?*dxgi.ISwapChainPanelNative = null;
 
+        var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
+            .Width = width,
+            .Height = height,
+            .Format = .B8G8R8A8_UNORM,
+            .Stereo = 0,
+            .SampleDesc = .{ .Count = 1, .Quality = 0 },
+            .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
+            .BufferCount = 2,
+            .Scaling = .STRETCH,
+            .SwapEffect = .FLIP_DISCARD,
+            .AlphaMode = .UNSPECIFIED,
+            .Flags = 0,
+        };
+
         switch (surface) {
             .hwnd => |hwnd| {
-                const desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-                    .Width = width,
-                    .Height = height,
-                    .Format = .B8G8R8A8_UNORM,
-                    .Stereo = 0,
-                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
-                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    .BufferCount = 2,
-                    .Scaling = .STRETCH,
-                    .SwapEffect = .FLIP_SEQUENTIAL,
-                    .AlphaMode = .UNSPECIFIED,
-                    .Flags = 0,
-                };
                 hr = factory.CreateSwapChainForHwnd(
                     @ptrCast(dev),
                     hwnd,
@@ -127,19 +128,7 @@ pub const Device = struct {
             },
             .swap_chain_panel => |panel| {
                 panel_native = panel;
-                const desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-                    .Width = width,
-                    .Height = height,
-                    .Format = .B8G8R8A8_UNORM,
-                    .Stereo = 0,
-                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
-                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    .BufferCount = 2,
-                    .Scaling = .STRETCH,
-                    .SwapEffect = .FLIP_SEQUENTIAL,
-                    .AlphaMode = .PREMULTIPLIED,
-                    .Flags = 0,
-                };
+                desc.AlphaMode = .PREMULTIPLIED;
                 hr = factory.CreateSwapChainForComposition(
                     @ptrCast(dev),
                     &desc,
@@ -163,6 +152,9 @@ pub const Device = struct {
                 return InitError.SetSwapChainFailed;
             }
         }
+        errdefer if (panel_native) |panel| {
+            _ = panel.SetSwapChain(null);
+        };
 
         // Get the back buffer and create a render target view.
         const rtv = createRenderTargetView(dev, sc) orelse {

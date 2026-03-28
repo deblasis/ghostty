@@ -38,6 +38,7 @@ pub const DXGI_ALPHA_MODE = enum(u32) {
 pub const DXGI_USAGE = u32;
 pub const DXGI_USAGE_RENDER_TARGET_OUTPUT: DXGI_USAGE = 0x00000020;
 
+/// Win32 HWND is a pointer-sized handle, same underlying type as HANDLE.
 pub const HWND = std.os.windows.HANDLE;
 
 // --- Structs ---

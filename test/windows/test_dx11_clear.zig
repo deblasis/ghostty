@@ -1,5 +1,8 @@
 //! Standalone DX11 clear-to-color test harness.
 //!
+//! This file intentionally duplicates COM types from src/renderer/directx11/
+//! to remain a self-contained smoke test with no project imports.
+//!
 //! Creates a Win32 window, initializes D3D11 via raw COM vtables,
 //! and clears to an early-sunrise orange for 3 seconds.
 //!
@@ -55,7 +58,7 @@ const DXGI_FORMAT = enum(u32) {
     B8G8R8A8_UNORM = 87,
     _,
 };
-const DXGI_SWAP_EFFECT = enum(u32) { FLIP_SEQUENTIAL = 3, _ };
+const DXGI_SWAP_EFFECT = enum(u32) { FLIP_SEQUENTIAL = 3, FLIP_DISCARD = 4, _ };
 const DXGI_SCALING = enum(u32) { STRETCH = 0, _ };
 const DXGI_ALPHA_MODE = enum(u32) { UNSPECIFIED = 0, _ };
 const DXGI_USAGE = u32;
@@ -642,7 +645,7 @@ pub fn main() !void {
         .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
         .BufferCount = 2,
         .Scaling = .STRETCH,
-        .SwapEffect = .FLIP_SEQUENTIAL,
+        .SwapEffect = .FLIP_DISCARD,
         .AlphaMode = .UNSPECIFIED,
         .Flags = 0,
     };

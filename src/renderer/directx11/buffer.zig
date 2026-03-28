@@ -4,12 +4,8 @@ const std = @import("std");
 pub const Options = struct {};
 
 /// Opaque stand-in for an ID3D11Buffer COM pointer.
-/// Used as the native handle type in Buffer(T).buffer so that GenericRenderer
-/// can pass type-erased buffer references to RenderPass.Step without knowing T.
 /// TODO: Replace with *d3d11.ID3D11Buffer when the full pipeline is implemented.
-pub const RawBuffer = struct {
-    // placeholder - no real GPU resource yet
-};
+pub const RawBuffer = struct {};
 
 /// DX11 GPU data buffer for a set of equal-typed elements.
 /// TODO: Implement with ID3D11Buffer (DYNAMIC usage, Map/Unmap for CPU writes).
