@@ -226,7 +226,7 @@ pub fn Buffer(comptime T: type) type {
             if (opts.bind_flags & d3d11.D3D11_BIND_CONSTANT_BUFFER != 0) {
                 if (byte_size % 16 != 0) {
                     std.debug.panic(
-                        "Constant buffer size must be a multiple of 16 bytes, got {} (T={}, len={})",
+                        "Constant buffer size must be a multiple of 16 bytes, got {} (T={s}, len={})",
                         .{ byte_size, @typeName(T), len },
                     );
                 }
