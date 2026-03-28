@@ -4,6 +4,9 @@
 //! Metal's layout since GenericRenderer writes to them directly. The actual
 //! HLSL shaders will interpret these differently but the CPU-side layout is
 //! shared across backends.
+//!
+//! TODO: add comptime assertions cross-referencing @sizeOf against Metal's
+//! data structs to catch layout drift across backends.
 const std = @import("std");
 const math = @import("../../math.zig");
 
