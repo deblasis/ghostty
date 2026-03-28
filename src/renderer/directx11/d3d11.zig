@@ -505,10 +505,21 @@ pub const ID3D11Device = extern struct {
         ) callconv(.winapi) HRESULT,
         // slots 4-6
         CreateTexture1D: Reserved,
-        CreateTexture2D: Reserved,
+        // slot 5: CreateTexture2D
+        CreateTexture2D: *const fn (
+            *ID3D11Device,
+            *const D3D11_TEXTURE2D_DESC,
+            ?*const D3D11_SUBRESOURCE_DATA,
+            *?*ID3D11Texture2D,
+        ) callconv(.winapi) HRESULT,
         CreateTexture3D: Reserved,
-        // slot 7
-        CreateShaderResourceView: Reserved,
+        // slot 7: CreateShaderResourceView
+        CreateShaderResourceView: *const fn (
+            *ID3D11Device,
+            *ID3D11Resource,
+            ?*const D3D11_SHADER_RESOURCE_VIEW_DESC,
+            *?*ID3D11ShaderResourceView,
+        ) callconv(.winapi) HRESULT,
         // slot 8
         CreateUnorderedAccessView: Reserved,
         // slot 9: CreateRenderTargetView
@@ -559,8 +570,12 @@ pub const ID3D11Device = extern struct {
         CreateBlendState: Reserved,
         CreateDepthStencilState: Reserved,
         CreateRasterizerState: Reserved,
-        // slot 23
-        CreateSamplerState: Reserved,
+        // slot 23: CreateSamplerState
+        CreateSamplerState: *const fn (
+            *ID3D11Device,
+            *const D3D11_SAMPLER_DESC,
+            *?*ID3D11SamplerState,
+        ) callconv(.winapi) HRESULT,
         // slots 24-26
         CreateQuery: Reserved,
         CreatePredicate: Reserved,
@@ -639,6 +654,32 @@ pub const ID3D11Device = extern struct {
         pixel_shader: *?*ID3D11PixelShader,
     ) HRESULT {
         return self.vtable.CreatePixelShader(self, shader_bytecode, bytecode_length, class_linkage, pixel_shader);
+    }
+
+    pub inline fn CreateTexture2D(
+        self: *ID3D11Device,
+        desc: *const D3D11_TEXTURE2D_DESC,
+        initial_data: ?*const D3D11_SUBRESOURCE_DATA,
+        texture: *?*ID3D11Texture2D,
+    ) HRESULT {
+        return self.vtable.CreateTexture2D(self, desc, initial_data, texture);
+    }
+
+    pub inline fn CreateShaderResourceView(
+        self: *ID3D11Device,
+        resource: *ID3D11Resource,
+        desc: ?*const D3D11_SHADER_RESOURCE_VIEW_DESC,
+        srv: *?*ID3D11ShaderResourceView,
+    ) HRESULT {
+        return self.vtable.CreateShaderResourceView(self, resource, desc, srv);
+    }
+
+    pub inline fn CreateSamplerState(
+        self: *ID3D11Device,
+        desc: *const D3D11_SAMPLER_DESC,
+        sampler: *?*ID3D11SamplerState,
+    ) HRESULT {
+        return self.vtable.CreateSamplerState(self, desc, sampler);
     }
 
     pub inline fn QueryInterface(self: *ID3D11Device, riid: *const GUID, ppvObject: *?*anyopaque) HRESULT {
@@ -874,7 +915,15 @@ pub const ID3D11DeviceContext = extern struct {
         // slot 47: CopyResource
         _reserved47: Reserved,
         // slot 48: UpdateSubresource
-        _reserved48: Reserved,
+        UpdateSubresource: *const fn (
+            *ID3D11DeviceContext,
+            *ID3D11Resource,       // pDstResource
+            u32,                   // DstSubresource
+            ?*const D3D11_BOX,     // pDstBox (null = entire resource)
+            *const anyopaque,      // pSrcData
+            u32,                   // SrcRowPitch
+            u32,                   // SrcDepthPitch
+        ) callconv(.winapi) void,
         // slot 49: CopyStructureCount
         _reserved49: Reserved,
         // slot 50: ClearRenderTargetView
@@ -1090,6 +1139,18 @@ pub const ID3D11DeviceContext = extern struct {
 
     pub inline fn ClearRenderTargetView(self: *ID3D11DeviceContext, rtv: *ID3D11RenderTargetView, color: *const [4]f32) void {
         self.vtable.ClearRenderTargetView(self, rtv, color);
+    }
+
+    pub inline fn UpdateSubresource(
+        self: *ID3D11DeviceContext,
+        resource: *ID3D11Resource,
+        subresource: u32,
+        dst_box: ?*const D3D11_BOX,
+        src_data: *const anyopaque,
+        src_row_pitch: u32,
+        src_depth_pitch: u32,
+    ) void {
+        self.vtable.UpdateSubresource(self, resource, subresource, dst_box, src_data, src_row_pitch, src_depth_pitch);
     }
 
     pub inline fn Release(self: *ID3D11DeviceContext) u32 {
