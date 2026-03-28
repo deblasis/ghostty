@@ -4,6 +4,11 @@ const com = @import("com.zig");
 
 const log = std.log.scoped(.directx11);
 
+/// Type-erased buffer handle for passing to RenderPass.Step.
+/// Mirrors Metal's objc.Object and OpenGL's gl.Buffer -- lets
+/// GenericRenderer pass uniform/vertex buffers without knowing T.
+pub const RawBuffer = *d3d11.ID3D11Buffer;
+
 /// Options for initializing a buffer.
 pub const Options = struct {
     device: *d3d11.ID3D11Device,
