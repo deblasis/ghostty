@@ -40,7 +40,7 @@ pub inline fn renderPass(
             }
         }
     }
-    return .{};
+    return .{ .context = null, .device = null };
 }
 
 pub fn complete(self: *@This(), sync: bool) void {
