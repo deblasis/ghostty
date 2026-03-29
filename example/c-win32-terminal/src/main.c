@@ -64,6 +64,30 @@ static void close_surface_cb(void* userdata, bool process_alive) {
     if (g_hwnd) PostMessage(g_hwnd, WM_CLOSE, 0, 0);
 }
 
+// --- Input helpers ---
+
+// Extract the Win32 scancode from WM_KEYDOWN/WM_KEYUP lParam.
+// Bits 16-23 are the scancode. Bit 24 is the extended key flag.
+// Extended keys (arrows, numpad, etc.) need the 0xE000 prefix.
+static uint32_t scancode_from_lparam(LPARAM lp) {
+    uint32_t sc = (lp >> 16) & 0xFF;
+    if (lp & (1 << 24)) sc |= 0xE000;  // extended key
+    return sc;
+}
+
+// Map Win32 modifier state to ghostty mods.
+static ghostty_input_mods_e current_mods(void) {
+    ghostty_input_mods_e mods = GHOSTTY_MODS_NONE;
+    if (GetKeyState(VK_SHIFT) & 0x8000) mods |= GHOSTTY_MODS_SHIFT;
+    if (GetKeyState(VK_CONTROL) & 0x8000) mods |= GHOSTTY_MODS_CTRL;
+    if (GetKeyState(VK_MENU) & 0x8000) mods |= GHOSTTY_MODS_ALT;
+    if (GetKeyState(VK_LWIN) & 0x8000 || GetKeyState(VK_RWIN) & 0x8000)
+        mods |= GHOSTTY_MODS_SUPER;
+    if (GetKeyState(VK_CAPITAL) & 0x0001) mods |= GHOSTTY_MODS_CAPS;
+    if (GetKeyState(VK_NUMLOCK) & 0x0001) mods |= GHOSTTY_MODS_NUM;
+    return mods;
+}
+
 // --- Window procedure ---
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -71,6 +95,51 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_GHOSTTY_WAKEUP:
         if (g_app) ghostty_app_tick(g_app);
         return 0;
+
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        if (!g_surface) break;
+        ghostty_input_key_s key = {
+            .action = (lp & (1 << 30)) ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS,
+            .mods = current_mods(),
+            .consumed_mods = GHOSTTY_MODS_NONE,
+            .keycode = scancode_from_lparam(lp),
+            .text = NULL,
+            .composing = false,
+            .unshifted_codepoint = 0,
+        };
+        ghostty_surface_key(g_surface, key);
+        return 0;
+    }
+
+    case WM_KEYUP:
+    case WM_SYSKEYUP: {
+        if (!g_surface) break;
+        ghostty_input_key_s key = {
+            .action = GHOSTTY_ACTION_RELEASE,
+            .mods = current_mods(),
+            .consumed_mods = GHOSTTY_MODS_NONE,
+            .keycode = scancode_from_lparam(lp),
+            .text = NULL,
+            .composing = false,
+            .unshifted_codepoint = 0,
+        };
+        ghostty_surface_key(g_surface, key);
+        return 0;
+    }
+
+    case WM_CHAR: {
+        if (!g_surface) break;
+        // wp is a UTF-16 code unit. Convert to UTF-8.
+        wchar_t wc_buf[2] = { (wchar_t)wp, 0 };
+        char utf8[8] = {0};
+        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
+        if (len > 0) {
+            utf8[len] = '\0';
+            ghostty_surface_text(g_surface, utf8, (uintptr_t)len);
+        }
+        return 0;
+    }
 
     case WM_SIZE:
         if (g_surface) {
