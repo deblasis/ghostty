@@ -124,7 +124,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show) {
     }
 
     // 3. Initialize ghostty global state
-    char* argv[] = { "ghostty-example" };
+    const char* argv[] = { "ghostty-example" };
     if (ghostty_init(1, argv) != GHOSTTY_SUCCESS) {
         fprintf(stderr, "ghostty_init failed\n");
         return 1;
