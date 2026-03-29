@@ -2,9 +2,8 @@
 
 Minimal C program that embeds libghostty in a Win32 window.
 Uses the ghostty C API to create an app and surface with DX11
-rendering. This is the skeleton -- it creates the window, initializes
-ghostty, and hands over the HWND, but does not forward keyboard or
-mouse input yet (that comes in later PRs).
+rendering. Creates the window, initializes ghostty, and forwards
+keyboard, mouse, resize, focus, and DPI events to the surface.
 
 Unlike the `c-vt-*` examples which use the VT parser library,
 this example uses the full libghostty runtime (app, surface,
