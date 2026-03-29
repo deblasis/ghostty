@@ -86,6 +86,22 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_surface) ghostty_surface_set_focus(g_surface, false);
         return 0;
 
+    case WM_DPICHANGED: {
+        if (g_surface) {
+            UINT new_dpi = HIWORD(wp);
+            double new_scale = (double)new_dpi / 96.0;
+            ghostty_surface_set_content_scale(g_surface, new_scale, new_scale);
+        }
+        // Resize to the suggested rect
+        RECT* suggested = (RECT*)lp;
+        SetWindowPos(g_hwnd, NULL,
+            suggested->left, suggested->top,
+            suggested->right - suggested->left,
+            suggested->bottom - suggested->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
