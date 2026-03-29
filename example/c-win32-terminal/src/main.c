@@ -2,11 +2,11 @@
 //
 // Minimal Win32 host for libghostty. Creates an HWND and passes it to
 // ghostty which creates a surface with DX11 rendering and ConPTY.
-// This is the skeleton -- no input forwarding yet, so the terminal
-// won't accept keyboard or mouse input.
+// Forwards keyboard, mouse, resize, focus, and DPI events to ghostty.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <windowsx.h>
 #include <ghostty.h>
 #include <stdio.h>
 
@@ -15,6 +15,7 @@
 static HWND g_hwnd = NULL;
 static ghostty_app_t g_app = NULL;
 static ghostty_surface_t g_surface = NULL;
+static WCHAR g_high_surrogate = 0;
 
 // --- Forward declarations ---
 
@@ -130,10 +131,33 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_CHAR: {
         if (!g_surface) break;
-        // wp is a UTF-16 code unit. Convert to UTF-8.
-        wchar_t wc_buf[2] = { (wchar_t)wp, 0 };
+        // wp is a UTF-16 code unit. Characters outside the BMP arrive as
+        // two WM_CHAR messages (high surrogate then low surrogate).
+        WCHAR wc = (WCHAR)wp;
+        wchar_t wc_buf[3] = {0};
+        int count;
+
+        if (IS_HIGH_SURROGATE(wc)) {
+            g_high_surrogate = wc;
+            return 0;
+        }
+        if (IS_LOW_SURROGATE(wc)) {
+            if (g_high_surrogate) {
+                wc_buf[0] = g_high_surrogate;
+                wc_buf[1] = wc;
+                g_high_surrogate = 0;
+                count = 2;
+            } else {
+                return 0;  // orphaned low surrogate
+            }
+        } else {
+            g_high_surrogate = 0;
+            wc_buf[0] = wc;
+            count = 1;
+        }
+
         char utf8[8] = {0};
-        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
+        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, count, utf8, sizeof(utf8) - 1, NULL, NULL);
         if (len > 0) {
             utf8[len] = '\0';
             ghostty_surface_text(g_surface, utf8, (uintptr_t)len);
@@ -143,8 +167,9 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_MOUSEMOVE:
         if (g_surface) {
-            double x = (double)LOWORD(lp);
-            double y = (double)HIWORD(lp);
+            // GET_X/Y_LPARAM handles sign correctly during mouse capture
+            double x = (double)GET_X_LPARAM(lp);
+            double y = (double)GET_Y_LPARAM(lp);
             ghostty_surface_mouse_pos(g_surface, x, y, current_mods());
         }
         return 0;
@@ -180,8 +205,14 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEWHEEL: {
         if (!g_surface) break;
         double delta = (double)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
-        // ghostty_input_scroll_mods_t is a packed int. 0 = no precision scroll.
         ghostty_surface_mouse_scroll(g_surface, 0, delta, 0);
+        return 0;
+    }
+
+    case WM_MOUSEHWHEEL: {
+        if (!g_surface) break;
+        double delta = (double)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        ghostty_surface_mouse_scroll(g_surface, delta, 0, 0);
         return 0;
     }
 
@@ -220,8 +251,10 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
 
     default:
-        return DefWindowProc(hwnd, msg, wp, lp);
+        break;
     }
+
+    return DefWindowProc(hwnd, msg, wp, lp);
 }
 
 // --- Entry point ---
