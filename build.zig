@@ -176,6 +176,12 @@ pub fn build(b: *std.Build) !void {
             lib_shared.installHeader(); // Only need one header
             if (config.target.result.os.tag == .windows) {
                 lib_shared.install("ghostty.dll");
+                if (lib_shared.implib) |implib| {
+                    b.getInstallStep().dependOn(&b.addInstallLibFile(
+                        implib,
+                        "ghostty.lib",
+                    ).step);
+                }
                 lib_static.install("ghostty-static.lib");
             } else {
                 lib_shared.install("libghostty.so");
