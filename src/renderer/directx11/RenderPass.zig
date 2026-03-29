@@ -59,12 +59,46 @@ pub fn begin(
     device: ?*d3d11.ID3D11Device,
     opts: Options,
 ) @This() {
-    // Clearing and render target binding is handled by Frame.renderPass()
-    // via device.clearRenderTarget(), which sets the viewport, binds the
-    // swap chain's RTV, and clears it. Per-attachment RTV creation from
-    // Texture/Target is a future task (Target doesn't hold an
-    // ID3D11Texture2D yet).
-    _ = opts;
+    const ctx = context orelse return .{ .context = null, .device = device };
+
+    // Bind the first attachment's render target and optionally clear it.
+    // GenericRenderer always passes exactly one attachment per render pass.
+    for (opts.attachments) |att| {
+        const rtv = switch (att.target) {
+            .target => |t| t.rtv orelse continue,
+            // Texture-as-RTV not yet supported (needs CreateRenderTargetView
+            // from the texture's ID3D11Texture2D). Skipped for now.
+            .texture => continue,
+        };
+
+        // Set viewport to target dimensions.
+        const target = att.target.target;
+        const viewport = d3d11.D3D11_VIEWPORT{
+            .TopLeftX = 0.0,
+            .TopLeftY = 0.0,
+            .Width = @floatFromInt(target.width),
+            .Height = @floatFromInt(target.height),
+            .MinDepth = 0.0,
+            .MaxDepth = 1.0,
+        };
+        ctx.RSSetViewports(&.{viewport});
+
+        // Bind the render target.
+        ctx.OMSetRenderTargets(&.{rtv}, null);
+
+        // Clear if requested.
+        if (att.clear_color) |color| {
+            ctx.ClearRenderTargetView(rtv, &.{
+                @floatCast(color[0]),
+                @floatCast(color[1]),
+                @floatCast(color[2]),
+                @floatCast(color[3]),
+            });
+        }
+
+        // Only bind the first attachment -- DX11 MRT is not needed.
+        break;
+    }
 
     return .{ .context = context, .device = device };
 }
