@@ -92,13 +92,15 @@ pub fn step(self: *@This(), s: Step) void {
     });
 
     // Bind vertex buffers.
-    // Metal convention: index 0 is the vertex buffer, index 1+ is additional data.
-    // DX11: all go through IASetVertexBuffers at their respective slots.
+    // Why: Metal reserves slot 0 for vertex data and slot 1 for uniforms,
+    // starting additional buffers at slot 2. DX11 doesn't need that
+    // workaround -- uniforms go through constant buffers (a separate
+    // binding point), so vertex buffers bind at their natural index.
     for (s.buffers, 0..) |buf_opt, i| {
         if (buf_opt) |buf| {
-            // Stride of 0 lets the shader use SV_VertexID for procedural geometry.
-            // When real vertex data is bound, the stride will come from the pipeline
-            // (future work when HLSL shaders define their input layouts).
+            // TODO: stride must come from Pipeline's input layout once
+            // HLSL shaders define their vertex formats. Stride 0 for now
+            // lets shaders use SV_VertexID for procedural geometry.
             ctx.IASetVertexBuffers(
                 @intCast(i),
                 &.{@as(?*d3d11.ID3D11Buffer, buf)},
@@ -109,6 +111,9 @@ pub fn step(self: *@This(), s: Step) void {
     }
 
     // Bind uniforms as constant buffer at slot 0 for both VS and PS.
+    // Why: DX11 constant buffers are a separate namespace from vertex
+    // buffers, so slot 0 here doesn't conflict with IASetVertexBuffers
+    // slot 0 above. Metal uses buffer index 1 for uniforms instead.
     if (s.uniforms) |buf| {
         ctx.VSSetConstantBuffers(0, &.{@as(?*d3d11.ID3D11Buffer, buf)});
         ctx.PSSetConstantBuffers(0, &.{@as(?*d3d11.ID3D11Buffer, buf)});

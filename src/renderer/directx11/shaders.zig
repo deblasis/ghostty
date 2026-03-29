@@ -39,12 +39,14 @@ pub const Shaders = struct {
         if (self.post_pipelines.len > 0) {
             alloc.free(self.post_pipelines);
         }
+        self.post_pipelines = &.{};
 
         self.pipelines.bg_color.deinit();
         self.pipelines.cell_bg.deinit();
         self.pipelines.cell_text.deinit();
         self.pipelines.image.deinit();
         self.pipelines.bg_image.deinit();
+        self.pipelines = .{};
     }
 };
 

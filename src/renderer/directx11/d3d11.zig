@@ -66,6 +66,7 @@ pub const D3D_PRIMITIVE_TOPOLOGY = enum(u32) {
     _,
 };
 
+// D3D11 blend enum values start at 1, not 0.
 pub const D3D11_BLEND = enum(u32) {
     ZERO = 1,
     ONE = 2,

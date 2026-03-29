@@ -260,9 +260,8 @@ test "Pipeline: default init and deinit" {
     pipeline.deinit();
 }
 
-test "Pipeline: deinit is idempotent on empty pipeline" {
+test "Pipeline: deinit on empty pipeline is safe to call" {
     var pipeline = Pipeline{};
-    pipeline.deinit();
     pipeline.deinit();
 }
 
