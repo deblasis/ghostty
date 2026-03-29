@@ -1,7 +1,9 @@
 // example/c-win32-terminal/src/main.c
 //
-// Minimal Win32 host for libghostty. Creates an HWND, passes it to
-// ghostty which sets up DX11 rendering and a ConPTY terminal inside.
+// Minimal Win32 host for libghostty. Creates an HWND and passes it to
+// ghostty which creates a surface with DX11 rendering and ConPTY.
+// This is the skeleton -- no input forwarding yet, so the terminal
+// won't accept keyboard or mouse input.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -68,6 +70,20 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_GHOSTTY_WAKEUP:
         if (g_app) ghostty_app_tick(g_app);
+        return 0;
+
+    case WM_SIZE:
+        if (g_surface) {
+            ghostty_surface_set_size(g_surface, LOWORD(lp), HIWORD(lp));
+        }
+        return 0;
+
+    case WM_SETFOCUS:
+        if (g_surface) ghostty_surface_set_focus(g_surface, true);
+        return 0;
+
+    case WM_KILLFOCUS:
+        if (g_surface) ghostty_surface_set_focus(g_surface, false);
         return 0;
 
     case WM_DESTROY:
@@ -162,9 +178,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show) {
         (uint32_t)(rc.right - rc.left),
         (uint32_t)(rc.bottom - rc.top));
 
-    // 8. Show window and enter message loop
+    // 8. Show window and tell ghostty the surface is visible and focused
     ShowWindow(g_hwnd, show);
     UpdateWindow(g_hwnd);
+    ghostty_surface_set_occlusion(g_surface, true);
+    ghostty_surface_set_focus(g_surface, true);
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0) > 0) {
