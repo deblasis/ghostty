@@ -202,6 +202,18 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, current_mods());
         return 0;
 
+    case WM_MBUTTONDOWN:
+        if (g_surface)
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE, current_mods());
+        return 0;
+
+    case WM_MBUTTONUP:
+        if (g_surface)
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_MIDDLE, current_mods());
+        return 0;
+
     case WM_MOUSEWHEEL: {
         if (!g_surface) break;
         double delta = (double)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
@@ -286,8 +298,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show) {
     }
 
     // 3. Initialize ghostty global state
-    const char* argv[] = { "ghostty-example" };
-    if (ghostty_init(1, argv) != GHOSTTY_SUCCESS) {
+    char* argv[] = { "ghostty-example" };
+    if (ghostty_init(1, argv) != 0) {
         fprintf(stderr, "ghostty_init failed\n");
         return 1;
     }
