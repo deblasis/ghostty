@@ -1,4 +1,7 @@
 //! Frame context for DX11 draw commands.
+const std = @import("std");
+const log = std.log.scoped(.directx11);
+
 const DirectX11 = @import("../DirectX11.zig");
 const Renderer = @import("../generic.zig").Renderer(DirectX11);
 const Target = @import("Target.zig");
@@ -34,8 +37,12 @@ pub inline fn renderPass(
 }
 
 pub fn complete(self: *@This(), sync: bool) void {
-    // DX11 immediate mode: commands already executed. Present happens in
-    // presentLastTarget(), called by GenericRenderer after frame completion.
-    _ = self;
     _ = sync;
+    // DX11 immediate mode: draw commands already executed on the device
+    // context. Present the swap chain to show the frame.
+    if (self.renderer.api.device) |*dev| {
+        dev.present() catch |err| {
+            log.err("present failed: {}", .{err});
+        };
+    }
 }
