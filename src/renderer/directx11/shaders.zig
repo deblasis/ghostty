@@ -263,6 +263,8 @@ pub const Uniforms = extern struct {
     screen_size: [2]f32 align(8),
     cell_size: [2]f32 align(8),
     grid_size: [2]u16 align(4),
+    /// The padding around the terminal grid in pixels. In order:
+    /// top, right, bottom, left.
     grid_padding: [4]f32 align(16),
     padding_extend: PaddingExtend align(1),
     min_contrast: f32 align(4),

@@ -203,10 +203,9 @@ StructuredBuffer<uint> cell_bg_colors : register(t0);
 
 float4 CellBgPS(FullScreenVSOut input) : SV_TARGET
 {
-    // grid_padding stores [left, right, top, bottom] (matching Metal's usage).
-    // Metal uses uniforms.grid_padding.wx to get the (horizontal, vertical)
-    // padding offset, i.e. .w = index 3 (bottom? -- same swizzle as Metal).
-    // We preserve the exact same .wx swizzle: float2(grid_padding.w, grid_padding.x).
+    // grid_padding stores [top, right, bottom, left].
+    // Metal uses .wx to get (left, top) as the padding offset.
+    // .w = index 3 = left, .x = index 0 = top.
     float2 padding_offset = float2(grid_padding.w, grid_padding.x);
 
     int2 grid_pos = int2(floor((input.position.xy - padding_offset) / cell_size));
