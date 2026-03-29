@@ -45,4 +45,9 @@ pub fn complete(self: *@This(), sync: bool) void {
             log.err("present failed: {}", .{err});
         };
     }
+
+    // Release the frame back to the swap chain so the next drawFrame
+    // can acquire it. Without this, the semaphore in SwapChain.nextFrame
+    // runs out of permits after buf_count frames and blocks forever.
+    self.renderer.frameCompleted(.healthy);
 }
