@@ -233,7 +233,6 @@ pub const Device = struct {
         }
     }
 
-
     /// Get the back buffer from the swap chain and create a render target view.
     fn createRenderTargetView(
         device: *d3d11.ID3D11Device,
