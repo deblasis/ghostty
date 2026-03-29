@@ -141,6 +141,50 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_MOUSEMOVE:
+        if (g_surface) {
+            double x = (double)LOWORD(lp);
+            double y = (double)HIWORD(lp);
+            ghostty_surface_mouse_pos(g_surface, x, y, current_mods());
+        }
+        return 0;
+
+    case WM_LBUTTONDOWN:
+        if (g_surface) {
+            SetCapture(g_hwnd);
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, current_mods());
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (g_surface) {
+            ReleaseCapture();
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, current_mods());
+        }
+        return 0;
+
+    case WM_RBUTTONDOWN:
+        if (g_surface)
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, current_mods());
+        return 0;
+
+    case WM_RBUTTONUP:
+        if (g_surface)
+            ghostty_surface_mouse_button(g_surface,
+                GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, current_mods());
+        return 0;
+
+    case WM_MOUSEWHEEL: {
+        if (!g_surface) break;
+        double delta = (double)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        // ghostty_input_scroll_mods_t is a packed int. 0 = no precision scroll.
+        ghostty_surface_mouse_scroll(g_surface, 0, delta, 0);
+        return 0;
+    }
+
     case WM_SIZE:
         if (g_surface) {
             ghostty_surface_set_size(g_surface, LOWORD(lp), HIWORD(lp));
