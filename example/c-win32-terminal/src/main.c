@@ -279,6 +279,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_DESTROY:
+        KillTimer(hwnd, WM_GHOSTTY_RESIZE_TIMER);
         PostQuitMessage(0);
         return 0;
 
