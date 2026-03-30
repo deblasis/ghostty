@@ -63,23 +63,24 @@ pub fn begin(
     blend_state: ?*d3d11.ID3D11BlendState,
     opts: Options,
 ) @This() {
-    const ctx = context orelse return .{ .context = null, .device = device, .blend_state = blend_state };
+    const self: @This() = .{ .context = context, .device = device, .blend_state = blend_state };
+    const ctx = context orelse return self;
 
     // Bind the first attachment's render target and optionally clear it.
     // GenericRenderer always passes exactly one attachment per render pass.
-    if (opts.attachments.len == 0) return .{ .context = context, .device = device, .blend_state = blend_state };
+    if (opts.attachments.len == 0) return self;
 
     const att = opts.attachments[0];
     const target, const rtv = switch (att.target) {
         .target => |t| .{ t, t.rtv orelse {
             log.warn("render pass attachment has no RTV, skipping bind", .{});
-            return .{ .context = context, .device = device, .blend_state = blend_state };
+            return self;
         } },
         // Texture-as-RTV not yet supported (needs CreateRenderTargetView
         // from the texture's ID3D11Texture2D).
         .texture => {
             log.warn("texture attachments not yet supported in DX11 render pass", .{});
-            return .{ .context = context, .device = device, .blend_state = blend_state };
+            return self;
         },
     };
 
@@ -113,7 +114,7 @@ pub fn begin(
         });
     }
 
-    return .{ .context = context, .device = device, .blend_state = blend_state };
+    return self;
 }
 
 pub fn step(self: *@This(), s: Step) void {
