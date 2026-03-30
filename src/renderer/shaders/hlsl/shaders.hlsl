@@ -95,6 +95,9 @@ uint2 unpack_grid_size()
     return uint2(grid_size_packed & 0xFFFFu, (grid_size_packed >> 16u) & 0xFFFFu);
 }
 
+// TODO: re-enable padding_extend once DX11 blend state reliably composites
+// transparent pixels.  Until then, CellBgPS always clamps to the nearest
+// edge cell instead of returning transparent for non-extended padding.
 bool padding_extend_left()  { return (padding_extend_packed & EXTEND_LEFT)  != 0u; }
 bool padding_extend_right() { return (padding_extend_packed & EXTEND_RIGHT) != 0u; }
 bool padding_extend_up()    { return (padding_extend_packed & EXTEND_UP)    != 0u; }
