@@ -35,5 +35,7 @@ build-dll:
 sync force="":
     @if [ "{{ force }}" != "--force" ] && [ "$(git branch --show-current)" != "windows" ]; then echo "WARNING: you are on '$(git branch --show-current)', not 'windows'. Switch to windows branch first. Use 'just sync --force' to override." && exit 1; fi
     git fetch upstream
+    git fetch origin windows
+    git merge --ff-only origin/windows
     git rebase upstream/main
     @echo "Rebase complete. Review any conflicts, then: git push --force-with-lease origin windows"
