@@ -123,7 +123,7 @@ pub const Device = struct {
             .SampleDesc = .{ .Count = 1, .Quality = 0 },
             .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
             .BufferCount = 2,
-            .Scaling = .STRETCH,
+            .Scaling = .NONE,
             .SwapEffect = .FLIP_DISCARD,
             .AlphaMode = .UNSPECIFIED,
             .Flags = 0,
