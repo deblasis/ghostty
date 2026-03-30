@@ -137,7 +137,7 @@ typedef enum {
  *
  * @ingroup build_info
  */
-GHOSTTY_API GhosttyResult ghostty_build_info(GhosttyBuildInfo data, void *out);
+GHOSTTY_EXPORT GhosttyResult ghostty_build_info(GhosttyBuildInfo data, void *out);
 
 #ifdef __cplusplus
 }
