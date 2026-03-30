@@ -77,7 +77,7 @@ typedef struct {
  *
  * @ingroup mouse
  */
-GHOSTTY_API GhosttyResult ghostty_mouse_event_new(const GhosttyAllocator *allocator,
+GHOSTTY_EXPORT GhosttyResult ghostty_mouse_event_new(const GhosttyAllocator *allocator,
                                       GhosttyMouseEvent *event);
 
 /**
@@ -87,7 +87,7 @@ GHOSTTY_API GhosttyResult ghostty_mouse_event_new(const GhosttyAllocator *alloca
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_free(GhosttyMouseEvent event);
+GHOSTTY_EXPORT void ghostty_mouse_event_free(GhosttyMouseEvent event);
 
 /**
  * Set the event action.
@@ -97,7 +97,7 @@ GHOSTTY_API void ghostty_mouse_event_free(GhosttyMouseEvent event);
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_set_action(GhosttyMouseEvent event,
+GHOSTTY_EXPORT void ghostty_mouse_event_set_action(GhosttyMouseEvent event,
                                     GhosttyMouseAction action);
 
 /**
@@ -108,7 +108,7 @@ GHOSTTY_API void ghostty_mouse_event_set_action(GhosttyMouseEvent event,
  *
  * @ingroup mouse
  */
-GHOSTTY_API GhosttyMouseAction ghostty_mouse_event_get_action(GhosttyMouseEvent event);
+GHOSTTY_EXPORT GhosttyMouseAction ghostty_mouse_event_get_action(GhosttyMouseEvent event);
 
 /**
  * Set the event button.
@@ -122,7 +122,7 @@ GHOSTTY_API GhosttyMouseAction ghostty_mouse_event_get_action(GhosttyMouseEvent 
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_set_button(GhosttyMouseEvent event,
+GHOSTTY_EXPORT void ghostty_mouse_event_set_button(GhosttyMouseEvent event,
                                     GhosttyMouseButton button);
 
 /**
@@ -134,7 +134,7 @@ GHOSTTY_API void ghostty_mouse_event_set_button(GhosttyMouseEvent event,
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_clear_button(GhosttyMouseEvent event);
+GHOSTTY_EXPORT void ghostty_mouse_event_clear_button(GhosttyMouseEvent event);
 
 /**
  * Get the event button.
@@ -145,7 +145,7 @@ GHOSTTY_API void ghostty_mouse_event_clear_button(GhosttyMouseEvent event);
  *
  * @ingroup mouse
  */
-GHOSTTY_API bool ghostty_mouse_event_get_button(GhosttyMouseEvent event,
+GHOSTTY_EXPORT bool ghostty_mouse_event_get_button(GhosttyMouseEvent event,
                                     GhosttyMouseButton *out_button);
 
 /**
@@ -156,7 +156,7 @@ GHOSTTY_API bool ghostty_mouse_event_get_button(GhosttyMouseEvent event,
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_set_mods(GhosttyMouseEvent event,
+GHOSTTY_EXPORT void ghostty_mouse_event_set_mods(GhosttyMouseEvent event,
                                   GhosttyMods mods);
 
 /**
@@ -167,7 +167,7 @@ GHOSTTY_API void ghostty_mouse_event_set_mods(GhosttyMouseEvent event,
  *
  * @ingroup mouse
  */
-GHOSTTY_API GhosttyMods ghostty_mouse_event_get_mods(GhosttyMouseEvent event);
+GHOSTTY_EXPORT GhosttyMods ghostty_mouse_event_get_mods(GhosttyMouseEvent event);
 
 /**
  * Set the event position in surface-space pixels.
@@ -177,7 +177,7 @@ GHOSTTY_API GhosttyMods ghostty_mouse_event_get_mods(GhosttyMouseEvent event);
  *
  * @ingroup mouse
  */
-GHOSTTY_API void ghostty_mouse_event_set_position(GhosttyMouseEvent event,
+GHOSTTY_EXPORT void ghostty_mouse_event_set_position(GhosttyMouseEvent event,
                                       GhosttyMousePosition position);
 
 /**
@@ -188,6 +188,6 @@ GHOSTTY_API void ghostty_mouse_event_set_position(GhosttyMouseEvent event,
  *
  * @ingroup mouse
  */
-GHOSTTY_API GhosttyMousePosition ghostty_mouse_event_get_position(GhosttyMouseEvent event);
+GHOSTTY_EXPORT GhosttyMousePosition ghostty_mouse_event_get_position(GhosttyMouseEvent event);
 
 #endif /* GHOSTTY_VT_MOUSE_EVENT_H */
