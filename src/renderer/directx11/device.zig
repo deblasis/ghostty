@@ -143,6 +143,9 @@ pub const Device = struct {
             .swap_chain_panel => |panel| {
                 panel_native = panel;
                 desc.AlphaMode = .PREMULTIPLIED;
+                // Composition surfaces need scaling -- the panel may not
+                // match the buffer size exactly, unlike HWND surfaces.
+                desc.Scaling = .STRETCH;
                 hr = factory.CreateSwapChainForComposition(
                     @ptrCast(dev),
                     &desc,
