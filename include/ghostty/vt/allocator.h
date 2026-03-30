@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <ghostty/vt/types.h>
 
 /** @defgroup allocator Memory Management
  *
@@ -222,7 +223,7 @@ typedef struct GhosttyAllocator {
  *
  * @ingroup allocator
  */
-uint8_t* ghostty_alloc(const GhosttyAllocator* allocator, size_t len);
+GHOSTTY_EXPORT uint8_t* ghostty_alloc(const GhosttyAllocator* allocator, size_t len);
 
 /**
  * Free memory that was allocated by a libghostty-vt function.
@@ -247,7 +248,7 @@ uint8_t* ghostty_alloc(const GhosttyAllocator* allocator, size_t len);
  *
  * @ingroup allocator
  */
-void ghostty_free(const GhosttyAllocator* allocator, uint8_t* ptr, size_t len);
+GHOSTTY_EXPORT void ghostty_free(const GhosttyAllocator* allocator, uint8_t* ptr, size_t len);
 
 /** @} */
 

@@ -10,6 +10,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Symbol visibility for shared library builds. On Windows, functions
+// are exported from the DLL when building and imported when consuming.
+// On other platforms with GCC/Clang, functions are marked with default
+// visibility so they remain accessible when the library is built with
+// -fvisibility=hidden. For static library builds, define GHOSTTY_STATIC
+// before including this header to make this a no-op.
+#ifndef GHOSTTY_EXPORT
+#if defined(GHOSTTY_STATIC)
+  #define GHOSTTY_EXPORT
+#elif defined(_WIN32) || defined(_WIN64)
+  #ifdef GHOSTTY_BUILD_SHARED
+    #define GHOSTTY_EXPORT __declspec(dllexport)
+  #else
+    #define GHOSTTY_EXPORT __declspec(dllimport)
+  #endif
+#elif defined(__GNUC__) && __GNUC__ >= 4
+  #define GHOSTTY_EXPORT __attribute__((visibility("default")))
+#else
+  #define GHOSTTY_EXPORT
+#endif
+#endif
+
 /**
  * Result codes for libghostty-vt operations.
  */
