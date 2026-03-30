@@ -313,9 +313,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
  *
  * @ingroup screen
  */
-GHOSTTY_API GhosttyResult ghostty_cell_get(GhosttyCell cell,
-                                GhosttyCellData data,
-                                void *out);
+GHOSTTY_EXPORT GhosttyResult ghostty_cell_get(GhosttyCell cell,
+                               GhosttyCellData data,
+                               void *out);
 
 /**
  * Get multiple data fields from a cell in a single call.
@@ -338,7 +338,7 @@ GHOSTTY_API GhosttyResult ghostty_cell_get(GhosttyCell cell,
  *
  * @ingroup screen
  */
-GHOSTTY_API GhosttyResult ghostty_cell_get_multi(GhosttyCell cell,
+GHOSTTY_EXPORT GhosttyResult ghostty_cell_get_multi(GhosttyCell cell,
                                      size_t count,
                                      const GhosttyCellData* keys,
                                      void** values,
@@ -360,9 +360,9 @@ GHOSTTY_API GhosttyResult ghostty_cell_get_multi(GhosttyCell cell,
  *
  * @ingroup screen
  */
-GHOSTTY_API GhosttyResult ghostty_row_get(GhosttyRow row,
-                               GhosttyRowData data,
-                               void *out);
+GHOSTTY_EXPORT GhosttyResult ghostty_row_get(GhosttyRow row,
+                              GhosttyRowData data,
+                              void *out);
 
 /**
  * Get multiple data fields from a row in a single call.
@@ -385,7 +385,7 @@ GHOSTTY_API GhosttyResult ghostty_row_get(GhosttyRow row,
  *
  * @ingroup screen
  */
-GHOSTTY_API GhosttyResult ghostty_row_get_multi(GhosttyRow row,
+GHOSTTY_EXPORT GhosttyResult ghostty_row_get_multi(GhosttyRow row,
                                     size_t count,
                                     const GhosttyRowData* keys,
                                     void** values,
