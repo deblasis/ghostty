@@ -10,6 +10,8 @@
 *.swift text eol=lf
 *.py text eol=lf
 *.sh text eol=lf
+*.glsl text eol=lf
+*.blp text eol=lf
 
 # Config/build files - always LF
 *.zon text eol=lf
@@ -36,8 +38,6 @@ Makefile text eol=lf
 *.icns binary
 *.ttf binary
 *.otf binary
-*.glsl binary
-*.blp binary
 
 #--------------------------------------------------------------------
 # Linguist

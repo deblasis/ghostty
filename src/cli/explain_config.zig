@@ -49,16 +49,19 @@ pub fn run(alloc: Allocator) !u8 {
     var positional: ?[]const u8 = null;
     var iter = try args.argsIterator(alloc);
     defer iter.deinit();
+    defer if (option_name) |s| alloc.free(s);
+    defer if (keybind_name) |s| alloc.free(s);
+    defer if (positional) |s| alloc.free(s);
 
     while (iter.next()) |arg| {
         if (std.mem.startsWith(u8, arg, "--option=")) {
-            option_name = arg["--option=".len..];
+            option_name = try alloc.dupe(u8, arg["--option=".len..]);
         } else if (std.mem.startsWith(u8, arg, "--keybind=")) {
-            keybind_name = arg["--keybind=".len..];
+            keybind_name = try alloc.dupe(u8, arg["--keybind=".len..]);
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             return Action.help_error;
         } else if (!std.mem.startsWith(u8, arg, "-")) {
-            positional = arg;
+            positional = try alloc.dupe(u8, arg);
         }
     }
 

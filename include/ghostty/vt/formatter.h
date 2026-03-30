@@ -111,7 +111,7 @@ typedef struct {
  *
  * @ingroup formatter
  */
-typedef struct GhosttyFormatter* GhosttyFormatter;
+typedef struct GhosttyFormatterImpl* GhosttyFormatter;
 
 /**
  * Options for creating a terminal formatter.

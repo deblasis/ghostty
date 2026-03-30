@@ -21,7 +21,7 @@
  *
  * @ingroup osc
  */
-typedef struct GhosttyOscParser *GhosttyOscParser;
+typedef struct GhosttyOscParserImpl *GhosttyOscParser;
 
 /**
  * Opaque handle to a single OSC command.
@@ -31,7 +31,7 @@ typedef struct GhosttyOscParser *GhosttyOscParser;
  *
  * @ingroup osc
  */
-typedef struct GhosttyOscCommand *GhosttyOscCommand;
+typedef struct GhosttyOscCommandImpl *GhosttyOscCommand;
 
 /** @defgroup osc OSC Parser
  *

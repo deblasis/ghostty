@@ -2601,7 +2601,7 @@ pub fn eraseDisplay(
             assert(!self.screens.active.cursor.pending_wrap);
         },
 
-        .scrollback => self.screens.active.eraseRows(.{ .history = .{} }, null),
+        .scrollback => self.screens.active.eraseHistory(null),
     }
 }
 

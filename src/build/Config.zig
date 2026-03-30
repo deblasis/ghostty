@@ -545,6 +545,7 @@ pub fn terminalOptions(self: *const Config) TerminalBuildOptions {
         .simd = self.simd,
         .oniguruma = true,
         .c_abi = false,
+        .version = self.version,
         .slow_runtime_safety = switch (self.optimize) {
             .Debug => true,
             .ReleaseSafe,

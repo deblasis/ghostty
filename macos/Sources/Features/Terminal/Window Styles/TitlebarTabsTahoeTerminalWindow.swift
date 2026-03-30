@@ -76,6 +76,9 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
             return
         }
 
+        // Handle middle-click to close tabs if configured
+        if handleTabBarMiddleClick(event) { return }
+
         let isRightClick =
             event.type == .rightMouseDown ||
             (event.type == .otherMouseDown && event.buttonNumber == 2) ||

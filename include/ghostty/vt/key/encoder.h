@@ -22,7 +22,7 @@
  *
  * @ingroup key
  */
-typedef struct GhosttyKeyEncoder *GhosttyKeyEncoder;
+typedef struct GhosttyKeyEncoderImpl *GhosttyKeyEncoder;
 
 /**
  * Kitty keyboard protocol flags.

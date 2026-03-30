@@ -20,7 +20,7 @@
  *
  * @ingroup mouse
  */
-typedef struct GhosttyMouseEvent *GhosttyMouseEvent;
+typedef struct GhosttyMouseEventImpl *GhosttyMouseEvent;
 
 /**
  * Mouse event action type.

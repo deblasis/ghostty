@@ -34,6 +34,10 @@ extern "C" {
  * Once a terminal session is up and running, you can configure a key encoder
  * to write keyboard input via ghostty_key_encoder_setopt_from_terminal().
  *
+ * ### Example: VT stream processing
+ * @snippet c-vt-stream/src/main.c vt-stream-init
+ * @snippet c-vt-stream/src/main.c vt-stream-write
+ *
  * ## Effects
  *
  * By default, the terminal sequence processing with ghostty_terminal_vt_write() 
@@ -155,7 +159,7 @@ extern "C" {
  *
  * @ingroup terminal
  */
-typedef struct GhosttyTerminal* GhosttyTerminal;
+typedef struct GhosttyTerminalImpl* GhosttyTerminal;
 
 /**
  * Terminal initialization options.

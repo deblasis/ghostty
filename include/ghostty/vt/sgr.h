@@ -55,7 +55,7 @@ extern "C" {
  *
  * @ingroup sgr
  */
-typedef struct GhosttySgrParser* GhosttySgrParser;
+typedef struct GhosttySgrParserImpl* GhosttySgrParser;
 
 /**
  * SGR attribute tags.

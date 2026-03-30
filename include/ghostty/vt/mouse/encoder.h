@@ -23,7 +23,7 @@
  *
  * @ingroup mouse
  */
-typedef struct GhosttyMouseEncoder *GhosttyMouseEncoder;
+typedef struct GhosttyMouseEncoderImpl *GhosttyMouseEncoder;
 
 /**
  * Mouse tracking mode.

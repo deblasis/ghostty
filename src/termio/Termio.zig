@@ -577,9 +577,8 @@ pub fn clearScreen(self: *Termio, td: *ThreadData, history: bool) !void {
         // If we're not at a prompt, we just delete above the cursor.
         if (!self.terminal.cursorIsAtPrompt()) {
             if (self.terminal.screens.active.cursor.y > 0) {
-                self.terminal.screens.active.eraseRows(
-                    .{ .active = .{ .y = 0 } },
-                    .{ .active = .{ .y = self.terminal.screens.active.cursor.y - 1 } },
+                self.terminal.screens.active.eraseActive(
+                    self.terminal.screens.active.cursor.y - 1,
                 );
             }
 
