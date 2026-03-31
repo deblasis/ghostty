@@ -163,3 +163,58 @@ fn createSharedTextureResources(
 
     log.info("shared texture created: {}x{}", .{ width, height });
 }
+
+test "shared texture lifecycle" {
+    // This test requires a real D3D11 device, so skip on non-Windows.
+    if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
+
+    const d3d11_ = @import("d3d11.zig");
+    const com_ = @import("com.zig");
+
+    // Create a D3D11 device.
+    var device_opt: ?*d3d11_.ID3D11Device = null;
+    var context_opt: ?*d3d11_.ID3D11DeviceContext = null;
+    const feature_levels = [_]d3d11_.D3D_FEATURE_LEVEL{.@"11_0"};
+    const hr = d3d11_.D3D11CreateDevice(
+        null,
+        .HARDWARE,
+        null,
+        d3d11_.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+        &feature_levels,
+        feature_levels.len,
+        d3d11_.D3D11_SDK_VERSION,
+        &device_opt,
+        null,
+        &context_opt,
+    );
+    if (com_.FAILED(hr)) return error.SkipZigTest;
+    const device = device_opt.?;
+    defer _ = device.Release();
+    defer _ = context_opt.?.Release();
+
+    // Init shared texture.
+    var shared_handle: ?HANDLE = null;
+    var target = try initSharedTexture(device, 640, 480, &shared_handle);
+
+    try std.testing.expect(target.rtv != null);
+    try std.testing.expect(target.texture != null);
+    try std.testing.expect(shared_handle != null);
+    try std.testing.expectEqual(@as(usize, 640), target.width);
+    try std.testing.expectEqual(@as(usize, 480), target.height);
+
+    // Resize.
+    try target.resizeSharedTexture(device, 1280, 720);
+
+    try std.testing.expect(target.rtv != null);
+    try std.testing.expect(target.texture != null);
+    try std.testing.expectEqual(@as(usize, 1280), target.width);
+    try std.testing.expectEqual(@as(usize, 720), target.height);
+    // Handle should still be valid after resize.
+    try std.testing.expect(shared_handle != null);
+
+    // Deinit.
+    target.deinit();
+    try std.testing.expect(target.rtv == null);
+    try std.testing.expect(target.texture == null);
+    try std.testing.expectEqual(@as(usize, 0), target.width);
+}
