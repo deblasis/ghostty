@@ -390,7 +390,7 @@ test "SwapChain: HWND surface uses SCALING_NONE" {
     // Query the swap chain descriptor and verify scaling.
     // Guards against regression to STRETCH (PR #76).
     var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
-    const hr = device.swap_chain.GetDesc1(&desc);
+    const hr = device.swap_chain.?.GetDesc1(&desc);
     try std.testing.expect(!com.FAILED(hr));
     try std.testing.expectEqual(desc.Scaling, .NONE);
 }
