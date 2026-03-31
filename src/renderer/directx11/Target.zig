@@ -31,7 +31,7 @@ texture: ?*d3d11.ID3D11Texture2D = null,
 /// Non-null only in owned mode. Updated on init and resize.
 handle_out: ?*?HANDLE = null,
 
-pub const InitError = error{
+pub const SharedTextureError = error{
     TextureCreationFailed,
     SharedHandleFailed,
     RenderTargetViewFailed,
@@ -45,19 +45,12 @@ pub fn initSharedTexture(
     width: u32,
     height: u32,
     handle_out: *?HANDLE,
-) InitError!@This() {
+) SharedTextureError!@This() {
     var self = @This(){};
     self.handle_out = handle_out;
     try self.createSharedTextureResources(device, width, height);
     return self;
 }
-
-pub const ResizeError = error{
-    TextureCreationFailed,
-    SharedHandleFailed,
-    RenderTargetViewFailed,
-    QueryInterfaceFailed,
-};
 
 /// Recreate the shared texture at a new size. Releases old resources
 /// and writes the new DXGI shared handle to *handle_out.
@@ -66,7 +59,7 @@ pub fn resizeSharedTexture(
     device: *d3d11.ID3D11Device,
     width: u32,
     height: u32,
-) ResizeError!void {
+) SharedTextureError!void {
     self.releaseOwnedResources();
     try self.createSharedTextureResources(device, width, height);
 }
@@ -102,7 +95,7 @@ fn createSharedTextureResources(
     device: *d3d11.ID3D11Device,
     width: u32,
     height: u32,
-) InitError!void {
+) SharedTextureError!void {
     // Create a render-target texture with the shared flag so consumers
     // can open it on their own D3D11 device via OpenSharedResource.
     const desc = d3d11.D3D11_TEXTURE2D_DESC{
@@ -122,7 +115,7 @@ fn createSharedTextureResources(
     var hr = device.CreateTexture2D(&desc, null, &texture_opt);
     if (com.FAILED(hr) or texture_opt == null) {
         log.err("CreateTexture2D (shared) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-        return InitError.TextureCreationFailed;
+        return SharedTextureError.TextureCreationFailed;
     }
     const texture = texture_opt.?;
     errdefer _ = texture.Release();
@@ -132,7 +125,7 @@ fn createSharedTextureResources(
     hr = device.CreateRenderTargetView(@ptrCast(texture), null, &rtv_opt);
     if (com.FAILED(hr) or rtv_opt == null) {
         log.err("CreateRenderTargetView (shared texture) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-        return InitError.RenderTargetViewFailed;
+        return SharedTextureError.RenderTargetViewFailed;
     }
     errdefer _ = rtv_opt.?.Release();
 
@@ -141,7 +134,7 @@ fn createSharedTextureResources(
     hr = texture.vtable.QueryInterface(texture, &dxgi.IDXGIResource.IID, &dxgi_resource_opt);
     if (com.FAILED(hr) or dxgi_resource_opt == null) {
         log.err("QI for IDXGIResource failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-        return InitError.QueryInterfaceFailed;
+        return SharedTextureError.QueryInterfaceFailed;
     }
     const dxgi_resource: *dxgi.IDXGIResource = @ptrCast(@alignCast(dxgi_resource_opt.?));
     defer _ = dxgi_resource.Release();
@@ -150,7 +143,7 @@ fn createSharedTextureResources(
     hr = dxgi_resource.GetSharedHandle(&shared_handle);
     if (com.FAILED(hr)) {
         log.err("GetSharedHandle failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-        return InitError.SharedHandleFailed;
+        return SharedTextureError.SharedHandleFailed;
     }
 
     // Write the handle to the consumer's output slot.
@@ -202,19 +195,69 @@ test "shared texture lifecycle" {
     try std.testing.expectEqual(@as(usize, 640), target.width);
     try std.testing.expectEqual(@as(usize, 480), target.height);
 
-    // Resize.
+    // Resize -- new texture means new shared handle.
+    const old_handle = shared_handle;
     try target.resizeSharedTexture(device, 1280, 720);
 
     try std.testing.expect(target.rtv != null);
     try std.testing.expect(target.texture != null);
     try std.testing.expectEqual(@as(usize, 1280), target.width);
     try std.testing.expectEqual(@as(usize, 720), target.height);
-    // Handle should still be valid after resize.
     try std.testing.expect(shared_handle != null);
+    // Handle must differ after resize (new texture = new DXGI resource).
+    try std.testing.expect(shared_handle != old_handle);
 
     // Deinit.
     target.deinit();
     try std.testing.expect(target.rtv == null);
     try std.testing.expect(target.texture == null);
     try std.testing.expectEqual(@as(usize, 0), target.width);
+}
+
+test "borrowed target deinit does not release owned resources" {
+    if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
+
+    const d3d11_ = @import("d3d11.zig");
+    const com_ = @import("com.zig");
+
+    var device_opt: ?*d3d11_.ID3D11Device = null;
+    var context_opt: ?*d3d11_.ID3D11DeviceContext = null;
+    const feature_levels = [_]d3d11_.D3D_FEATURE_LEVEL{.@"11_0"};
+    const hr = d3d11_.D3D11CreateDevice(
+        null,
+        .HARDWARE,
+        null,
+        d3d11_.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+        &feature_levels,
+        feature_levels.len,
+        d3d11_.D3D11_SDK_VERSION,
+        &device_opt,
+        null,
+        &context_opt,
+    );
+    if (com_.FAILED(hr)) return error.SkipZigTest;
+    const device = device_opt.?;
+    defer _ = device.Release();
+    defer _ = context_opt.?.Release();
+
+    var shared_handle: ?HANDLE = null;
+    var owner = try initSharedTexture(device, 640, 480, &shared_handle);
+    defer owner.deinit();
+
+    // Create a borrowed view the same way initTarget does: copy rtv and
+    // dimensions but leave texture/handle_out null.
+    var borrowed = @This(){
+        .rtv = owner.rtv,
+        .width = owner.width,
+        .height = owner.height,
+    };
+
+    // Deinit on the borrowed view must not release the RTV (texture is
+    // null so releaseOwnedResources treats it as borrowed).
+    borrowed.deinit();
+    try std.testing.expect(borrowed.rtv == null);
+
+    // Owner's resources must still be intact.
+    try std.testing.expect(owner.rtv != null);
+    try std.testing.expect(owner.texture != null);
 }

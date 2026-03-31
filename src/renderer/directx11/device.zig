@@ -98,126 +98,121 @@ pub const Device = struct {
 
         log.debug("D3D11CreateDevice OK: device=0x{x}", .{@intFromPtr(dev)});
 
-        // QueryInterface device -> IDXGIDevice
-        var dxgi_device_opt: ?*anyopaque = null;
-        hr = dev.QueryInterface(&dxgi.IDXGIDevice.IID, &dxgi_device_opt);
-        if (com.FAILED(hr) or dxgi_device_opt == null) {
-            log.err("QI for IDXGIDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-            return InitError.QueryInterfaceFailed;
-        }
-        const dxgi_device: *dxgi.IDXGIDevice = @ptrCast(@alignCast(dxgi_device_opt.?));
-        defer _ = dxgi_device.Release();
-
-        // Get the adapter from the DXGI device.
-        var adapter: ?*dxgi.IDXGIAdapter = null;
-        hr = dxgi_device.GetAdapter(&adapter);
-        if (com.FAILED(hr) or adapter == null) {
-            log.err("GetAdapter failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-            return InitError.GetAdapterFailed;
-        }
-        defer _ = adapter.?.Release();
-
-        // Get IDXGIFactory2 from the adapter.
-        var factory_opt: ?*anyopaque = null;
-        hr = adapter.?.GetParent(&dxgi.IDXGIFactory2.IID, &factory_opt);
-        if (com.FAILED(hr) or factory_opt == null) {
-            log.err("GetParent(IDXGIFactory2) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-            return InitError.GetFactoryFailed;
-        }
-        const factory: *dxgi.IDXGIFactory2 = @ptrCast(@alignCast(factory_opt.?));
-        defer _ = factory.Release();
-
-        // Create swap chain. Descriptor differs by surface type:
-        // - HWND: opaque window, DXGI_ALPHA_MODE_UNSPECIFIED
-        // - Composition: premultiplied alpha for XAML integration
-        // - Shared texture: no swap chain, Target owns the texture
+        // Shared texture mode: no swap chain needed, skip DXGI factory queries.
         var swap_chain: ?*dxgi.IDXGISwapChain1 = null;
         var panel_native: ?*dxgi.ISwapChainPanelNative = null;
-        var shared_texture_mode = false;
+        var rtv: ?*d3d11.ID3D11RenderTargetView = null;
+        const shared_texture_mode = surface == .shared_texture;
 
-        switch (surface) {
-            .hwnd => |hwnd| {
-                var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-                    .Width = width,
-                    .Height = height,
-                    .Format = .B8G8R8A8_UNORM,
-                    .Stereo = 0,
-                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
-                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    .BufferCount = 2,
-                    .Scaling = .NONE,
-                    .SwapEffect = .FLIP_DISCARD,
-                    .AlphaMode = .UNSPECIFIED,
-                    .Flags = 0,
-                };
-                hr = factory.CreateSwapChainForHwnd(
-                    @ptrCast(dev),
-                    hwnd,
-                    &desc,
-                    null,
-                    null,
-                    &swap_chain,
-                );
-            },
-            .swap_chain_panel => |panel| {
-                panel_native = panel;
-                var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-                    .Width = width,
-                    .Height = height,
-                    .Format = .B8G8R8A8_UNORM,
-                    .Stereo = 0,
-                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
-                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    .BufferCount = 2,
-                    .Scaling = .STRETCH,
-                    .SwapEffect = .FLIP_DISCARD,
-                    // Composition surfaces need premultiplied alpha for XAML
-                    // integration; HWND surfaces use UNSPECIFIED.
-                    .AlphaMode = .PREMULTIPLIED,
-                    .Flags = 0,
-                };
-                hr = factory.CreateSwapChainForComposition(
-                    @ptrCast(dev),
-                    &desc,
-                    null,
-                    &swap_chain,
-                );
-            },
-            .shared_texture => {
-                // No swap chain in shared texture mode; Target owns the
-                // texture and exposes it via a shared DXGI handle.
-                shared_texture_mode = true;
-            },
-        }
         if (!shared_texture_mode) {
+            // QueryInterface device -> IDXGIDevice
+            var dxgi_device_opt: ?*anyopaque = null;
+            hr = dev.QueryInterface(&dxgi.IDXGIDevice.IID, &dxgi_device_opt);
+            if (com.FAILED(hr) or dxgi_device_opt == null) {
+                log.err("QI for IDXGIDevice failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+                return InitError.QueryInterfaceFailed;
+            }
+            const dxgi_device: *dxgi.IDXGIDevice = @ptrCast(@alignCast(dxgi_device_opt.?));
+            defer _ = dxgi_device.Release();
+
+            // Get the adapter from the DXGI device.
+            var adapter: ?*dxgi.IDXGIAdapter = null;
+            hr = dxgi_device.GetAdapter(&adapter);
+            if (com.FAILED(hr) or adapter == null) {
+                log.err("GetAdapter failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+                return InitError.GetAdapterFailed;
+            }
+            defer _ = adapter.?.Release();
+
+            // Get IDXGIFactory2 from the adapter.
+            var factory_opt: ?*anyopaque = null;
+            hr = adapter.?.GetParent(&dxgi.IDXGIFactory2.IID, &factory_opt);
+            if (com.FAILED(hr) or factory_opt == null) {
+                log.err("GetParent(IDXGIFactory2) failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+                return InitError.GetFactoryFailed;
+            }
+            const factory: *dxgi.IDXGIFactory2 = @ptrCast(@alignCast(factory_opt.?));
+            defer _ = factory.Release();
+
+            // Create swap chain. Descriptor differs by surface type:
+            // - HWND: opaque window, DXGI_ALPHA_MODE_UNSPECIFIED
+            // - Composition: premultiplied alpha for XAML integration
+            switch (surface) {
+                .hwnd => |hwnd| {
+                    var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
+                        .Width = width,
+                        .Height = height,
+                        .Format = .B8G8R8A8_UNORM,
+                        .Stereo = 0,
+                        .SampleDesc = .{ .Count = 1, .Quality = 0 },
+                        .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                        .BufferCount = 2,
+                        .Scaling = .NONE,
+                        .SwapEffect = .FLIP_DISCARD,
+                        .AlphaMode = .UNSPECIFIED,
+                        .Flags = 0,
+                    };
+                    hr = factory.CreateSwapChainForHwnd(
+                        @ptrCast(dev),
+                        hwnd,
+                        &desc,
+                        null,
+                        null,
+                        &swap_chain,
+                    );
+                },
+                .swap_chain_panel => |panel| {
+                    panel_native = panel;
+                    var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
+                        .Width = width,
+                        .Height = height,
+                        .Format = .B8G8R8A8_UNORM,
+                        .Stereo = 0,
+                        .SampleDesc = .{ .Count = 1, .Quality = 0 },
+                        .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                        .BufferCount = 2,
+                        .Scaling = .STRETCH,
+                        .SwapEffect = .FLIP_DISCARD,
+                        // Composition surfaces need premultiplied alpha for XAML
+                        // integration; HWND surfaces use UNSPECIFIED.
+                        .AlphaMode = .PREMULTIPLIED,
+                        .Flags = 0,
+                    };
+                    hr = factory.CreateSwapChainForComposition(
+                        @ptrCast(dev),
+                        &desc,
+                        null,
+                        &swap_chain,
+                    );
+                },
+                .shared_texture => unreachable,
+            }
             if (com.FAILED(hr) or swap_chain == null) {
                 log.err("swap chain creation failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
                 return InitError.SwapChainCreationFailed;
             }
-        }
-        const sc = swap_chain;
-        errdefer if (sc) |s| { _ = s.Release(); };
 
-        // For composition surfaces, attach swap chain to the panel.
-        if (panel_native) |panel| {
-            hr = panel.SetSwapChain(@ptrCast(sc.?));
-            if (com.FAILED(hr)) {
-                log.err("SetSwapChain failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-                return InitError.SetSwapChainFailed;
+            // For composition surfaces, attach swap chain to the panel.
+            if (panel_native) |panel| {
+                hr = panel.SetSwapChain(@ptrCast(swap_chain.?));
+                if (com.FAILED(hr)) {
+                    log.err("SetSwapChain failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+                    _ = swap_chain.?.Release();
+                    return InitError.SetSwapChainFailed;
+                }
             }
-        }
-        errdefer if (panel_native) |panel| {
-            _ = panel.SetSwapChain(null);
-        };
 
-        // Get the back buffer and create a render target view (swap chain modes only).
-        var rtv: ?*d3d11.ID3D11RenderTargetView = null;
-        if (sc) |s| {
-            rtv = createRenderTargetView(dev, s) orelse {
+            // Get the back buffer and create a render target view.
+            rtv = createRenderTargetView(dev, swap_chain.?) orelse {
                 log.err("createRenderTargetView failed", .{});
+                if (panel_native) |panel| _ = panel.SetSwapChain(null);
+                _ = swap_chain.?.Release();
                 return InitError.RenderTargetViewFailed;
             };
         }
+        const sc = swap_chain;
+        errdefer if (sc) |s| { _ = s.Release(); };
+        errdefer if (panel_native) |panel| { _ = panel.SetSwapChain(null); };
         errdefer if (rtv) |r| { _ = r.Release(); };
 
         // Create a premultiplied-alpha blend state so that translucent

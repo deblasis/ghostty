@@ -192,14 +192,14 @@ pub fn surfaceSize(self: *const DirectX11) !struct { width: u32, height: u32 } {
 }
 
 pub fn initTarget(self: *const DirectX11, width: usize, height: usize) !Target {
-    // Shared texture mode: Target already owns RTV and texture.
+    // Shared texture mode: return a borrowed view of the shared target.
+    // Only copy rtv and dimensions -- leave texture and handle_out null
+    // so releaseOwnedResources treats this as borrowed (no double-release).
     if (self.shared_target) |st| {
         return .{
             .rtv = st.rtv,
             .width = st.width,
             .height = st.height,
-            .texture = st.texture,
-            .handle_out = st.handle_out,
         };
     }
     return .{
@@ -230,8 +230,8 @@ pub inline fn beginFrame(
                     log.err("shared texture resize failed: {}", .{err});
                     return error.PresentFailed;
                 };
+                // Update the borrowed view's rtv (texture stays null -- borrowed).
                 target.rtv = renderer.api.shared_target.?.rtv;
-                target.texture = renderer.api.shared_target.?.texture;
                 dev.width = w;
                 dev.height = h;
             } else {
