@@ -355,7 +355,6 @@ test "Device: shared texture mode skips swap chain" {
     // Shared texture mode: no swap chain, no RTV on Device (Target owns those).
     try std.testing.expect(device.swap_chain == null);
     try std.testing.expect(device.rtv == null);
-    try std.testing.expect(device.shared_texture_mode);
     try std.testing.expectEqual(device.hwnd, null);
     try std.testing.expectEqual(device.width, 640);
     try std.testing.expectEqual(device.height, 480);

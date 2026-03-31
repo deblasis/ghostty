@@ -66,9 +66,7 @@ pub fn resizeSharedTexture(
 
 pub fn deinit(self: *@This()) void {
     self.releaseOwnedResources();
-    self.rtv = null;
-    self.width = 0;
-    self.height = 0;
+    self.* = undefined;
 }
 
 /// Release texture and RTV if this Target owns them (shared texture mode).
@@ -157,33 +155,33 @@ fn createSharedTextureResources(
     log.info("shared texture created: {}x{}", .{ width, height });
 }
 
-test "shared texture lifecycle" {
-    // This test requires a real D3D11 device, so skip on non-Windows.
+fn createTestDevice() !*d3d11.ID3D11Device {
     if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
 
-    const d3d11_ = @import("d3d11.zig");
-    const com_ = @import("com.zig");
-
-    // Create a D3D11 device.
-    var device_opt: ?*d3d11_.ID3D11Device = null;
-    var context_opt: ?*d3d11_.ID3D11DeviceContext = null;
-    const feature_levels = [_]d3d11_.D3D_FEATURE_LEVEL{.@"11_0"};
-    const hr = d3d11_.D3D11CreateDevice(
+    var device_opt: ?*d3d11.ID3D11Device = null;
+    var context_opt: ?*d3d11.ID3D11DeviceContext = null;
+    const feature_levels = [_]d3d11.D3D_FEATURE_LEVEL{.@"11_0"};
+    const hr = d3d11.D3D11CreateDevice(
         null,
         .HARDWARE,
         null,
-        d3d11_.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+        d3d11.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
         &feature_levels,
         feature_levels.len,
-        d3d11_.D3D11_SDK_VERSION,
+        d3d11.D3D11_SDK_VERSION,
         &device_opt,
         null,
         &context_opt,
     );
-    if (com_.FAILED(hr)) return error.SkipZigTest;
-    const device = device_opt.?;
+    if (com.FAILED(hr)) return error.SkipZigTest;
+    // Release the context -- Target tests only need the device.
+    if (context_opt) |ctx| _ = ctx.Release();
+    return device_opt orelse error.SkipZigTest;
+}
+
+test "shared texture lifecycle" {
+    const device = createTestDevice() catch return;
     defer _ = device.Release();
-    defer _ = context_opt.?.Release();
 
     // Init shared texture.
     var shared_handle: ?HANDLE = null;
@@ -207,38 +205,13 @@ test "shared texture lifecycle" {
     // Handle must differ after resize (new texture = new DXGI resource).
     try std.testing.expect(shared_handle != old_handle);
 
-    // Deinit.
+    // Deinit -- self.* = undefined catches double-deinit in debug.
     target.deinit();
-    try std.testing.expect(target.rtv == null);
-    try std.testing.expect(target.texture == null);
-    try std.testing.expectEqual(@as(usize, 0), target.width);
 }
 
 test "borrowed target deinit does not release owned resources" {
-    if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
-
-    const d3d11_ = @import("d3d11.zig");
-    const com_ = @import("com.zig");
-
-    var device_opt: ?*d3d11_.ID3D11Device = null;
-    var context_opt: ?*d3d11_.ID3D11DeviceContext = null;
-    const feature_levels = [_]d3d11_.D3D_FEATURE_LEVEL{.@"11_0"};
-    const hr = d3d11_.D3D11CreateDevice(
-        null,
-        .HARDWARE,
-        null,
-        d3d11_.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-        &feature_levels,
-        feature_levels.len,
-        d3d11_.D3D11_SDK_VERSION,
-        &device_opt,
-        null,
-        &context_opt,
-    );
-    if (com_.FAILED(hr)) return error.SkipZigTest;
-    const device = device_opt.?;
+    const device = createTestDevice() catch return;
     defer _ = device.Release();
-    defer _ = context_opt.?.Release();
 
     var shared_handle: ?HANDLE = null;
     var owner = try initSharedTexture(device, 640, 480, &shared_handle);
@@ -255,9 +228,8 @@ test "borrowed target deinit does not release owned resources" {
     // Deinit on the borrowed view must not release the RTV (texture is
     // null so releaseOwnedResources treats it as borrowed).
     borrowed.deinit();
-    try std.testing.expect(borrowed.rtv == null);
 
-    // Owner's resources must still be intact.
+    // Owner's resources must still be intact after borrowed deinit.
     try std.testing.expect(owner.rtv != null);
     try std.testing.expect(owner.texture != null);
 }

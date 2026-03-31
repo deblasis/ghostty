@@ -224,14 +224,14 @@ pub inline fn beginFrame(
         const w: u32 = @intCast(target.width);
         const h: u32 = @intCast(target.height);
         if (dev.width != w or dev.height != h) {
-            if (renderer.api.shared_target != null) {
+            if (renderer.api.shared_target) |*st| {
                 // Shared texture mode: Target owns the texture, resize it.
-                renderer.api.shared_target.?.resizeSharedTexture(dev.device, w, h) catch |err| {
+                st.resizeSharedTexture(dev.device, w, h) catch |err| {
                     log.err("shared texture resize failed: {}", .{err});
                     return error.PresentFailed;
                 };
                 // Update the borrowed view's rtv (texture stays null -- borrowed).
-                target.rtv = renderer.api.shared_target.?.rtv;
+                target.rtv = st.rtv;
                 dev.width = w;
                 dev.height = h;
             } else {

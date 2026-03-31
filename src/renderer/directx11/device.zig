@@ -41,8 +41,6 @@ pub const Device = struct {
     /// The HWND for querying the actual window size.
     /// Null for composition (SwapChainPanel) or shared texture surfaces.
     hwnd: ?HWND,
-    /// True when using shared texture mode (no swap chain).
-    shared_texture_mode: bool,
     width: u32,
     height: u32,
     /// Desired size set by the embedder (via ghostty_surface_set_size).
@@ -102,9 +100,7 @@ pub const Device = struct {
         var swap_chain: ?*dxgi.IDXGISwapChain1 = null;
         var panel_native: ?*dxgi.ISwapChainPanelNative = null;
         var rtv: ?*d3d11.ID3D11RenderTargetView = null;
-        const shared_texture_mode = surface == .shared_texture;
-
-        if (!shared_texture_mode) {
+        if (surface != .shared_texture) {
             // QueryInterface device -> IDXGIDevice
             var dxgi_device_opt: ?*anyopaque = null;
             hr = dev.QueryInterface(&dxgi.IDXGIDevice.IID, &dxgi_device_opt);
@@ -237,7 +233,6 @@ pub const Device = struct {
                 .hwnd => |h| h,
                 .swap_chain_panel, .shared_texture => null,
             },
-            .shared_texture_mode = shared_texture_mode,
             .width = width,
             .height = height,
         };
@@ -302,8 +297,8 @@ pub const Device = struct {
     };
 
     pub fn resize(self: *Device, width: u32, height: u32) ResizeError!void {
-        if (self.shared_texture_mode) {
-            // In shared texture mode there is no swap chain; Target handles
+        if (self.swap_chain == null) {
+            // Shared texture mode: no swap chain. Target handles
             // the actual texture recreation on resize.
             self.width = width;
             self.height = height;
@@ -337,8 +332,8 @@ pub const Device = struct {
     };
 
     pub fn present(self: *Device) PresentError!void {
-        if (self.shared_texture_mode) {
-            // Shared texture mode has no swap chain; flush the immediate
+        if (self.swap_chain == null) {
+            // Shared texture mode: no swap chain. Flush the immediate
             // context so the rendered content is visible to the consumer.
             self.context.Flush();
             return;
