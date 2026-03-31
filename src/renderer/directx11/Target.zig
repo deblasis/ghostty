@@ -161,9 +161,5 @@ fn createSharedTextureResources(
     self.width = @intCast(width);
     self.height = @intCast(height);
 
-    log.info("shared texture created: {}x{}, handle=0x{x}", .{
-        width,
-        height,
-        @intFromPtr(shared_handle orelse @as(HANDLE, @ptrFromInt(0))),
-    });
+    log.info("shared texture created: {}x{}", .{ width, height });
 }
