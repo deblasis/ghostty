@@ -358,10 +358,16 @@ pub const Platform = union(PlatformTag) {
     } else void;
 
     pub const Windows = if (builtin.target.os.tag == .windows) struct {
-        /// The HWND to render into, or null for composition swap chain.
+        /// The HWND to render into, or null for composition/shared texture modes.
         hwnd: ?std.os.windows.HANDLE,
-        /// ISwapChainPanelNative pointer for composition swap chain, or null for HWND path.
+        /// ISwapChainPanelNative pointer for composition swap chain, or null.
         swap_chain_panel: ?*anyopaque = null,
+        /// OUT pointer for shared texture DXGI handle, or null.
+        shared_texture_out: ?*anyopaque = null,
+        /// Width of the shared texture in pixels. Required when shared_texture_out is set.
+        texture_width: u32 = 0,
+        /// Height of the shared texture in pixels. Required when shared_texture_out is set.
+        texture_height: u32 = 0,
     } else void;
 
     // The C ABI compatible version of this union. The tag is expected
@@ -378,6 +384,9 @@ pub const Platform = union(PlatformTag) {
         windows: extern struct {
             hwnd: ?*anyopaque,
             swap_chain_panel: ?*anyopaque,
+            shared_texture_out: ?*anyopaque,
+            texture_width: u32,
+            texture_height: u32,
         },
     };
 
@@ -402,6 +411,9 @@ pub const Platform = union(PlatformTag) {
             .windows => if (Windows != void) .{ .windows = .{
                 .hwnd = c_platform.windows.hwnd,
                 .swap_chain_panel = c_platform.windows.swap_chain_panel,
+                .shared_texture_out = c_platform.windows.shared_texture_out,
+                .texture_width = c_platform.windows.texture_width,
+                .texture_height = c_platform.windows.texture_height,
             } } else error.UnsupportedPlatform,
         };
     }
