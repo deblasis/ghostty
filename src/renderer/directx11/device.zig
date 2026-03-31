@@ -13,6 +13,13 @@ const HWND = dxgi.HWND;
 pub const Surface = union(enum) {
     hwnd: HWND,
     swap_chain_panel: *dxgi.ISwapChainPanelNative,
+    shared_texture: SharedTextureConfig,
+};
+
+pub const SharedTextureConfig = struct {
+    handle_out: *?std.os.windows.HANDLE,
+    width: u32,
+    height: u32,
 };
 
 pub const RECT = extern struct {
@@ -27,13 +34,15 @@ extern "user32" fn GetClientRect(hWnd: HWND, lpRect: *RECT) callconv(.winapi) i3
 pub const Device = struct {
     device: *d3d11.ID3D11Device,
     context: *d3d11.ID3D11DeviceContext,
-    swap_chain: *dxgi.IDXGISwapChain1,
+    swap_chain: ?*dxgi.IDXGISwapChain1,
     panel_native: ?*dxgi.ISwapChainPanelNative,
     rtv: ?*d3d11.ID3D11RenderTargetView,
     blend_state: ?*d3d11.ID3D11BlendState,
     /// The HWND for querying the actual window size.
-    /// Null for composition (SwapChainPanel) surfaces.
+    /// Null for composition (SwapChainPanel) or shared texture surfaces.
     hwnd: ?HWND,
+    /// True when using shared texture mode (no swap chain).
+    shared_texture_mode: bool,
     width: u32,
     height: u32,
     /// Desired size set by the embedder (via ghostty_surface_set_size).
@@ -121,25 +130,26 @@ pub const Device = struct {
         // Create swap chain. Descriptor differs by surface type:
         // - HWND: opaque window, DXGI_ALPHA_MODE_UNSPECIFIED
         // - Composition: premultiplied alpha for XAML integration
+        // - Shared texture: no swap chain, Target owns the texture
         var swap_chain: ?*dxgi.IDXGISwapChain1 = null;
         var panel_native: ?*dxgi.ISwapChainPanelNative = null;
-
-        var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-            .Width = width,
-            .Height = height,
-            .Format = .B8G8R8A8_UNORM,
-            .Stereo = 0,
-            .SampleDesc = .{ .Count = 1, .Quality = 0 },
-            .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            .BufferCount = 2,
-            .Scaling = .NONE,
-            .SwapEffect = .FLIP_DISCARD,
-            .AlphaMode = .UNSPECIFIED,
-            .Flags = 0,
-        };
+        var shared_texture_mode = false;
 
         switch (surface) {
             .hwnd => |hwnd| {
+                var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
+                    .Width = width,
+                    .Height = height,
+                    .Format = .B8G8R8A8_UNORM,
+                    .Stereo = 0,
+                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
+                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    .BufferCount = 2,
+                    .Scaling = .NONE,
+                    .SwapEffect = .FLIP_DISCARD,
+                    .AlphaMode = .UNSPECIFIED,
+                    .Flags = 0,
+                };
                 hr = factory.CreateSwapChainForHwnd(
                     @ptrCast(dev),
                     hwnd,
@@ -151,10 +161,21 @@ pub const Device = struct {
             },
             .swap_chain_panel => |panel| {
                 panel_native = panel;
-                desc.AlphaMode = .PREMULTIPLIED;
-                // Composition surfaces need scaling -- the panel may not
-                // match the buffer size exactly, unlike HWND surfaces.
-                desc.Scaling = .STRETCH;
+                var desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
+                    .Width = width,
+                    .Height = height,
+                    .Format = .B8G8R8A8_UNORM,
+                    .Stereo = 0,
+                    .SampleDesc = .{ .Count = 1, .Quality = 0 },
+                    .BufferUsage = dxgi.DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    .BufferCount = 2,
+                    .Scaling = .STRETCH,
+                    .SwapEffect = .FLIP_DISCARD,
+                    // Composition surfaces need premultiplied alpha for XAML
+                    // integration; HWND surfaces use UNSPECIFIED.
+                    .AlphaMode = .PREMULTIPLIED,
+                    .Flags = 0,
+                };
                 hr = factory.CreateSwapChainForComposition(
                     @ptrCast(dev),
                     &desc,
@@ -162,17 +183,24 @@ pub const Device = struct {
                     &swap_chain,
                 );
             },
+            .shared_texture => {
+                // No swap chain in shared texture mode; Target owns the
+                // texture and exposes it via a shared DXGI handle.
+                shared_texture_mode = true;
+            },
         }
-        if (com.FAILED(hr) or swap_chain == null) {
-            log.err("swap chain creation failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
-            return InitError.SwapChainCreationFailed;
+        if (!shared_texture_mode) {
+            if (com.FAILED(hr) or swap_chain == null) {
+                log.err("swap chain creation failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
+                return InitError.SwapChainCreationFailed;
+            }
         }
-        const sc = swap_chain.?;
-        errdefer _ = sc.Release();
+        const sc = swap_chain;
+        errdefer if (sc) |s| { _ = s.Release(); };
 
         // For composition surfaces, attach swap chain to the panel.
         if (panel_native) |panel| {
-            hr = panel.SetSwapChain(@ptrCast(sc));
+            hr = panel.SetSwapChain(@ptrCast(sc.?));
             if (com.FAILED(hr)) {
                 log.err("SetSwapChain failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
                 return InitError.SetSwapChainFailed;
@@ -182,12 +210,15 @@ pub const Device = struct {
             _ = panel.SetSwapChain(null);
         };
 
-        // Get the back buffer and create a render target view.
-        const rtv = createRenderTargetView(dev, sc) orelse {
-            log.err("createRenderTargetView failed", .{});
-            return InitError.RenderTargetViewFailed;
-        };
-        errdefer _ = rtv.Release();
+        // Get the back buffer and create a render target view (swap chain modes only).
+        var rtv: ?*d3d11.ID3D11RenderTargetView = null;
+        if (sc) |s| {
+            rtv = createRenderTargetView(dev, s) orelse {
+                log.err("createRenderTargetView failed", .{});
+                return InitError.RenderTargetViewFailed;
+            };
+        }
+        errdefer if (rtv) |r| { _ = r.Release(); };
 
         // Create a premultiplied-alpha blend state so that translucent
         // pixels (e.g. padding cells output as float4(0,0,0,0) by the
@@ -209,8 +240,9 @@ pub const Device = struct {
             .blend_state = blend_state,
             .hwnd = switch (surface) {
                 .hwnd => |h| h,
-                .swap_chain_panel => null,
+                .swap_chain_panel, .shared_texture => null,
             },
+            .shared_texture_mode = shared_texture_mode,
             .width = width,
             .height = height,
         };
@@ -235,15 +267,15 @@ pub const Device = struct {
         }
 
         // Release in reverse creation order.
-        _ = self.swap_chain.Release();
+        if (self.swap_chain) |sc| { _ = sc.Release(); }
         _ = self.context.Release();
         _ = self.device.Release();
     }
 
     /// Return the desired surface size.
     /// HWND path: queries GetClientRect for the actual window size.
-    /// Composition path: returns the target size set by the embedder
-    /// via setTargetSize, falling back to the current buffer size.
+    /// Composition and shared texture paths: returns the target size
+    /// set by the embedder, falling back to the current buffer size.
     pub fn windowSize(self: *const Device) struct { width: u32, height: u32 } {
         if (self.hwnd) |hwnd| {
             var rc: RECT = undefined;
@@ -275,6 +307,14 @@ pub const Device = struct {
     };
 
     pub fn resize(self: *Device, width: u32, height: u32) ResizeError!void {
+        if (self.shared_texture_mode) {
+            // In shared texture mode there is no swap chain; Target handles
+            // the actual texture recreation on resize.
+            self.width = width;
+            self.height = height;
+            return;
+        }
+
         // Release current render target view.
         if (self.rtv) |rtv| {
             _ = rtv.Release();
@@ -282,14 +322,14 @@ pub const Device = struct {
         }
 
         // Resize swap chain buffers.
-        const hr = self.swap_chain.ResizeBuffers(0, width, height, .UNKNOWN, 0);
+        const hr = self.swap_chain.?.ResizeBuffers(0, width, height, .UNKNOWN, 0);
         if (com.FAILED(hr)) {
             log.err("IDXGISwapChain1::ResizeBuffers failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return ResizeError.ResizeBuffersFailed;
         }
 
         // Recreate render target view.
-        self.rtv = createRenderTargetView(self.device, self.swap_chain) orelse {
+        self.rtv = createRenderTargetView(self.device, self.swap_chain.?) orelse {
             return ResizeError.RenderTargetViewFailed;
         };
 
@@ -302,7 +342,13 @@ pub const Device = struct {
     };
 
     pub fn present(self: *Device) PresentError!void {
-        const hr = self.swap_chain.Present(1, 0);
+        if (self.shared_texture_mode) {
+            // Shared texture mode has no swap chain; flush the immediate
+            // context so the rendered content is visible to the consumer.
+            self.context.Flush();
+            return;
+        }
+        const hr = self.swap_chain.?.Present(1, 0);
         if (com.FAILED(hr)) {
             log.err("IDXGISwapChain1::Present failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return PresentError.PresentFailed;
