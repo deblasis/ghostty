@@ -1731,6 +1731,27 @@ pub const CAPI = struct {
         return @ptrCast(dev.device);
     }
 
+    /// Return the ID3D11DeviceContext pointer that ghostty uses for
+    /// rendering. Consumers need this to call CopyResource from the
+    /// shared texture. Enable multithread protection on the context
+    /// when accessing from a non-render thread.
+    /// Returns null on non-DX11 builds or if the device is not initialized.
+    export fn ghostty_surface_get_d3d11_context(surface: *Surface) ?*anyopaque {
+        if (comptime builtin.os.tag != .windows) return null;
+        const dev = surface.core_surface.renderer.api.device orelse return null;
+        return @ptrCast(dev.context);
+    }
+
+    /// Return the ID3D11Texture2D pointer that ghostty renders to in
+    /// shared texture mode. Same-process consumers can CopyResource
+    /// directly from this pointer using ghostty's device context.
+    /// Returns null on non-DX11 builds or if not in shared texture mode.
+    export fn ghostty_surface_get_d3d11_texture(surface: *Surface) ?*anyopaque {
+        if (comptime builtin.os.tag != .windows) return null;
+        const st = surface.core_surface.renderer.api.shared_target orelse return null;
+        return @ptrCast(st.texture orelse return null);
+    }
+
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {

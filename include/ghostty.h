@@ -1131,6 +1131,16 @@ GHOSTTY_EXPORT void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32
 // consumers should call OpenSharedResource on this device to avoid cross-device
 // synchronization issues. Returns NULL on non-DX11 builds.
 GHOSTTY_EXPORT void* ghostty_surface_get_d3d11_device(ghostty_surface_t);
+// Returns the ID3D11DeviceContext* ghostty uses for rendering. Consumers
+// need this for CopyResource from the shared texture. Enable multithread
+// protection when accessing from a non-render thread. Returns NULL on
+// non-DX11 builds.
+GHOSTTY_EXPORT void* ghostty_surface_get_d3d11_context(ghostty_surface_t);
+// Returns the ID3D11Texture2D* ghostty renders to in shared texture mode.
+// Same-process consumers can CopyResource from this directly. The texture
+// pointer changes on resize -- re-read after ghostty_surface_set_size.
+// Returns NULL if not in shared texture mode.
+GHOSTTY_EXPORT void* ghostty_surface_get_d3d11_texture(ghostty_surface_t);
 GHOSTTY_EXPORT ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 GHOSTTY_EXPORT void ghostty_surface_set_color_scheme(ghostty_surface_t,
                                                      ghostty_color_scheme_e);
