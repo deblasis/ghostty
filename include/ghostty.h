@@ -458,6 +458,9 @@ typedef struct {
 typedef struct {
   void* hwnd;
   void* swap_chain_panel;
+  void* shared_texture_out;
+  uint32_t texture_width;
+  uint32_t texture_height;
 } ghostty_platform_windows_s;
 
 typedef union {
