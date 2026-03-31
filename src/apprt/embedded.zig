@@ -1721,6 +1721,16 @@ pub const CAPI = struct {
         surface.draw();
     }
 
+    /// Return the ID3D11Device pointer that ghostty uses for rendering.
+    /// Shared texture consumers should open the DXGI shared handle on
+    /// this same device to avoid cross-device synchronization issues.
+    /// Returns null on non-DX11 builds or if the device is not initialized.
+    export fn ghostty_surface_get_d3d11_device(surface: *Surface) ?*anyopaque {
+        if (comptime builtin.os.tag != .windows) return null;
+        const dev = surface.core_surface.renderer.api.device orelse return null;
+        return @ptrCast(dev.device);
+    }
+
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {

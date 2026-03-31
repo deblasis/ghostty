@@ -458,6 +458,9 @@ typedef struct {
 typedef struct {
   void* hwnd;
   void* swap_chain_panel;
+  // OUT: receives the DXGI shared handle for the render texture.
+  // Open with OpenSharedResource on the device returned by
+  // ghostty_surface_get_d3d11_device to avoid cross-device sync issues.
   void* shared_texture_out;
   uint32_t texture_width;
   uint32_t texture_height;
@@ -1124,6 +1127,10 @@ GHOSTTY_EXPORT void ghostty_surface_set_content_scale(ghostty_surface_t, double,
 GHOSTTY_EXPORT void ghostty_surface_set_focus(ghostty_surface_t, bool);
 GHOSTTY_EXPORT void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
 GHOSTTY_EXPORT void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
+// Returns the ID3D11Device* used by this surface's renderer. Shared texture
+// consumers should call OpenSharedResource on this device to avoid cross-device
+// synchronization issues. Returns NULL on non-DX11 builds.
+GHOSTTY_EXPORT void* ghostty_surface_get_d3d11_device(ghostty_surface_t);
 GHOSTTY_EXPORT ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 GHOSTTY_EXPORT void ghostty_surface_set_color_scheme(ghostty_surface_t,
                                                      ghostty_color_scheme_e);
