@@ -16,6 +16,7 @@ const RenderPass = @import("RenderPass.zig");
 const Device = @import("device.zig").Device;
 const dcomp = @import("dcomp.zig");
 const Surface = @import("device.zig").Surface;
+const Target = @import("Target.zig");
 
 const Buffer = buffer_mod.Buffer;
 
@@ -449,4 +450,71 @@ test "Device: shared texture mode has no dcomp objects" {
     try std.testing.expectEqual(device.dcomp_device, null);
     try std.testing.expectEqual(device.dcomp_target, null);
     try std.testing.expectEqual(device.dcomp_visual, null);
+}
+
+test "Device: multithread protection is enabled after init" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    const HANDLE = std.os.windows.HANDLE;
+    var shared_handle: ?HANDLE = null;
+
+    var device = Device.init(.{ .shared_texture = .{
+        .handle_out = &shared_handle,
+        .width = 640,
+        .height = 480,
+    } }, 640, 480) catch return;
+    defer device.deinit();
+
+    // Query ID3D11Multithread from the context and verify protection is on.
+    // Guards against accidentally removing SetMultithreadProtected(TRUE)
+    // from Device.init -- without it, embedding hosts (Unity, Unreal) crash.
+    var mt_opt: ?*anyopaque = null;
+    const hr = device.context.QueryInterface(&d3d11.ID3D11Multithread.IID, &mt_opt);
+    try std.testing.expect(com.SUCCEEDED(hr));
+    try std.testing.expect(mt_opt != null);
+    const mt: *d3d11.ID3D11Multithread = @ptrCast(@alignCast(mt_opt.?));
+    defer _ = mt.Release();
+
+    // GetMultithreadProtected returns non-zero when protection is enabled.
+    try std.testing.expect(mt.vtable.GetMultithreadProtected(mt) != 0);
+}
+
+test "Device: shared texture resize after GPU work does not crash" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    const HANDLE = std.os.windows.HANDLE;
+    var shared_handle: ?HANDLE = null;
+
+    var device = Device.init(.{ .shared_texture = .{
+        .handle_out = &shared_handle,
+        .width = 640,
+        .height = 480,
+    } }, 640, 480) catch return;
+    defer device.deinit();
+
+    // Create a shared texture target (simulates what the renderer does).
+    var target = Target.initSharedTexture(device.device, 640, 480, &shared_handle) catch return;
+    defer target.deinit();
+
+    // Issue GPU work against the RTV, then flush and resize -- this is
+    // the sequence that crashed in-process hosts before the Flush() fix.
+    // ClearRenderTargetView puts commands in the GPU command buffer that
+    // reference the current RTV. Without Flush() before resize, releasing
+    // the old RTV while those commands are in-flight causes an AV.
+    const clear_color = [4]f32{ 0.0, 0.0, 0.0, 1.0 };
+    device.context.ClearRenderTargetView(target.rtv.?, &clear_color);
+
+    // Flush before resize (this is what beginFrame now does).
+    device.context.Flush();
+
+    // Resize -- releases old RTV/texture, creates new ones.
+    try target.resizeSharedTexture(device.device, 1280, 720);
+
+    try std.testing.expect(target.rtv != null);
+    try std.testing.expectEqual(@as(usize, 1280), target.width);
+    try std.testing.expectEqual(@as(usize, 720), target.height);
+
+    // Issue work against the new RTV to confirm it's valid.
+    device.context.ClearRenderTargetView(target.rtv.?, &clear_color);
+    device.context.Flush();
 }
