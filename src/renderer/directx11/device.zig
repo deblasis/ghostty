@@ -427,6 +427,10 @@ pub const Device = struct {
             log.err("IDXGISwapChain1::Present failed: hr=0x{x}", .{@as(u32, @bitCast(hr))});
             return PresentError.PresentFailed;
         }
+        // Flush the DirectComposition tree so DWM sees the new frame.
+        if (self.dcomp_device) |dcomp_dev| {
+            _ = dcomp_dev.Commit();
+        }
     }
 
     /// Create a premultiplied-alpha blend state.
