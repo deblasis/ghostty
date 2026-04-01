@@ -225,6 +225,10 @@ pub inline fn beginFrame(
         const h: u32 = @intCast(target.height);
         if (dev.width != w or dev.height != h) {
             if (renderer.api.shared_target) |*st| {
+                // Flush pending GPU commands before releasing the old RTV.
+                // Without this the command buffer may still reference the
+                // old render target, causing an ACCESS_VIOLATION in d3d11.dll.
+                dev.context.Flush();
                 // Shared texture mode: Target owns the texture, resize it.
                 st.resizeSharedTexture(dev.device, w, h) catch |err| {
                     log.err("shared texture resize failed: {}", .{err});
