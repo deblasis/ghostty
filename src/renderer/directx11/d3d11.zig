@@ -1293,6 +1293,10 @@ pub const ID3D11DeviceContext = extern struct {
     pub inline fn Flush(self: *ID3D11DeviceContext) void {
         self.vtable.Flush(self);
     }
+
+    pub inline fn QueryInterface(self: *ID3D11DeviceContext, riid: *const GUID, ppvObject: *?*anyopaque) HRESULT {
+        return self.vtable.QueryInterface(self, riid, ppvObject);
+    }
 };
 
 /// Opaque type - we never call methods on class instances directly.

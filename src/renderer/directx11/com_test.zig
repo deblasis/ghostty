@@ -109,6 +109,10 @@ test "ID3D11DeviceContext is a single vtable pointer" {
     try std.testing.expectEqual(@sizeOf(d3d11.ID3D11DeviceContext), @sizeOf(*anyopaque));
 }
 
+test "ID3D11Multithread is a single vtable pointer" {
+    try std.testing.expectEqual(@sizeOf(d3d11.ID3D11Multithread), @sizeOf(*anyopaque));
+}
+
 // Verify GUID constants are the right values (cross-referenced with
 // Windows SDK headers).
 
@@ -141,6 +145,14 @@ test "ID3D11Texture2D IID" {
     try std.testing.expectEqual(iid.data1, 0x6f15aaf2);
     try std.testing.expectEqual(iid.data2, 0xd208);
     try std.testing.expectEqual(iid.data3, 0x4e89);
+}
+
+test "ID3D11Multithread IID" {
+    const iid = d3d11.ID3D11Multithread.IID;
+    try std.testing.expectEqual(iid.data1, 0x9B7E4E00);
+    try std.testing.expectEqual(iid.data2, 0x342C);
+    try std.testing.expectEqual(iid.data3, 0x4106);
+    try std.testing.expectEqualSlices(u8, &iid.data4, &[_]u8{ 0xA1, 0x9F, 0x4F, 0x27, 0x04, 0xF6, 0x89, 0xF0 });
 }
 
 test "Buffer Options has device and context fields" {

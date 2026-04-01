@@ -111,8 +111,7 @@ pub const Device = struct {
         // state concurrently.
         {
             var mt_opt: ?*anyopaque = null;
-            const mt_hr = ctx.vtable.QueryInterface(
-                @ptrCast(ctx),
+            const mt_hr = ctx.QueryInterface(
                 &d3d11.ID3D11Multithread.IID,
                 &mt_opt,
             );
