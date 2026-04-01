@@ -1298,6 +1298,46 @@ pub const ID3D11DeviceContext = extern struct {
 /// Opaque type - we never call methods on class instances directly.
 pub const ID3D11ClassInstance = opaque {};
 
+// ID3D11Multithread
+// Vtable order from d3d11.h (inherits IUnknown 0-2):
+//   0: QueryInterface
+//   1: AddRef
+//   2: Release
+//   3: Enter
+//   4: Leave
+//   5: SetMultithreadProtected
+//   6: GetMultithreadProtected
+pub const ID3D11Multithread = extern struct {
+    vtable: *const VTable,
+
+    pub const IID = GUID{
+        .data1 = 0x9B7E4E00,
+        .data2 = 0x342C,
+        .data3 = 0x4106,
+        .data4 = .{ 0xA1, 0x9F, 0x4F, 0x27, 0x04, 0xF6, 0x89, 0xF0 },
+    };
+
+    pub const VTable = extern struct {
+        // IUnknown (slots 0-2)
+        QueryInterface: *const fn (*ID3D11Multithread, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
+        AddRef: *const fn (*ID3D11Multithread) callconv(.winapi) u32,
+        Release: *const fn (*ID3D11Multithread) callconv(.winapi) u32,
+        // ID3D11Multithread (slots 3-6)
+        Enter: *const fn (*ID3D11Multithread) callconv(.winapi) void,
+        Leave: *const fn (*ID3D11Multithread) callconv(.winapi) void,
+        SetMultithreadProtected: *const fn (*ID3D11Multithread, i32) callconv(.winapi) i32,
+        GetMultithreadProtected: *const fn (*ID3D11Multithread) callconv(.winapi) i32,
+    };
+
+    pub inline fn SetMultithreadProtected(self: *ID3D11Multithread, protect: i32) i32 {
+        return self.vtable.SetMultithreadProtected(self, protect);
+    }
+
+    pub inline fn Release(self: *ID3D11Multithread) u32 {
+        return self.vtable.Release(self);
+    }
+};
+
 // D3D11CreateDevice - imported from d3d11.dll
 pub const D3D11CreateDevice = @extern(*const fn (
     pAdapter: ?*anyopaque, // IDXGIAdapter

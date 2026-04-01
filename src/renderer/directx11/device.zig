@@ -104,6 +104,32 @@ pub const Device = struct {
 
         log.debug("D3D11CreateDevice OK: device=0x{x}", .{@intFromPtr(dev)});
 
+        // Enable D3D11 multithread protection so the runtime serialises
+        // context calls across threads.  Without this, a host process that
+        // already owns D3D11 devices (e.g. Unity, Unreal) can crash when
+        // its threads and ghostty's renderer thread touch shared driver
+        // state concurrently.
+        {
+            var mt_opt: ?*anyopaque = null;
+            const mt_hr = ctx.vtable.QueryInterface(
+                @ptrCast(ctx),
+                &d3d11.ID3D11Multithread.IID,
+                &mt_opt,
+            );
+            if (com.SUCCEEDED(mt_hr)) {
+                if (mt_opt) |mt_raw| {
+                    const mt: *d3d11.ID3D11Multithread = @ptrCast(@alignCast(mt_raw));
+                    _ = mt.SetMultithreadProtected(1);
+                    _ = mt.Release();
+                    log.debug("D3D11 multithread protection enabled", .{});
+                }
+            } else {
+                // Not fatal -- standalone processes work fine without it,
+                // but log a warning since embedding scenarios may be fragile.
+                log.warn("ID3D11Multithread QI failed: hr=0x{x}", .{@as(u32, @bitCast(mt_hr))});
+            }
+        }
+
         // Shared texture mode: no swap chain needed, skip DXGI factory queries.
         var swap_chain: ?*dxgi.IDXGISwapChain1 = null;
         var panel_native: ?*dxgi.ISwapChainPanelNative = null;
