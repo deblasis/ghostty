@@ -264,11 +264,11 @@ pub const DirectWrite = struct {
         hr = factory.GetSystemFontFallback(&fallback);
         if (dwrite.FAILED(hr)) @panic("DirectWrite: failed to get system font fallback");
 
-        // DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE = 2
         // We don't need number substitution for font discovery, but
         // IDWriteTextAnalysisSource requires one for MapCharacters.
+        const DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE: u32 = 2;
         var number_sub: ?*dwrite.IDWriteNumberSubstitution = null;
-        hr = factory.CreateNumberSubstitution(2, null, 0, &number_sub);
+        hr = factory.CreateNumberSubstitution(DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE, null, 0, &number_sub);
         if (dwrite.FAILED(hr)) @panic("DirectWrite: failed to create number substitution");
 
         return .{
@@ -515,17 +515,12 @@ pub const DirectWrite = struct {
         }
     };
 
-    // UTF-8 to UTF-16 helper (ASCII fast path, sufficient for font family names)
+    // UTF-8 to null-terminated UTF-16LE for DirectWrite APIs.
 
     fn utf8ToUtf16Le(buf: []u16, utf8: []const u8) ?[*:0]const u16 {
-        var i: usize = 0;
-        for (utf8) |byte| {
-            if (i >= buf.len - 1) return null;
-            buf[i] = @intCast(byte);
-            i += 1;
-        }
-        buf[i] = 0;
-        return @ptrCast(buf[0..i :0].ptr);
+        const len = std.unicode.utf8ToUtf16Le(buf[0 .. buf.len - 1], utf8) catch return null;
+        buf[len] = 0;
+        return @ptrCast(buf[0..len :0].ptr);
     }
 
     pub const DiscoverIterator = struct {

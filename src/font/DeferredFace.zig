@@ -357,26 +357,10 @@ fn loadDirectWrite(self: *DeferredFace, lib: Library, opts: font.face.Options) !
     hr = local_loader.GetFilePathFromKey(key.?, key_size, &wpath_buf, path_len + 1);
     if (dwrite.FAILED(hr)) return error.FontHasNoFile;
 
-    // Convert UTF-16 to UTF-8
+    // Convert UTF-16 path to null-terminated UTF-8 for FreeType
     var path_buf: [1024]u8 = undefined;
-    var utf8_len: usize = 0;
-    for (wpath_buf[0..path_len]) |wc| {
-        if (utf8_len + 3 > path_buf.len - 1) return error.FontPathCantDecode;
-        const c: u21 = @intCast(wc);
-        if (c < 0x80) {
-            path_buf[utf8_len] = @intCast(c);
-            utf8_len += 1;
-        } else if (c < 0x800) {
-            path_buf[utf8_len] = @intCast(0xC0 | (c >> 6));
-            path_buf[utf8_len + 1] = @intCast(0x80 | (c & 0x3F));
-            utf8_len += 2;
-        } else {
-            path_buf[utf8_len] = @intCast(0xE0 | (c >> 12));
-            path_buf[utf8_len + 1] = @intCast(0x80 | ((c >> 6) & 0x3F));
-            path_buf[utf8_len + 2] = @intCast(0x80 | (c & 0x3F));
-            utf8_len += 3;
-        }
-    }
+    const utf8_len = std.unicode.utf16LeToUtf8(path_buf[0 .. path_buf.len - 1], wpath_buf[0..path_len]) catch
+        return error.FontPathCantDecode;
     path_buf[utf8_len] = 0;
     const path: [:0]const u8 = path_buf[0..utf8_len :0];
 
