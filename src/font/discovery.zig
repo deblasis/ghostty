@@ -264,8 +264,11 @@ pub const DirectWrite = struct {
         hr = factory.GetSystemFontFallback(&fallback);
         if (dwrite.FAILED(hr)) @panic("DirectWrite: failed to get system font fallback");
 
+        // DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE = 2
+        // We don't need number substitution for font discovery, but
+        // IDWriteTextAnalysisSource requires one for MapCharacters.
         var number_sub: ?*dwrite.IDWriteNumberSubstitution = null;
-        hr = factory.CreateNumberSubstitution(0, null, 0, &number_sub);
+        hr = factory.CreateNumberSubstitution(2, null, 0, &number_sub);
         if (dwrite.FAILED(hr)) @panic("DirectWrite: failed to create number substitution");
 
         return .{
@@ -1357,5 +1360,80 @@ test "coretext sorting" {
         var buf: [1024]u8 = undefined;
         const name = try res.name(&buf);
         try testing.expectEqualStrings("SF Pro Bold Italic", name);
+    }
+}
+
+test "directwrite" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var dw = DirectWrite.init();
+    defer dw.deinit();
+    var it = try dw.discover(alloc, .{ .family = "Consolas", .size = 12 });
+    defer it.deinit();
+    var count: usize = 0;
+    while (try it.next()) |_| {
+        count += 1;
+    }
+    try testing.expect(count > 0);
+}
+
+test "directwrite codepoint" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var dw = DirectWrite.init();
+    defer dw.deinit();
+    var it = try dw.discover(alloc, .{ .family = "Consolas", .codepoint = 'A', .size = 12 });
+    defer it.deinit();
+
+    var face = (try it.next()).?;
+    defer face.deinit();
+    try testing.expect(face.hasCodepoint('A', null));
+    try testing.expect(face.hasCodepoint('B', null));
+}
+
+test "directwrite bold" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var dw = DirectWrite.init();
+    defer dw.deinit();
+    var it = try dw.discover(alloc, .{ .family = "Consolas", .bold = true, .size = 12 });
+    defer it.deinit();
+
+    var face = (try it.next()).?;
+    defer face.deinit();
+
+    var buf: [1024]u8 = undefined;
+    const name = try face.name(&buf);
+    try testing.expect(name.len > 0);
+}
+
+test "directwrite fallback" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var dw = DirectWrite.init();
+    defer dw.deinit();
+
+    // U+1F600 = grinning face emoji -- should find a fallback font
+    var dummy_collection: Collection = undefined;
+    var it = try dw.discoverFallback(alloc, &dummy_collection, .{ .codepoint = 0x1F600, .size = 12 });
+    defer it.deinit();
+
+    // It's OK if no emoji font is found on headless CI
+    if (try it.next()) |f| {
+        var f_mut = f;
+        defer f_mut.deinit();
+        try testing.expect(f_mut.hasCodepoint(0x1F600, null));
     }
 }

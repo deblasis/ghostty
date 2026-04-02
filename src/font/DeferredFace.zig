@@ -606,3 +606,31 @@ test "coretext" {
     defer face.deinit();
     try testing.expect(face.glyphIndex(' ') != null);
 }
+
+test "directwrite" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const discovery_mod = @import("main.zig").discovery;
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var def = def: {
+        var dw = discovery_mod.DirectWrite.init();
+        defer dw.deinit();
+        var it = try dw.discover(alloc, .{ .family = "Consolas", .size = 12 });
+        defer it.deinit();
+        break :def (try it.next()).?;
+    };
+    defer def.deinit();
+
+    var buf_dw: [1024]u8 = undefined;
+    const n_dw = try def.name(&buf_dw);
+    try testing.expect(n_dw.len > 0);
+
+    var face_dw = try def.load(lib, .{ .size = .{ .points = 12 } });
+    defer face_dw.deinit();
+    try testing.expect(face_dw.glyphIndex(' ') != null);
+}
