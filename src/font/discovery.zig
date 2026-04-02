@@ -13,7 +13,9 @@ const log = std.log.scoped(.discovery);
 
 /// Discover implementation for the compile options.
 pub const Discover = switch (options.backend) {
-    .freetype => void, // no discovery
+    .freetype,
+    .directwrite_freetype,
+    => void, // no discovery (DirectWrite discovery implementation comes later)
     .fontconfig_freetype => Fontconfig,
     .web_canvas => void, // no discovery
     .coretext,

@@ -87,7 +87,7 @@ pub const WebCanvas = struct {
 pub fn deinit(self: *DeferredFace) void {
     switch (options.backend) {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
-        .freetype => {},
+        .freetype, .directwrite_freetype => {},
         .web_canvas => if (self.wc) |*wc| wc.deinit(),
         .coretext,
         .coretext_freetype,
@@ -101,7 +101,7 @@ pub fn deinit(self: *DeferredFace) void {
 /// Returns the family name of the font.
 pub fn familyName(self: DeferredFace, buf: []u8) ![]const u8 {
     switch (options.backend) {
-        .freetype => {},
+        .freetype, .directwrite_freetype => {},
 
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.family, 0)).string,
@@ -129,7 +129,7 @@ pub fn familyName(self: DeferredFace, buf: []u8) ![]const u8 {
 /// face so it doesn't have to be freed.
 pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
     switch (options.backend) {
-        .freetype => {},
+        .freetype, .directwrite_freetype => {},
 
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.fullname, 0)).string,
@@ -170,7 +170,7 @@ pub fn load(
 
         // Unreachable because we must be already loaded or have the
         // proper configuration for one of the other deferred mechanisms.
-        .freetype => unreachable,
+        .freetype, .directwrite_freetype => unreachable,
     };
 }
 
@@ -344,7 +344,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
             return face.glyphIndex(cp) != null;
         },
 
-        .freetype => {},
+        .freetype, .directwrite_freetype => {},
     }
 
     // This is unreachable because discovery mechanisms terminate, and
