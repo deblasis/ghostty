@@ -16,4 +16,5 @@ pub const DXGI_ERROR_DEVICE_REMOVED: HRESULT = @bitCast(@as(u32, 0x887A0005));
 
 test {
     _ = @import("com_test.zig");
+    _ = @import("d3d12.zig");
 }
