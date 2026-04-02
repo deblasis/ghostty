@@ -824,9 +824,6 @@ pub fn loadDWriteCreateFactory() !DWriteCreateFactoryFn {
 
 /// Read the string at index 0 from an IDWriteLocalizedStrings into a
 /// UTF-8 slice backed by the provided buffer.
-///
-/// Covers all BMP characters, which includes every practical font name.
-/// Surrogate pairs (non-BMP) are replaced with U+FFFD.
 pub fn getLocalizedString(
     strings: *IDWriteLocalizedStrings,
     buf: []u8,
