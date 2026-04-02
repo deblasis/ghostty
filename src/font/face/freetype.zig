@@ -356,8 +356,7 @@ pub const Face = struct {
     /// Light hinting (TARGET_LIGHT) is the default on all platforms,
     /// including Windows. This preserves glyph shapes rather than
     /// snapping to the pixel grid, matching the CoreText approach on
-    /// macOS. Native ClearType rendering (subpixel color, grid-fitted
-    /// hinting) would require a DirectWrite rasterization backend.
+    /// macOS.
     fn glyphLoadFlags(self: Face, constrained: bool) freetype.LoadFlags {
         // Hinting should only be enabled if the configured load flags specify
         // it and the provided constraint doesn't actually do anything, since
@@ -1179,8 +1178,6 @@ test "default load flags" {
 
     const flags = ft_font.glyphLoadFlags(false);
 
-    // Light hinting is the default on all platforms, including Windows.
-    // This preserves glyph shapes rather than snapping to the pixel grid.
     try testing.expectEqual(.light, flags.target);
     try testing.expect(!flags.no_hinting);
     try testing.expect(!flags.force_autohint);
