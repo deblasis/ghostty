@@ -307,7 +307,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-GHOSTTY_EXPORT GhosttyResult ghostty_cell_get(GhosttyCell cell,
+GHOSTTY_API GhosttyResult ghostty_cell_get(GhosttyCell cell,
                                GhosttyCellData data,
                                void *out);
 
@@ -327,7 +327,7 @@ GHOSTTY_EXPORT GhosttyResult ghostty_cell_get(GhosttyCell cell,
  *
  * @ingroup screen
  */
-GHOSTTY_EXPORT GhosttyResult ghostty_row_get(GhosttyRow row,
+GHOSTTY_API GhosttyResult ghostty_row_get(GhosttyRow row,
                               GhosttyRowData data,
                               void *out);
 
