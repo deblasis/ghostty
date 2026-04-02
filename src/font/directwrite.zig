@@ -466,7 +466,7 @@ pub const IDWriteFont = extern struct {
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
         QueryInterface: Reserved,
-        AddRef: Reserved,
+        AddRef: *const fn (*IDWriteFont) callconv(.winapi) u32,
         Release: *const fn (*IDWriteFont) callconv(.winapi) u32,
         // IDWriteFont (slots 3-13)
         GetFontFamily: Reserved,
@@ -493,6 +493,10 @@ pub const IDWriteFont = extern struct {
         // IDWriteFont2 (slot 18)
         IsColorFont: *const fn (*IDWriteFont) callconv(.winapi) BOOL,
     };
+
+    pub inline fn AddRef(self: *IDWriteFont) u32 {
+        return self.vtable.AddRef(self);
+    }
 
     pub inline fn Release(self: *IDWriteFont) u32 {
         return self.vtable.Release(self);
