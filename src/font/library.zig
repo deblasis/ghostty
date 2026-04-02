@@ -11,6 +11,7 @@ pub const Library = switch (options.backend) {
     // Freetype requires a state library
     .freetype,
     .fontconfig_freetype,
+    .directwrite_freetype,
     .coretext_freetype,
     => FreetypeLibrary,
 
