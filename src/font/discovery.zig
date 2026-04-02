@@ -1461,6 +1461,6 @@ test "directwrite variations" {
     // at load time (via FreeType's setVarDesignCoordinates).
     var face = (try it.next()) orelse return;
     defer face.deinit();
-    try testing.expectEqual(@as(usize, 1), face.dw.?.variations.len);
-    try testing.expectEqual(@as(u32, @bitCast(Variation.Id.init("wght"))), @as(u32, @bitCast(face.dw.?.variations[0].id)));
+    try testing.expectEqual(1, face.dw.?.variations.len);
+    try testing.expectEqual(Variation.Id.init("wght"), face.dw.?.variations[0].id);
 }
