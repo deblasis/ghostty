@@ -353,9 +353,27 @@ fn collection(
         }
     }
 
-    // Emoji fallback. We don't include this on Mac since Mac is expected
-    // to always have the Apple Emoji available on the system.
-    if (comptime !builtin.target.os.tag.isDarwin() or Discover == void) {
+    // On Windows, prefer "Segoe UI Emoji" for native emoji rendering.
+    // Ships with Windows 10+, same floor as DirectWrite.
+    if (comptime builtin.target.os.tag == .windows and Discover != void) windows_emoji: {
+        const disco = try self.discover() orelse break :windows_emoji;
+        var disco_it = try disco.discover(self.alloc, .{
+            .family = "Segoe UI Emoji",
+        });
+        defer disco_it.deinit();
+        if (try disco_it.next()) |face| {
+            _ = try c.addDeferred(self.alloc, face, .{
+                .style = .regular,
+                .fallback = true,
+                // No size adjustment for emojis.
+                .size_adjustment = .none,
+            });
+        }
+    }
+
+    // Emoji fallback. We don't include this on Mac or Windows since both
+    // are expected to have system emoji fonts available.
+    if (comptime (!builtin.target.os.tag.isDarwin() and builtin.target.os.tag != .windows) or Discover == void) {
         _ = try c.add(
             self.alloc,
             try .init(
