@@ -20,6 +20,7 @@ pub const default_features = feature.default_features;
 pub const Shaper = switch (options.backend) {
     .freetype,
     .fontconfig_freetype,
+    .directwrite_freetype,
     .coretext_freetype,
     .coretext_harfbuzz,
     => harfbuzz.Shaper,
