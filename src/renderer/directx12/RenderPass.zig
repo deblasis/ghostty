@@ -60,6 +60,16 @@ step_number: usize,
 pub fn begin(opts: Options) RenderPass {
     const cl = opts.command_list;
 
+    // Collect all RTV handles so we can set them with a single
+    // OMSetRenderTargets call (per-attachment calls would silently
+    // overwrite, leaving only the last target bound).
+    var rtv_handles: [8]d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = undefined;
+    var rtv_count: u32 = 0;
+
+    // Track viewport dimensions from the first valid target.
+    var vp_width: usize = 0;
+    var vp_height: usize = 0;
+
     for (opts.attachments) |at| {
         switch (at.target) {
             .target => |t| {
@@ -74,33 +84,19 @@ pub fn begin(opts: Options) RenderPass {
                     d3d12.D3D12_RESOURCE_STATE_RENDER_TARGET,
                 );
 
-                // Set the render target on the command list.
-                cl.OMSetRenderTargets(
-                    1,
-                    @ptrCast(&t.rtv_handle),
-                    0, // FALSE
-                    null,
-                );
+                // Collect RTV handle.
+                if (rtv_count < rtv_handles.len) {
+                    rtv_handles[rtv_count] = t.rtv_handle;
+                    rtv_count += 1;
+                }
 
-                // Set viewport and scissor to cover the full target.
-                const viewport = d3d12.D3D12_VIEWPORT{
-                    .TopLeftX = 0,
-                    .TopLeftY = 0,
-                    .Width = @floatFromInt(t.width),
-                    .Height = @floatFromInt(t.height),
-                    .MinDepth = 0.0,
-                    .MaxDepth = 1.0,
-                };
-                cl.RSSetViewports(1, @ptrCast(&viewport));
+                // Use the first valid target for viewport dimensions.
+                if (rtv_count == 1) {
+                    vp_width = t.width;
+                    vp_height = t.height;
+                }
 
-                const scissor = d3d12.D3D12_RECT{
-                    .left = 0,
-                    .top = 0,
-                    .right = @intCast(t.width),
-                    .bottom = @intCast(t.height),
-                };
-                cl.RSSetScissorRects(1, @ptrCast(&scissor));
-
+                // Clear if requested.
                 if (at.clear_color) |c| {
                     const color = [4]f32{
                         @floatCast(c[0]),
@@ -116,6 +112,35 @@ pub fn begin(opts: Options) RenderPass {
                 // a real GPU resource implementation.
             },
         }
+    }
+
+    if (rtv_count > 0) {
+        // Bind all render targets at once.
+        cl.OMSetRenderTargets(
+            rtv_count,
+            &rtv_handles,
+            0, // FALSE -- handles are individual, not contiguous
+            null,
+        );
+
+        // Set viewport and scissor once from the first target.
+        const viewport = d3d12.D3D12_VIEWPORT{
+            .TopLeftX = 0,
+            .TopLeftY = 0,
+            .Width = @floatFromInt(vp_width),
+            .Height = @floatFromInt(vp_height),
+            .MinDepth = 0.0,
+            .MaxDepth = 1.0,
+        };
+        cl.RSSetViewports(1, @ptrCast(&viewport));
+
+        const scissor = d3d12.D3D12_RECT{
+            .left = 0,
+            .top = 0,
+            .right = @intCast(vp_width),
+            .bottom = @intCast(vp_height),
+        };
+        cl.RSSetScissorRects(1, @ptrCast(&scissor));
     }
 
     return .{
