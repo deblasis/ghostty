@@ -26,7 +26,7 @@ pub const Options = struct {
 /// Holds the GPU virtual address and size needed for binding.
 pub const RawBuffer = struct {
     gpu_address: u64 = 0,
-    size: u32 = 0,
+    size: u64 = 0,
 };
 
 /// DX12 GPU data buffer for a set of equal-typed elements.
@@ -54,6 +54,7 @@ pub fn Buffer(comptime T: type) type {
 
         pub fn init(opts: Options, len: usize) !Self {
             var self = Self{ .opts = opts };
+            errdefer self.release();
             if (len > 0) {
                 try self.allocate(len);
             }
@@ -63,9 +64,10 @@ pub fn Buffer(comptime T: type) type {
         /// Init the buffer filled with the given data.
         pub fn initFill(opts: Options, data: []const T) !Self {
             var self = Self{ .opts = opts };
+            errdefer self.release();
             if (data.len > 0) {
                 try self.allocate(data.len);
-                self.copy(data);
+                try self.copy(data);
             }
             return self;
         }
@@ -86,7 +88,7 @@ pub fn Buffer(comptime T: type) type {
                 try self.allocate(data.len * 2);
             }
 
-            self.copy(data);
+            try self.copy(data);
         }
 
         /// Sync from multiple ArrayListUnmanaged(T), returning total count.
@@ -103,7 +105,10 @@ pub fn Buffer(comptime T: type) type {
                 try self.allocate(total * 2);
             }
 
-            const dst = self.mapped orelse return error.BufferNotMapped;
+            const dst = self.mapped orelse {
+                log.warn("buffer mapped pointer is null", .{});
+                return error.BufferMapFailed;
+            };
             var offset: usize = 0;
             for (lists) |list| {
                 const bytes = list.items.len * @sizeOf(T);
@@ -121,6 +126,8 @@ pub fn Buffer(comptime T: type) type {
             const device = self.opts.device orelse return error.NoDevice;
             const byte_size = len * @sizeOf(T);
 
+            // CPUPageProperty, MemoryPoolPreference, and node masks are
+            // ignored by the runtime when Type is not CUSTOM.
             const heap_props = d3d12.D3D12_HEAP_PROPERTIES{
                 .Type = .UPLOAD,
                 .CPUPageProperty = 0,
@@ -175,7 +182,7 @@ pub fn Buffer(comptime T: type) type {
             self.len = len;
             self.buffer = .{
                 .gpu_address = res.GetGPUVirtualAddress(),
-                .size = @intCast(byte_size),
+                .size = byte_size,
             };
         }
 
@@ -189,8 +196,11 @@ pub fn Buffer(comptime T: type) type {
             self.buffer = .{};
         }
 
-        fn copy(self: *Self, data: []const T) void {
-            const dst = self.mapped orelse return;
+        fn copy(self: *Self, data: []const T) !void {
+            const dst = self.mapped orelse {
+                log.warn("buffer mapped pointer is null", .{});
+                return error.BufferMapFailed;
+            };
             const bytes = data.len * @sizeOf(T);
             const src: [*]const u8 = @ptrCast(data.ptr);
             @memcpy(dst[0..bytes], src[0..bytes]);
