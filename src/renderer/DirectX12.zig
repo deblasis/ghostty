@@ -2,13 +2,18 @@
 //!
 //! This module provides the GraphicsAPI contract required by GenericRenderer,
 //! mirroring the structure of Metal.zig, OpenGL.zig, and the previous
-//! DirectX11.zig. All functions are stubs that will be replaced as the
-//! DX12 backend is built out in subsequent PRs.
+//! DirectX11.zig.
+//!
+//! Current status: device init, swap chain, command queue, fence sync,
+//! clear render target, and present are functional. The window clears
+//! to the background color via the real DX12 pipeline.
 pub const DirectX12 = @This();
 
+const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
 const rendererpkg = @import("../renderer.zig");
@@ -31,6 +36,15 @@ pub const Buffer = bufferpkg.Buffer;
 
 pub const shaders = @import("directx12/shaders.zig");
 
+// --- Sub-module re-exports: low-level D3D12/DXGI/COM bindings ---
+
+pub const com = @import("directx12/com.zig");
+pub const d3d12 = @import("directx12/d3d12.zig");
+pub const dcomp = @import("directx12/dcomp.zig");
+pub const descriptor_heap = @import("directx12/descriptor_heap.zig");
+pub const device = @import("directx12/device.zig");
+pub const dxgi = @import("directx12/dxgi.zig");
+
 // TODO: custom shaders not yet supported on DX12. Using .glsl as placeholder;
 // DX12 will need its own shadertoy.Target variant (.hlsl) when custom shaders
 // are implemented. Can't add it without modifying upstream shadertoy.zig.
@@ -52,31 +66,196 @@ pub const ImageTextureFormat = enum {
     bgra,
 };
 
-// --- Sub-module re-exports: low-level D3D12/DXGI/COM bindings ---
-
-pub const com = @import("directx12/com.zig");
-pub const d3d12 = @import("directx12/d3d12.zig");
-pub const dcomp = @import("directx12/dcomp.zig");
-pub const descriptor_heap = @import("directx12/descriptor_heap.zig");
-pub const device = @import("directx12/device.zig");
-pub const dxgi = @import("directx12/dxgi.zig");
-
 // --- GraphicsAPI contract: mutable state ---
 
 /// Runtime blending mode, set by GenericRenderer when config changes.
 blending: configpkg.Config.AlphaBlending = .native,
 
+/// DX12 device owning command queue, fence, and swap chain.
+dev: ?device.Device = null,
+
+/// SwapChain3 interface for GetCurrentBackBufferIndex.
+/// Obtained by QueryInterface from the SwapChain1 in dev.
+swap_chain3: ?*dxgi.IDXGISwapChain3 = null,
+
+/// RTV descriptor heap for swap chain back buffers.
+rtv_heap: ?descriptor_heap.DescriptorHeap = null,
+
+/// Per-frame command recording contexts (triple buffered).
+gpu_frames: [device.Device.frame_count]?Frame = .{ null, null, null },
+
+/// Back buffer resources from the swap chain.
+back_buffers: [device.Device.frame_count]?*d3d12.ID3D12Resource = .{ null, null, null },
+
+/// RTV handles for each back buffer.
+rtv_handles: [device.Device.frame_count]d3d12.D3D12_CPU_DESCRIPTOR_HANDLE =
+    .{ .{ .ptr = 0 }, .{ .ptr = 0 }, .{ .ptr = 0 } },
+
+/// Fence values per frame for CPU/GPU sync.
+frame_fence_values: [device.Device.frame_count]u64 = .{ 0, 0, 0 },
+
+/// Command list from the current beginFrame, executed in drawFrameEnd.
+pending_command_list: ?*d3d12.ID3D12GraphicsCommandList = null,
+
+/// Back buffer index from the current beginFrame, used in drawFrameEnd
+/// to record the fence value against the correct frame slot.
+/// Must be saved here because GetCurrentBackBufferIndex advances after Present.
+pending_frame_index: u32 = 0,
+
 // --- GraphicsAPI contract: functions ---
 
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
     _ = alloc;
-    _ = opts;
-    log.warn("DX12 backend is a stub -- no GPU output yet", .{});
-    return .{};
+
+    var result = DirectX12{};
+
+    if (comptime builtin.os.tag != .windows) {
+        return result;
+    }
+
+    const surface_pkg = @import("directx12/surface.zig");
+    const w = opts.rt_surface.platform.windows;
+
+    const surface: surface_pkg.Surface = if (w.hwnd) |hwnd|
+        .{ .hwnd = hwnd }
+    else if (w.swap_chain_panel) |panel|
+        .{ .swap_chain_panel = @ptrCast(@alignCast(panel)) }
+    else if (w.shared_texture_out) |out_ptr|
+        .{ .shared_texture = .{
+            .handle_out = @ptrCast(@alignCast(out_ptr)),
+            .width = w.texture_width,
+            .height = w.texture_height,
+        } }
+    else
+        @panic("Windows surface requires hwnd, swap_chain_panel, or shared_texture_out");
+
+    const size = opts.size.screen;
+    result.dev = device.Device.init(surface, .{
+        .width = size.width,
+        .height = size.height,
+    }) catch |err| {
+        log.err("DX12 device init failed: {}", .{err});
+        return error.DeviceInitFailed;
+    };
+    errdefer {
+        result.dev.?.deinit();
+        result.dev = null;
+    }
+
+    const dev_ptr = &result.dev.?;
+
+    // Get SwapChain3 for GetCurrentBackBufferIndex.
+    if (dev_ptr.swap_chain) |sc| {
+        var sc3: ?*dxgi.IDXGISwapChain3 = null;
+        const hr = sc.vtable.QueryInterface(
+            @ptrCast(sc),
+            &dxgi.IDXGISwapChain3.IID,
+            @ptrCast(&sc3),
+        );
+        if (com.FAILED(hr)) {
+            log.err("QueryInterface for IDXGISwapChain3 failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            return error.SwapChain3QueryFailed;
+        }
+        result.swap_chain3 = sc3;
+    }
+    errdefer if (result.swap_chain3) |sc3| {
+        _ = sc3.Release();
+    };
+
+    // Create RTV descriptor heap for back buffers.
+    result.rtv_heap = descriptor_heap.DescriptorHeap.init(
+        dev_ptr.device,
+        .RTV,
+        device.Device.frame_count,
+        false,
+    ) catch |err| {
+        log.err("RTV descriptor heap creation failed: {}", .{err});
+        return error.DescriptorHeapCreationFailed;
+    };
+    errdefer {
+        result.rtv_heap.?.deinit();
+        result.rtv_heap = null;
+    }
+
+    // Get back buffer resources and create RTVs.
+    if (result.swap_chain3) |sc3| {
+        for (0..device.Device.frame_count) |i| {
+            var resource: ?*d3d12.ID3D12Resource = null;
+            const hr = sc3.GetBuffer(
+                @intCast(i),
+                &d3d12.IID_ID3D12Resource,
+                @ptrCast(&resource),
+            );
+            if (com.FAILED(hr)) {
+                log.err("GetBuffer({}) failed: 0x{x}", .{ i, @as(u32, @bitCast(hr)) });
+                return error.GetBufferFailed;
+            }
+            result.back_buffers[i] = resource;
+
+            const rtv_handle = result.rtv_heap.?.cpuHandle(@intCast(i));
+            dev_ptr.device.CreateRenderTargetView(resource, null, rtv_handle);
+            result.rtv_handles[i] = rtv_handle;
+        }
+    }
+    errdefer {
+        for (&result.back_buffers) |*bb| {
+            if (bb.*) |r| {
+                _ = r.Release();
+                bb.* = null;
+            }
+        }
+    }
+
+    // Create per-frame command allocators and command lists.
+    for (&result.gpu_frames) |*gf| {
+        gf.* = Frame.init(dev_ptr.device) catch |err| {
+            log.err("Frame init failed: {}", .{err});
+            return error.FrameInitFailed;
+        };
+    }
+    errdefer {
+        for (&result.gpu_frames) |*gf| {
+            if (gf.*) |*f| f.deinit();
+        }
+    }
+
+    return result;
 }
 
 pub fn deinit(self: *DirectX12) void {
-    _ = self;
+    // Wait for GPU to finish before releasing anything.
+    if (self.dev) |*dev_ptr| {
+        dev_ptr.waitForGpu() catch {};
+    }
+
+    for (&self.gpu_frames) |*gf| {
+        if (gf.*) |*f| {
+            f.deinit();
+            gf.* = null;
+        }
+    }
+
+    for (&self.back_buffers) |*bb| {
+        if (bb.*) |r| {
+            _ = r.Release();
+            bb.* = null;
+        }
+    }
+
+    if (self.rtv_heap) |*h| {
+        h.deinit();
+        self.rtv_heap = null;
+    }
+
+    if (self.swap_chain3) |sc3| {
+        _ = sc3.Release();
+        self.swap_chain3 = null;
+    }
+
+    if (self.dev) |*dev_ptr| {
+        dev_ptr.deinit();
+        self.dev = null;
+    }
 }
 
 pub fn drawFrameStart(self: *DirectX12) void {
@@ -84,7 +263,32 @@ pub fn drawFrameStart(self: *DirectX12) void {
 }
 
 pub fn drawFrameEnd(self: *DirectX12) void {
-    _ = self;
+    const dev_ptr = &(self.dev orelse return);
+    const cl = self.pending_command_list orelse return;
+    self.pending_command_list = null;
+
+    // Execute the command list.
+    const lists = [_]*d3d12.ID3D12GraphicsCommandList{cl};
+    dev_ptr.command_queue.ExecuteCommandLists(1, &lists);
+
+    // Present the swap chain.
+    if (self.swap_chain3) |sc3| {
+        const hr = sc3.Present(1, 0);
+        if (com.FAILED(hr)) {
+            log.err("Present failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+        }
+    }
+
+    // Signal the fence so we know when this frame is done.
+    // Use the saved index, not GetCurrentBackBufferIndex, because
+    // Present may have already advanced the current back buffer.
+    const frame_idx = self.pending_frame_index;
+    dev_ptr.fence_value += 1;
+    self.frame_fence_values[frame_idx] = dev_ptr.fence_value;
+    const hr = dev_ptr.command_queue.Signal(dev_ptr.fence, dev_ptr.fence_value);
+    if (com.FAILED(hr)) {
+        log.err("fence Signal failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+    }
 }
 
 pub fn initShaders(
@@ -102,15 +306,33 @@ pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
     _ = self;
     _ = width;
     _ = height;
+    // TODO: for composition surfaces, store the target size so
+    // surfaceSize() can return it (no HWND to query).
 }
 
 pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
-    _ = self;
+    const dev_ptr = self.dev orelse return .{ .width = 0, .height = 0 };
+
+    if (dev_ptr.swap_chain) |sc| {
+        // Query the swap chain's current buffer dimensions.
+        // TODO: for HWND surfaces, store the HWND on Device and query
+        // the client rect directly, so resize is detected before the
+        // swap chain is resized. For now, the swap chain desc gives us
+        // correct dimensions after creation and after ResizeBuffers.
+        var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
+        const hr = sc.GetDesc1(&desc);
+        if (com.SUCCEEDED(hr)) {
+            return .{ .width = desc.Width, .height = desc.Height };
+        }
+    }
+
     return .{ .width = 0, .height = 0 };
 }
 
 pub fn initTarget(self: *const DirectX12, width: usize, height: usize) !Target {
     _ = self;
+    // Target resource and RTV handle are set in beginFrame when we know
+    // which back buffer is current. Start with the dimensions only.
     return .{ .width = width, .height = height };
 }
 
@@ -119,20 +341,47 @@ pub inline fn beginFrame(
     renderer: *Renderer,
     target: *Target,
 ) !Frame {
-    _ = self;
-    // Stub frame: D3D objects are null so complete()/reset() guard against
-    // them safely. Real init happens once device wiring lands (PR 13).
-    return .{
-        .command_allocator = null,
-        .command_list = null,
-        .fence_value = 0,
-        .renderer = renderer,
-        .target = target,
-    };
+    const mutable_self = @constCast(self);
+    const sc3 = self.swap_chain3 orelse return error.PresentFailed;
+    const dev_ptr = &(mutable_self.dev orelse return error.PresentFailed);
+
+    // Which back buffer does the swap chain want us to render to?
+    const frame_idx = sc3.GetCurrentBackBufferIndex();
+
+    // Wait for this frame slot's previous GPU work to finish.
+    const wait_value = self.frame_fence_values[frame_idx];
+    if (dev_ptr.fence.GetCompletedValue() < wait_value) {
+        const hr = dev_ptr.fence.SetEventOnCompletion(wait_value, dev_ptr.fence_event);
+        if (com.FAILED(hr)) return error.PresentFailed;
+        _ = d3d12.WaitForSingleObject(dev_ptr.fence_event, d3d12.INFINITE);
+    }
+
+    // Point the target at this back buffer.
+    target.resource = self.back_buffers[frame_idx];
+    target.rtv_handle = self.rtv_handles[frame_idx];
+
+    // Reset and open the command list for recording.
+    var frame = self.gpu_frames[frame_idx] orelse return error.PresentFailed;
+    try frame.reset();
+    frame.renderer = renderer;
+    frame.target = target;
+
+    // Save state for drawFrameEnd to execute and signal.
+    mutable_self.pending_command_list = frame.command_list;
+    mutable_self.pending_frame_index = frame_idx;
+
+    return frame;
 }
 
 pub fn presentLastTarget(self: *DirectX12) !void {
-    _ = self;
+    // Called when no redraw is needed. Re-present the current frame.
+    if (self.swap_chain3) |sc3| {
+        const hr = sc3.Present(1, 0);
+        if (com.FAILED(hr)) {
+            log.err("presentLastTarget failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            return error.PresentFailed;
+        }
+    }
 }
 
 pub inline fn bufferOptions(self: DirectX12) bufferpkg.Options {
