@@ -56,12 +56,13 @@ pub const D3D12_RESOURCE_STATES = enum(u32) {
     INDIRECT_ARGUMENT = 0x200,
     COPY_DEST = 0x400,
     COPY_SOURCE = 0x800,
-    /// Alias for COMMON (both are 0 per the D3D12 spec).
-    PRESENT = 0,
     /// VERTEX_AND_CONSTANT_BUFFER | INDEX_BUFFER | NON_PIXEL_SHADER_RESOURCE |
     /// PIXEL_SHADER_RESOURCE | INDIRECT_ARGUMENT | COPY_SOURCE
     GENERIC_READ = 0x1 | 0x2 | 0x40 | 0x80 | 0x200 | 0x800,
     _,
+
+    /// Alias for COMMON (both are 0 per the D3D12 spec).
+    pub const PRESENT: D3D12_RESOURCE_STATES = .COMMON;
 };
 
 pub const D3D12_HEAP_TYPE = enum(u32) {
@@ -1377,9 +1378,13 @@ test "D3D12 struct sizes" {
     try std.testing.expectEqual(16, @sizeOf(D3D12_VERTEX_BUFFER_VIEW));
     try std.testing.expectEqual(16, @sizeOf(D3D12_COMMAND_QUEUE_DESC));
     try std.testing.expectEqual(16, @sizeOf(D3D12_DESCRIPTOR_HEAP_DESC));
-    try std.testing.expectEqual(32, @sizeOf(D3D12_HEAP_PROPERTIES));
-    try std.testing.expectEqual(8, @sizeOf(D3D12_RANGE));
+    try std.testing.expectEqual(20, @sizeOf(D3D12_HEAP_PROPERTIES));
+    try std.testing.expectEqual(2 * @sizeOf(usize), @sizeOf(D3D12_RANGE));
     try std.testing.expectEqual(24, @sizeOf(D3D12_BOX));
+    try std.testing.expectEqual(56, @sizeOf(D3D12_RESOURCE_DESC));
+    try std.testing.expectEqual(32, @sizeOf(D3D12_RESOURCE_BARRIER));
+    try std.testing.expectEqual(32, @sizeOf(D3D12_ROOT_PARAMETER));
+    try std.testing.expectEqual(656, @sizeOf(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 }
 
 test "D3D12 GUID constants" {
