@@ -49,13 +49,17 @@ pub const D3D12_RESOURCE_STATES = enum(u32) {
     VERTEX_AND_CONSTANT_BUFFER = 0x1,
     INDEX_BUFFER = 0x2,
     RENDER_TARGET = 0x4,
-    DEPTH_WRITE = 0x8,
     UNORDERED_ACCESS = 0x8,
+    DEPTH_WRITE = 0x10,
     NON_PIXEL_SHADER_RESOURCE = 0x40,
     PIXEL_SHADER_RESOURCE = 0x80,
+    INDIRECT_ARGUMENT = 0x200,
     COPY_DEST = 0x400,
     COPY_SOURCE = 0x800,
+    /// Alias for COMMON (both are 0 per the D3D12 spec).
     PRESENT = 0,
+    /// VERTEX_AND_CONSTANT_BUFFER | INDEX_BUFFER | NON_PIXEL_SHADER_RESOURCE |
+    /// PIXEL_SHADER_RESOURCE | INDIRECT_ARGUMENT | COPY_SOURCE
     GENERIC_READ = 0x1 | 0x2 | 0x40 | 0x80 | 0x200 | 0x800,
     _,
 };
@@ -424,17 +428,33 @@ pub const D3D12_RASTERIZER_DESC = extern struct {
     ConservativeRaster: u32,
 };
 
+pub const D3D12_STENCIL_OP = enum(u32) {
+    KEEP = 1,
+    ZERO = 2,
+    REPLACE = 3,
+    INCR_SAT = 4,
+    DECR_SAT = 5,
+    INVERT = 6,
+    INCR = 7,
+    DECR = 8,
+};
+
+pub const D3D12_DEPTH_WRITE_MASK = enum(u32) {
+    ZERO = 0,
+    ALL = 1,
+};
+
 pub const D3D12_DEPTH_STENCILOP_DESC = extern struct {
-    StencilFailOp: u32,
-    StencilDepthFailOp: u32,
-    StencilPassOp: u32,
-    StencilFunc: u32,
+    StencilFailOp: D3D12_STENCIL_OP,
+    StencilDepthFailOp: D3D12_STENCIL_OP,
+    StencilPassOp: D3D12_STENCIL_OP,
+    StencilFunc: D3D12_COMPARISON_FUNC,
 };
 
 pub const D3D12_DEPTH_STENCIL_DESC = extern struct {
     DepthEnable: BOOL,
-    DepthWriteMask: u32,
-    DepthFunc: u32,
+    DepthWriteMask: D3D12_DEPTH_WRITE_MASK,
+    DepthFunc: D3D12_COMPARISON_FUNC,
     StencilEnable: BOOL,
     StencilReadMask: u8,
     StencilWriteMask: u8,
@@ -591,6 +611,12 @@ pub const D3D12_BOX = extern struct {
 // ID3D12Debug
 pub const ID3D12Debug = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x344488b7,
+        .data2 = 0x6846,
+        .data3 = 0x474b,
+        .data4 = .{ 0xb9, 0x89, 0xf0, 0x27, 0x44, 0x82, 0x45, 0xe0 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -641,6 +667,12 @@ pub const ID3DBlob = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12CommandQueue = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x0ec870a6,
+        .data2 = 0x5d7e,
+        .data3 = 0x4c22,
+        .data4 = .{ 0x8c, 0xfc, 0x5b, 0xaa, 0xe0, 0x76, 0x16, 0xed },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -686,6 +718,12 @@ pub const ID3D12CommandQueue = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12CommandAllocator = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x6102dee4,
+        .data2 = 0xaf59,
+        .data3 = 0x4b09,
+        .data4 = .{ 0xb9, 0x99, 0xb4, 0x4d, 0x73, 0xf0, 0x9b, 0x24 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -717,6 +755,12 @@ pub const ID3D12CommandAllocator = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12Fence = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x0a753dcf,
+        .data2 = 0xc4d8,
+        .data3 = 0x4b91,
+        .data4 = .{ 0xad, 0xf6, 0xbe, 0x5a, 0x60, 0xd9, 0x5a, 0x76 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -754,6 +798,12 @@ pub const ID3D12Fence = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12DescriptorHeap = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x8efb471d,
+        .data2 = 0x616c,
+        .data3 = 0x4f49,
+        .data4 = .{ 0x90, 0xf7, 0x12, 0x7b, 0xb7, 0x63, 0xfa, 0x51 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -791,6 +841,12 @@ pub const ID3D12DescriptorHeap = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12Resource = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x696442be,
+        .data2 = 0xa72e,
+        .data3 = 0x4059,
+        .data4 = .{ 0xbc, 0x79, 0x5b, 0x5c, 0x98, 0x04, 0x0f, 0xad },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -836,6 +892,12 @@ pub const ID3D12Resource = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12Pageable (0) = 8 inherited
 pub const ID3D12PipelineState = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x765a30f3,
+        .data2 = 0xf624,
+        .data3 = 0x4c6f,
+        .data4 = .{ 0xa8, 0x28, 0xac, 0xe9, 0x48, 0x62, 0x24, 0x45 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -864,6 +926,12 @@ pub const ID3D12PipelineState = extern struct {
 // No own methods beyond inherited.
 pub const ID3D12RootSignature = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0xc54a6b66,
+        .data2 = 0x72df,
+        .data3 = 0x4ee8,
+        .data4 = .{ 0x8b, 0xe5, 0xa9, 0x46, 0xa1, 0x42, 0x92, 0x14 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -915,6 +983,12 @@ pub const ID3D12Heap = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) -> ID3D12DeviceChild (1) -> ID3D12CommandList (1) = 9 inherited
 pub const ID3D12GraphicsCommandList = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x5b160d0f,
+        .data2 = 0xac1b,
+        .data3 = 0x4185,
+        .data4 = .{ 0x8b, 0xa8, 0xb3, 0xae, 0x42, 0xa5, 0xa4, 0x55 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -1112,6 +1186,12 @@ pub const ID3D12GraphicsCommandList = extern struct {
 // Inherits: IUnknown (3) -> ID3D12Object (4) = 7 inherited slots
 pub const ID3D12Device = extern struct {
     vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x189819f1,
+        .data2 = 0x1db6,
+        .data3 = 0x4b57,
+        .data4 = .{ 0xbe, 0x54, 0x18, 0x21, 0x33, 0x9b, 0x85, 0xf7 },
+    };
 
     pub const VTable = extern struct {
         // IUnknown (slots 0-2)
@@ -1245,78 +1325,6 @@ pub const ID3D12Device = extern struct {
     }
 };
 
-// --- GUIDs ---
-
-pub const IID_ID3D12Device = GUID{
-    .data1 = 0x189819f1,
-    .data2 = 0x1db6,
-    .data3 = 0x4b57,
-    .data4 = .{ 0xbe, 0x54, 0x18, 0x21, 0x33, 0x9b, 0x85, 0xf7 },
-};
-
-pub const IID_ID3D12CommandQueue = GUID{
-    .data1 = 0x0ec870a6,
-    .data2 = 0x5d7e,
-    .data3 = 0x4c22,
-    .data4 = .{ 0x8c, 0xfc, 0x5b, 0xaa, 0xe0, 0x76, 0x16, 0xed },
-};
-
-pub const IID_ID3D12CommandAllocator = GUID{
-    .data1 = 0x6102dee4,
-    .data2 = 0xaf59,
-    .data3 = 0x4b09,
-    .data4 = .{ 0xb9, 0x99, 0xb4, 0x4d, 0x73, 0xf0, 0x9b, 0x24 },
-};
-
-pub const IID_ID3D12GraphicsCommandList = GUID{
-    .data1 = 0x5b160d0f,
-    .data2 = 0xac1b,
-    .data3 = 0x4185,
-    .data4 = .{ 0x8b, 0xa8, 0xb3, 0xae, 0x42, 0xa5, 0xa4, 0x55 },
-};
-
-pub const IID_ID3D12Fence = GUID{
-    .data1 = 0x0a753dcf,
-    .data2 = 0xc4d8,
-    .data3 = 0x4b91,
-    .data4 = .{ 0xad, 0xf6, 0xbe, 0x5a, 0x60, 0xd9, 0x5a, 0x76 },
-};
-
-pub const IID_ID3D12DescriptorHeap = GUID{
-    .data1 = 0x8efb471d,
-    .data2 = 0x616c,
-    .data3 = 0x4f49,
-    .data4 = .{ 0x90, 0xf7, 0x12, 0x7b, 0xb7, 0x63, 0xfa, 0x51 },
-};
-
-pub const IID_ID3D12Resource = GUID{
-    .data1 = 0x696442be,
-    .data2 = 0xa72e,
-    .data3 = 0x4059,
-    .data4 = .{ 0xbc, 0x79, 0x5b, 0x5c, 0x98, 0x04, 0x0f, 0xad },
-};
-
-pub const IID_ID3D12PipelineState = GUID{
-    .data1 = 0x765a30f3,
-    .data2 = 0xf624,
-    .data3 = 0x4c6f,
-    .data4 = .{ 0xa8, 0x28, 0xac, 0xe9, 0x48, 0x62, 0x24, 0x45 },
-};
-
-pub const IID_ID3D12RootSignature = GUID{
-    .data1 = 0xc54a6b66,
-    .data2 = 0x72df,
-    .data3 = 0x4ee8,
-    .data4 = .{ 0x8b, 0xe5, 0xa9, 0x46, 0xa1, 0x42, 0x92, 0x14 },
-};
-
-pub const IID_ID3D12Debug = GUID{
-    .data1 = 0x344488b7,
-    .data2 = 0x6846,
-    .data3 = 0x474b,
-    .data4 = .{ 0xb9, 0x89, 0xf0, 0x27, 0x44, 0x82, 0x45, 0xe0 },
-};
-
 // --- Extern functions ---
 
 pub extern "d3d12" fn D3D12CreateDevice(
@@ -1367,10 +1375,30 @@ test "D3D12 struct sizes" {
     try std.testing.expectEqual(8, @sizeOf(D3D12_GPU_DESCRIPTOR_HANDLE));
     try std.testing.expectEqual(16, @sizeOf(D3D12_SHADER_BYTECODE));
     try std.testing.expectEqual(16, @sizeOf(D3D12_VERTEX_BUFFER_VIEW));
+    try std.testing.expectEqual(16, @sizeOf(D3D12_COMMAND_QUEUE_DESC));
+    try std.testing.expectEqual(16, @sizeOf(D3D12_DESCRIPTOR_HEAP_DESC));
+    try std.testing.expectEqual(32, @sizeOf(D3D12_HEAP_PROPERTIES));
+    try std.testing.expectEqual(8, @sizeOf(D3D12_RANGE));
+    try std.testing.expectEqual(24, @sizeOf(D3D12_BOX));
 }
 
 test "D3D12 GUID constants" {
-    try std.testing.expect(IID_ID3D12Device.data1 != 0);
-    try std.testing.expect(IID_ID3D12CommandQueue.data1 != 0);
-    try std.testing.expect(IID_ID3D12Fence.data1 != 0);
+    const device_iid = ID3D12Device.IID;
+    try std.testing.expectEqual(@as(u32, 0x189819f1), device_iid.data1);
+    try std.testing.expectEqual(@as(u16, 0x1db6), device_iid.data2);
+    try std.testing.expectEqual(@as(u16, 0x4b57), device_iid.data3);
+    try std.testing.expectEqualSlices(u8, &device_iid.data4, &[_]u8{ 0xbe, 0x54, 0x18, 0x21, 0x33, 0x9b, 0x85, 0xf7 });
+
+    const queue_iid = ID3D12CommandQueue.IID;
+    try std.testing.expectEqual(@as(u32, 0x0ec870a6), queue_iid.data1);
+
+    const fence_iid = ID3D12Fence.IID;
+    try std.testing.expectEqual(@as(u32, 0x0a753dcf), fence_iid.data1);
+}
+
+test "D3D12 COM interfaces are single vtable pointers" {
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(ID3D12Device));
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(ID3D12CommandQueue));
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(ID3D12GraphicsCommandList));
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(ID3D12Resource));
 }
