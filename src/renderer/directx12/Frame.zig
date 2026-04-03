@@ -53,7 +53,7 @@ pub fn init(device: *d3d12.ID3D12Device) !Frame {
     var allocator: ?*d3d12.ID3D12CommandAllocator = null;
     const alloc_hr = device.CreateCommandAllocator(
         .DIRECT,
-        &d3d12.IID_ID3D12CommandAllocator,
+        &d3d12.ID3D12CommandAllocator.IID,
         @ptrCast(&allocator),
     );
     if (FAILED(alloc_hr)) {
@@ -70,7 +70,7 @@ pub fn init(device: *d3d12.ID3D12Device) !Frame {
         .DIRECT,
         allocator.?,
         null,
-        &d3d12.IID_ID3D12GraphicsCommandList,
+        &d3d12.ID3D12GraphicsCommandList.IID,
         @ptrCast(&command_list),
     );
     if (FAILED(list_hr)) {
@@ -165,16 +165,28 @@ pub fn complete(self: *Frame, sync: bool) void {
 
 test "Frame init error set includes expected errors" {
     // Compile-time check that init can return the documented error variants.
-    const Errors = @typeInfo(@TypeOf(Frame.init)).Fn.return_error_set.?;
+    const fn_info = @typeInfo(@TypeOf(Frame.init)).@"fn";
+    const Errors = @typeInfo(fn_info.return_type.?).error_union.error_set;
+    const err_fields = @typeInfo(Errors).error_set.?;
     inline for (.{ "CommandAllocatorCreationFailed", "CommandListCreationFailed", "CommandListCloseFailed" }) |name| {
-        try std.testing.expect(@hasField(Errors, name));
+        comptime var found = false;
+        inline for (err_fields) |e| {
+            if (comptime std.mem.eql(u8, e.name, name)) found = true;
+        }
+        try std.testing.expect(found);
     }
 }
 
 test "Frame reset error set includes expected errors" {
-    const Errors = @typeInfo(@TypeOf(Frame.reset)).Fn.return_error_set.?;
+    const fn_info = @typeInfo(@TypeOf(Frame.reset)).@"fn";
+    const Errors = @typeInfo(fn_info.return_type.?).error_union.error_set;
+    const err_fields = @typeInfo(Errors).error_set.?;
     inline for (.{ "FrameNotInitialized", "CommandAllocatorResetFailed", "CommandListResetFailed" }) |name| {
-        try std.testing.expect(@hasField(Errors, name));
+        comptime var found = false;
+        inline for (err_fields) |e| {
+            if (comptime std.mem.eql(u8, e.name, name)) found = true;
+        }
+        try std.testing.expect(found);
     }
 }
 
