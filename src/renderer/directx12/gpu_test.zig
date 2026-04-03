@@ -403,6 +403,10 @@ test "Texture: create R8_UNORM with initial data" {
     }, 4, 4, &data) catch return;
     defer tex.deinit();
 
+    // Execute the copy commands and wait for GPU to finish.
+    dev.executeAndWait() catch {};
+    dev.reset() catch {};
+
     try std.testing.expectEqual(@as(usize, 4), tex.width);
     try std.testing.expectEqual(@as(usize, 4), tex.height);
     try std.testing.expectEqual(@as(u32, 1), tex.bpp);
@@ -457,7 +461,11 @@ test "Texture: replaceRegion updates sub-region" {
 
     // Replace a 2x2 sub-region (16 bytes = 2*2*4 bpp).
     const region_data = [_]u8{0xFF} ** (2 * 2 * 4);
-    tex.replaceRegion(1, 1, 2, 2, &region_data) catch {};
+    tex.replaceRegion(1, 1, 2, 2, &region_data) catch return;
+
+    // Execute the copy commands and wait for GPU to finish.
+    dev.executeAndWait() catch {};
+    dev.reset() catch {};
 
     // State should be back to PIXEL_SHADER_RESOURCE after replaceRegion.
     try std.testing.expectEqual(
