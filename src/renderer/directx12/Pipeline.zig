@@ -149,7 +149,7 @@ pub fn createRootSignature(device: *d3d12.ID3D12Device) !*d3d12.ID3D12RootSignat
         0,
         blob.?.GetBufferPointer(),
         blob.?.GetBufferSize(),
-        &d3d12.IID_ID3D12RootSignature,
+        &d3d12.ID3D12RootSignature.IID,
         @ptrCast(&root_sig),
     );
     if (FAILED(hr)) {
@@ -283,7 +283,7 @@ pub fn init(opts: Options) !Pipeline {
     var pso: ?*d3d12.ID3D12PipelineState = null;
     const hr = opts.device.CreateGraphicsPipelineState(
         &pso_desc,
-        &d3d12.IID_ID3D12PipelineState,
+        &d3d12.ID3D12PipelineState.IID,
         @ptrCast(&pso),
     );
     if (FAILED(hr)) {
