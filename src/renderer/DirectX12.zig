@@ -120,7 +120,13 @@ pub inline fn beginFrame(
     target: *Target,
 ) !Frame {
     _ = self;
+    // Frame.init() creates the allocator + command list; for now we return
+    // a stub frame with the renderer/target pointers set so complete() works.
+    // Real init will happen once device wiring lands (PR 13).
     return .{
+        .command_allocator = undefined,
+        .command_list = undefined,
+        .fence_value = 0,
         .renderer = renderer,
         .target = target,
     };
