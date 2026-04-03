@@ -12,7 +12,6 @@ const Device = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const Allocator = std.mem.Allocator;
 
 const com = @import("com.zig");
 const d3d12 = @import("d3d12.zig");
