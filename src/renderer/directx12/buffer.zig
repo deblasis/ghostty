@@ -73,9 +73,11 @@ pub fn Buffer(comptime T: type) type {
         }
 
         pub fn deinit(self: *const Self) void {
-            if (self.resource) |res| {
-                _ = res.Release();
-            }
+            // Delegate to release() for full cleanup. @constCast is safe
+            // because deinit is the owner and this matches Metal's pattern
+            // of calling release through a *const Self.
+            const mutable = @constCast(self);
+            mutable.release();
         }
 
         /// Sync the buffer contents with the given data slice.
