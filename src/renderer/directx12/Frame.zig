@@ -139,12 +139,19 @@ pub fn renderPass(
         // begin/step/complete will be no-ops without a command list.
         return .{
             .command_list = null,
+            .srv_heap = null,
+            .sampler_heap = null,
             .attachments = attachments,
             .step_number = 0,
         };
     };
+    // Pass GPU-visible descriptor heaps from the DirectX12 API so
+    // RenderPass.step() can bind SRV and sampler tables.
+    const api = &self.renderer.api;
     return RenderPass.begin(.{
         .command_list = cl,
+        .srv_heap = if (api.srv_heap) |*h| @constCast(h) else null,
+        .sampler_heap = if (api.sampler_heap) |*h| @constCast(h) else null,
         .attachments = attachments,
     });
 }
