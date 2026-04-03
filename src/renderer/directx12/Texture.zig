@@ -103,12 +103,10 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
     // Upload initial data if provided.
     if (data) |pixels| {
         tex.uploadRegion(0, 0, @intCast(width), @intCast(height), pixels);
-        // Transition to shader-readable after the initial upload.
-        tex.transition(d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    } else {
-        // No initial data -- transition to shader-readable immediately.
-        tex.transition(d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     }
+    // Transition to shader-readable. The texture was created in COPY_DEST
+    // so the initial upload (if any) could proceed without a barrier.
+    tex.transition(d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     return tex;
 }
@@ -147,7 +145,10 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
     const staging_size: u64 = @as(u64, region_aligned_pitch) * @as(u64, height);
 
     // Create a temporary upload buffer for staging.
-    const staging = createStagingBuffer(device, staging_size) orelse return;
+    const staging = createStagingBuffer(device, staging_size) orelse {
+        log.err("failed to create staging buffer for texture upload (size={d})", .{staging_size});
+        return;
+    };
     // The staging buffer will be released after the command list executes.
     // For now we rely on the caller to manage staging lifetime via GPU sync.
     // In practice, GenericRenderer calls waitForGpu() after each frame.
@@ -157,6 +158,7 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
     const read_range = d3d12.D3D12_RANGE{ .Begin = 0, .End = 0 };
     const map_hr = staging.Map(0, &read_range, &mapped);
     if (com.FAILED(map_hr) or mapped == null) {
+        log.err("Map for staging buffer failed: 0x{x}", .{@as(u32, @bitCast(map_hr))});
         _ = staging.Release();
         return;
     }
@@ -174,7 +176,7 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
     // Record the copy command.
     const src_loc = d3d12.D3D12_TEXTURE_COPY_LOCATION{
         .pResource = staging,
-        .Type = 1, // D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT
+        .Type = .PLACED_FOOTPRINT,
         .u = .{
             .PlacedFootprint = .{
                 .Offset = 0,
@@ -191,7 +193,7 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
 
     const dst_loc = d3d12.D3D12_TEXTURE_COPY_LOCATION{
         .pResource = texture,
-        .Type = 0, // D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX
+        .Type = .SUBRESOURCE_INDEX,
         .u = .{ .SubresourceIndex = 0 },
     };
 
@@ -322,7 +324,10 @@ fn bppForFormat(format: dxgi.DXGI_FORMAT) u32 {
     return switch (format) {
         .R8_UNORM => 1,
         .R8G8B8A8_UNORM, .B8G8R8A8_UNORM => 4,
-        else => 4,
+        else => {
+            log.warn("unhandled pixel format in bppForFormat, defaulting to 4 bpp", .{});
+            break :switch 4;
+        },
     };
 }
 

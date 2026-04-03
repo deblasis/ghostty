@@ -9,7 +9,6 @@ const Sampler = @This();
 const std = @import("std");
 
 const d3d12 = @import("d3d12.zig");
-const com = @import("com.zig");
 const DescriptorHeap = @import("descriptor_heap.zig").DescriptorHeap;
 
 const log = std.log.scoped(.directx12);
