@@ -5,7 +5,7 @@
 //! the per-descriptor increment size so callers can index into the heap
 //! without querying the device repeatedly.
 //!
-//! Three heaps are used at runtime:
+//! Callers typically create three heaps:
 //! - CBV/SRV/UAV (shader-visible): constant buffers, textures
 //! - Sampler (shader-visible): texture samplers
 //! - RTV (non-shader-visible): render target views
@@ -80,6 +80,13 @@ pub fn init(
 
 pub fn deinit(self: *DescriptorHeap) void {
     _ = self.heap.Release();
+}
+
+/// Reset the allocator so all slots can be reused. Does not invalidate
+/// existing descriptors -- the caller must ensure the GPU is done with
+/// them before calling this.
+pub fn reset(self: *DescriptorHeap) void {
+    self.allocated = 0;
 }
 
 /// Allocate the next descriptor slot. Returns the CPU/GPU handles and index.
@@ -166,4 +173,37 @@ test "allocate increments and respects capacity" {
 
     // Heap is full -- next allocate should fail.
     try std.testing.expectError(error.DescriptorHeapFull, heap.allocate());
+}
+
+test "gpuHandle returns zero for non-shader-visible heap" {
+    // RTV heaps have gpu_start zeroed since they're not shader-visible.
+    var heap: DescriptorHeap = undefined;
+    heap.cpu_start = .{ .ptr = 0x1000 };
+    heap.gpu_start = .{ .ptr = 0 };
+    heap.increment_size = 32;
+    heap.capacity = 10;
+    heap.allocated = 0;
+
+    const g = heap.gpuHandle(3);
+    try std.testing.expectEqual(@as(u64, 0), g.ptr);
+}
+
+test "reset allows reuse of descriptor slots" {
+    var heap: DescriptorHeap = undefined;
+    heap.cpu_start = .{ .ptr = 0x1000 };
+    heap.gpu_start = .{ .ptr = 0x2000 };
+    heap.increment_size = 64;
+    heap.capacity = 1;
+    heap.allocated = 0;
+
+    // Exhaust the heap.
+    const d0 = try heap.allocate();
+    try std.testing.expectEqual(@as(u32, 0), d0.index);
+    try std.testing.expectError(error.DescriptorHeapFull, heap.allocate());
+
+    // Reset and allocate again.
+    heap.reset();
+    try std.testing.expectEqual(@as(u32, 0), heap.allocated);
+    const d1 = try heap.allocate();
+    try std.testing.expectEqual(@as(u32, 0), d1.index);
 }
