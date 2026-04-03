@@ -618,9 +618,14 @@ pub const D3D12_PLACED_SUBRESOURCE_FOOTPRINT = extern struct {
     Footprint: D3D12_SUBRESOURCE_FOOTPRINT,
 };
 
+pub const D3D12_TEXTURE_COPY_TYPE = enum(u32) {
+    SUBRESOURCE_INDEX = 0,
+    PLACED_FOOTPRINT = 1,
+};
+
 pub const D3D12_TEXTURE_COPY_LOCATION = extern struct {
     pResource: *ID3D12Resource,
-    Type: u32, // D3D12_TEXTURE_COPY_TYPE
+    Type: D3D12_TEXTURE_COPY_TYPE,
     u: extern union {
         PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT,
         SubresourceIndex: u32,
