@@ -105,7 +105,7 @@ pending_frame_index: u32 = 0,
 // --- GraphicsAPI contract: functions ---
 
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
-    _ = alloc;
+    _ = alloc; // DX12 uses COM-based allocation; Zig allocator unused for now.
 
     var result = DirectX12{};
 
@@ -119,15 +119,17 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
     const surface: surface_pkg.Surface = if (w.hwnd) |hwnd|
         .{ .hwnd = hwnd }
     else if (w.swap_chain_panel) |panel|
+        // panel is an opaque COM-compatible pointer from apprt; alignment is guaranteed.
         .{ .swap_chain_panel = @ptrCast(@alignCast(panel)) }
     else if (w.shared_texture_out) |out_ptr|
+        // out_ptr is an opaque pointer from apprt; alignment is guaranteed.
         .{ .shared_texture = .{
             .handle_out = @ptrCast(@alignCast(out_ptr)),
             .width = w.texture_width,
             .height = w.texture_height,
         } }
     else
-        @panic("Windows surface requires hwnd, swap_chain_panel, or shared_texture_out");
+        return error.NoWindowsSurface;
 
     const size = opts.size.screen;
     result.dev = device.Device.init(surface, .{
@@ -282,6 +284,7 @@ pub fn drawFrameEnd(self: *DirectX12) void {
     // Signal the fence so we know when this frame is done.
     // Use the saved index, not GetCurrentBackBufferIndex, because
     // Present may have already advanced the current back buffer.
+    // Safe without sync because rendering is single-threaded per surface.
     const frame_idx = self.pending_frame_index;
     dev_ptr.fence_value += 1;
     self.frame_fence_values[frame_idx] = dev_ptr.fence_value;
@@ -315,10 +318,10 @@ pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
 
     if (dev_ptr.swap_chain) |sc| {
         // Query the swap chain's current buffer dimensions.
-        // TODO: for HWND surfaces, store the HWND on Device and query
-        // the client rect directly, so resize is detected before the
-        // swap chain is resized. For now, the swap chain desc gives us
-        // correct dimensions after creation and after ResizeBuffers.
+        // TODO: GetDesc1 is called every frame -- cache the dimensions and
+        // only re-query on resize. For HWND surfaces, store the HWND on
+        // Device and query the client rect directly, so resize is detected
+        // before the swap chain is resized.
         var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
         const hr = sc.GetDesc1(&desc);
         if (com.SUCCEEDED(hr)) {
@@ -341,34 +344,38 @@ pub inline fn beginFrame(
     renderer: *Renderer,
     target: *Target,
 ) !Frame {
-    const mutable_self = @constCast(self);
-    const sc3 = self.swap_chain3 orelse return error.PresentFailed;
-    const dev_ptr = &(mutable_self.dev orelse return error.PresentFailed);
+    // self is *const to match the GraphicsAPI contract (Metal, OpenGL, DX11
+    // all use *const). Mutable access goes through renderer.api, same pattern
+    // as DX11.
+    _ = self;
+    const api: *DirectX12 = &renderer.api;
+    const sc3 = api.swap_chain3 orelse return error.NoSwapChain;
+    const dev_ptr = &(api.dev orelse return error.NoDevice);
 
     // Which back buffer does the swap chain want us to render to?
     const frame_idx = sc3.GetCurrentBackBufferIndex();
 
     // Wait for this frame slot's previous GPU work to finish.
-    const wait_value = self.frame_fence_values[frame_idx];
+    const wait_value = api.frame_fence_values[frame_idx];
     if (dev_ptr.fence.GetCompletedValue() < wait_value) {
         const hr = dev_ptr.fence.SetEventOnCompletion(wait_value, dev_ptr.fence_event);
-        if (com.FAILED(hr)) return error.PresentFailed;
+        if (com.FAILED(hr)) return error.FrameSyncFailed;
         _ = d3d12.WaitForSingleObject(dev_ptr.fence_event, d3d12.INFINITE);
     }
 
     // Point the target at this back buffer.
-    target.resource = self.back_buffers[frame_idx];
-    target.rtv_handle = self.rtv_handles[frame_idx];
+    target.resource = api.back_buffers[frame_idx];
+    target.rtv_handle = api.rtv_handles[frame_idx];
 
     // Reset and open the command list for recording.
-    var frame = self.gpu_frames[frame_idx] orelse return error.PresentFailed;
+    var frame = api.gpu_frames[frame_idx] orelse return error.FrameNotReady;
     try frame.reset();
     frame.renderer = renderer;
     frame.target = target;
 
     // Save state for drawFrameEnd to execute and signal.
-    mutable_self.pending_command_list = frame.command_list;
-    mutable_self.pending_frame_index = frame_idx;
+    api.pending_command_list = frame.command_list;
+    api.pending_frame_index = frame_idx;
 
     return frame;
 }
