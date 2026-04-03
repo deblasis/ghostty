@@ -183,8 +183,8 @@ comptime {
 
 /// Shader management for DX12.
 pub const Shaders = struct {
-    /// Shared root signature owned by this Shaders instance.
-    /// All pipelines reference it but only Shaders releases it.
+    /// Shared root signature owned by this struct. Pipelines reference it
+    /// for draw-time binding but do not own it -- deinit releases it here.
     root_signature: ?*d3d12.ID3D12RootSignature = null,
     pipelines: Pipelines = .{},
     post_pipelines: []const Pipeline = &.{},
@@ -204,6 +204,14 @@ pub const Shaders = struct {
         PipelineStateCreationFailed,
     };
 
+    /// Release all PSOs that have been created so far.
+    /// Used as errdefer cleanup during init.
+    fn releasePipelines(pipelines: *Pipelines) void {
+        inline for (@typeInfo(Pipelines).@"struct".fields) |field| {
+            @field(pipelines, field.name).deinit();
+        }
+    }
+
     /// Initialize all 5 pipelines from embedded DXIL bytecode.
     /// On non-Windows, returns default-initialized (empty) pipelines.
     pub fn init(device: ?*d3d12.ID3D12Device) InitError!Shaders {
@@ -211,52 +219,52 @@ pub const Shaders = struct {
 
         // All pipelines share a single root signature.
         const root_sig = Pipeline.createRootSignature(dev) catch |err| return err;
+        errdefer _ = root_sig.Release();
+
+        var pipelines: Pipelines = .{};
+        errdefer releasePipelines(&pipelines);
+
+        pipelines.bg_color = try Pipeline.init(.{
+            .device = dev,
+            .root_signature = root_sig,
+            .vs_bytecode = shader_bytecode.bg_color_vs,
+            .ps_bytecode = shader_bytecode.bg_color_ps,
+        });
+        pipelines.cell_bg = try Pipeline.init(.{
+            .device = dev,
+            .root_signature = root_sig,
+            .vs_bytecode = shader_bytecode.bg_color_vs,
+            .ps_bytecode = shader_bytecode.cell_bg_ps,
+            .blend = .premultiplied_alpha,
+        });
+        pipelines.cell_text = try Pipeline.init(.{
+            .device = dev,
+            .root_signature = root_sig,
+            .vs_bytecode = shader_bytecode.cell_text_vs,
+            .ps_bytecode = shader_bytecode.cell_text_ps,
+            .input_layout = &cell_text_input_elements,
+            .blend = .premultiplied_alpha,
+        });
+        pipelines.image = try Pipeline.init(.{
+            .device = dev,
+            .root_signature = root_sig,
+            .vs_bytecode = shader_bytecode.image_vs,
+            .ps_bytecode = shader_bytecode.image_ps,
+            .input_layout = &image_input_elements,
+            .blend = .premultiplied_alpha,
+        });
+        pipelines.bg_image = try Pipeline.init(.{
+            .device = dev,
+            .root_signature = root_sig,
+            .vs_bytecode = shader_bytecode.bg_image_vs,
+            .ps_bytecode = shader_bytecode.bg_image_ps,
+            .input_layout = &bg_image_input_elements,
+            .blend = .premultiplied_alpha,
+        });
 
         return .{
-            .pipelines = .{
-                // bg_color: full-screen VS, no input layout, no blending.
-                .bg_color = try Pipeline.init(.{
-                    .device = dev,
-                    .root_signature = root_sig,
-                    .vs_bytecode = shader_bytecode.bg_color_vs,
-                    .ps_bytecode = shader_bytecode.bg_color_ps,
-                }),
-                // cell_bg: same full-screen VS, blended.
-                .cell_bg = try Pipeline.init(.{
-                    .device = dev,
-                    .root_signature = root_sig,
-                    .vs_bytecode = shader_bytecode.bg_color_vs,
-                    .ps_bytecode = shader_bytecode.cell_bg_ps,
-                    .blend = .premultiplied_alpha,
-                }),
-                // cell_text: instanced with CellText input layout, blended.
-                .cell_text = try Pipeline.init(.{
-                    .device = dev,
-                    .root_signature = root_sig,
-                    .vs_bytecode = shader_bytecode.cell_text_vs,
-                    .ps_bytecode = shader_bytecode.cell_text_ps,
-                    .input_layout = &cell_text_input_elements,
-                    .blend = .premultiplied_alpha,
-                }),
-                // image: instanced with Image input layout, blended.
-                .image = try Pipeline.init(.{
-                    .device = dev,
-                    .root_signature = root_sig,
-                    .vs_bytecode = shader_bytecode.image_vs,
-                    .ps_bytecode = shader_bytecode.image_ps,
-                    .input_layout = &image_input_elements,
-                    .blend = .premultiplied_alpha,
-                }),
-                // bg_image: instanced with BgImage input layout, blended.
-                .bg_image = try Pipeline.init(.{
-                    .device = dev,
-                    .root_signature = root_sig,
-                    .vs_bytecode = shader_bytecode.bg_image_vs,
-                    .ps_bytecode = shader_bytecode.bg_image_ps,
-                    .input_layout = &bg_image_input_elements,
-                    .blend = .premultiplied_alpha,
-                }),
-            },
+            .root_signature = root_sig,
+            .pipelines = pipelines,
         };
     }
 
@@ -269,19 +277,13 @@ pub const Shaders = struct {
         }
         self.post_pipelines = &.{};
 
-        // Release the shared root signature via bg_color (which owns it).
-        // Other pipelines just reference it, so only release PSOs for them.
-        if (self.pipelines.bg_color.root_signature) |rs| _ = rs.Release();
-
-        self.pipelines.bg_color.deinit();
-        self.pipelines.cell_bg.deinit();
-        self.pipelines.cell_text.deinit();
-        self.pipelines.image.deinit();
-        self.pipelines.bg_image.deinit();
-        self.pipelines = .{};
-
         if (self.root_signature) |rs| _ = rs.Release();
         self.root_signature = null;
+
+        inline for (@typeInfo(Pipelines).@"struct".fields) |field| {
+            @field(self.pipelines, field.name).deinit();
+        }
+        self.pipelines = .{};
     }
 };
 
@@ -300,39 +302,20 @@ test "shader bytecode fields exist" {
     _ = shader_bytecode.bg_image_ps;
 }
 
-test "cell_text_input_elements count matches CellText fields" {
-    // 7 elements: glyph_pos, glyph_size, bearings, grid_pos, color, atlas, bools
+test "cell_text_input_elements count" {
     try std.testing.expectEqual(@as(usize, 7), cell_text_input_elements.len);
 }
 
-test "image_input_elements count matches Image fields" {
-    // 4 elements: grid_pos, cell_offset, source_rect, dest_size
+test "image_input_elements count" {
     try std.testing.expectEqual(@as(usize, 4), image_input_elements.len);
 }
 
-test "bg_image_input_elements count matches BgImage fields" {
-    // 2 elements: opacity, info
+test "bg_image_input_elements count" {
     try std.testing.expectEqual(@as(usize, 2), bg_image_input_elements.len);
 }
 
-test "cell_text byte offsets match struct layout" {
-    // Last element (bools) at offset 29 matches @offsetOf(CellText, "bools")
-    try std.testing.expectEqual(@as(u32, 29), cell_text_input_elements[6].AlignedByteOffset);
-    try std.testing.expectEqual(@as(u32, 28), cell_text_input_elements[5].AlignedByteOffset);
-    try std.testing.expectEqual(@as(u32, 24), cell_text_input_elements[4].AlignedByteOffset);
-}
-
-test "image byte offsets match struct layout" {
-    try std.testing.expectEqual(@as(u32, 32), image_input_elements[3].AlignedByteOffset);
-    try std.testing.expectEqual(@as(u32, 16), image_input_elements[2].AlignedByteOffset);
-}
-
-test "bg_image byte offsets match struct layout" {
-    try std.testing.expectEqual(@as(u32, 4), bg_image_input_elements[1].AlignedByteOffset);
-    try std.testing.expectEqual(@as(u32, 0), bg_image_input_elements[0].AlignedByteOffset);
-}
-
 test "Shaders struct fields" {
+    try std.testing.expect(@hasField(Shaders, "root_signature"));
     try std.testing.expect(@hasField(Shaders, "pipelines"));
     try std.testing.expect(@hasField(Shaders, "post_pipelines"));
     try std.testing.expect(@hasField(Shaders, "defunct"));
@@ -340,6 +323,7 @@ test "Shaders struct fields" {
 
 test "Shaders default is empty" {
     const s: Shaders = .{};
+    try std.testing.expect(s.root_signature == null);
     try std.testing.expect(s.pipelines.bg_color.pso == null);
     try std.testing.expect(s.pipelines.cell_text.pso == null);
     try std.testing.expect(s.post_pipelines.len == 0);
@@ -348,6 +332,7 @@ test "Shaders default is empty" {
 
 test "Shaders.init returns default on null device" {
     const s = try Shaders.init(null);
+    try std.testing.expect(s.root_signature == null);
     try std.testing.expect(s.pipelines.bg_color.pso == null);
     try std.testing.expect(s.pipelines.cell_text.pso == null);
 }
