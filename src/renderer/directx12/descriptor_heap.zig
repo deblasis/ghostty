@@ -51,7 +51,7 @@ pub fn init(
     var heap: ?*d3d12.ID3D12DescriptorHeap = null;
     const hr = device.CreateDescriptorHeap(
         &desc,
-        &d3d12.IID_ID3D12DescriptorHeap,
+        &d3d12.ID3D12DescriptorHeap.IID,
         @ptrCast(&heap),
     );
     if (FAILED(hr)) {
@@ -105,13 +105,17 @@ pub fn allocate(self: *DescriptorHeap) !Descriptor {
 
 /// CPU handle for a given slot index.
 pub fn cpuHandle(self: *const DescriptorHeap, index: u32) d3d12.D3D12_CPU_DESCRIPTOR_HANDLE {
+    std.debug.assert(index < self.capacity);
     return .{
         .ptr = self.cpu_start.ptr + @as(usize, index) * @as(usize, self.increment_size),
     };
 }
 
-/// GPU handle for a given slot index.
+/// GPU handle for a given slot index. Returns a zeroed handle for
+/// non-shader-visible heaps (e.g. RTV) where GPU handles are meaningless.
 pub fn gpuHandle(self: *const DescriptorHeap, index: u32) d3d12.D3D12_GPU_DESCRIPTOR_HANDLE {
+    std.debug.assert(index < self.capacity);
+    if (self.gpu_start.ptr == 0) return .{ .ptr = 0 };
     return .{
         .ptr = self.gpu_start.ptr + @as(u64, index) * @as(u64, self.increment_size),
     };
