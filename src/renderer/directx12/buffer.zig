@@ -11,7 +11,6 @@
 const std = @import("std");
 
 const d3d12 = @import("d3d12.zig");
-const dxgi = @import("dxgi.zig");
 const com = @import("com.zig");
 
 const log = std.log.scoped(.directx12);
@@ -156,9 +155,9 @@ pub fn Buffer(comptime T: type) type {
                 &heap_props,
                 0, // no heap flags
                 &desc,
-                d3d12.D3D12_RESOURCE_STATE_GENERIC_READ,
+                d3d12.D3D12_RESOURCE_STATES.GENERIC_READ,
                 null, // no optimized clear
-                &d3d12.IID_ID3D12Resource,
+                &d3d12.ID3D12Resource.IID,
                 @ptrCast(&resource),
             );
             if (com.FAILED(hr)) {
