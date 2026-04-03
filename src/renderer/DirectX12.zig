@@ -13,7 +13,6 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
 const rendererpkg = @import("../renderer.zig");
@@ -185,7 +184,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
             var resource: ?*d3d12.ID3D12Resource = null;
             const hr = sc3.GetBuffer(
                 @intCast(i),
-                &d3d12.IID_ID3D12Resource,
+                &d3d12.ID3D12Resource.IID,
                 @ptrCast(&resource),
             );
             if (com.FAILED(hr)) {
@@ -274,6 +273,8 @@ pub fn drawFrameEnd(self: *DirectX12) void {
     dev_ptr.command_queue.ExecuteCommandLists(1, &lists);
 
     // Present the swap chain.
+    // TODO: check for DXGI_ERROR_DEVICE_REMOVED and trigger TDR recovery
+    // once device-lost handling is implemented.
     if (self.swap_chain3) |sc3| {
         const hr = sc3.Present(1, 0);
         if (com.FAILED(hr)) {
@@ -327,8 +328,10 @@ pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
         if (com.SUCCEEDED(hr)) {
             return .{ .width = desc.Width, .height = desc.Height };
         }
+        log.warn("GetDesc1 failed: 0x{x}", .{@as(u32, @bitCast(hr))});
     }
 
+    // No swap chain (SharedTexture surface) or query failed.
     return .{ .width = 0, .height = 0 };
 }
 
@@ -349,6 +352,8 @@ pub inline fn beginFrame(
     // as DX11.
     _ = self;
     const api: *DirectX12 = &renderer.api;
+    // SharedTexture surfaces have no swap chain; they need a separate
+    // submission path that is not yet implemented.
     const sc3 = api.swap_chain3 orelse return error.NoSwapChain;
     const dev_ptr = &(api.dev orelse return error.NoDevice);
 
@@ -373,6 +378,10 @@ pub inline fn beginFrame(
     frame.renderer = renderer;
     frame.target = target;
 
+    // Write back so the stored copy stays current (the local is a value copy
+    // from the optional, not a reference).
+    api.gpu_frames[frame_idx] = frame;
+
     // Save state for drawFrameEnd to execute and signal.
     api.pending_command_list = frame.command_list;
     api.pending_frame_index = frame_idx;
@@ -381,7 +390,9 @@ pub inline fn beginFrame(
 }
 
 pub fn presentLastTarget(self: *DirectX12) !void {
-    // Called when no redraw is needed. Re-present the current frame.
+    // Called when no redraw is needed -- re-present the current frame.
+    // No new GPU work is submitted, so the existing fence values remain
+    // valid and the next beginFrame will wait correctly.
     if (self.swap_chain3) |sc3| {
         const hr = sc3.Present(1, 0);
         if (com.FAILED(hr)) {
