@@ -134,8 +134,17 @@ pub fn renderPass(
     self: *Frame,
     attachments: []const RenderPass.Options.Attachment,
 ) RenderPass {
+    const cl = self.command_list orelse {
+        // Frame not initialized (stub path) -- return a no-op RenderPass.
+        // begin/step/complete will be no-ops without a command list.
+        return .{
+            .command_list = null,
+            .attachments = attachments,
+            .step_number = 0,
+        };
+    };
     return RenderPass.begin(.{
-        .command_list = self.command_list,
+        .command_list = cl,
         .attachments = attachments,
     });
 }

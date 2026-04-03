@@ -8,6 +8,7 @@
 const RenderPass = @This();
 
 const d3d12 = @import("d3d12.zig");
+const ResourceStates = d3d12.D3D12_RESOURCE_STATES;
 
 const Pipeline = @import("Pipeline.zig");
 const Sampler = @import("Sampler.zig");
@@ -53,7 +54,7 @@ pub const Step = struct {
     };
 };
 
-command_list: *d3d12.ID3D12GraphicsCommandList,
+command_list: ?*d3d12.ID3D12GraphicsCommandList,
 attachments: []const Options.Attachment,
 step_number: usize,
 
@@ -63,25 +64,25 @@ pub fn begin(opts: Options) RenderPass {
     // Collect all RTV handles so we can set them with a single
     // OMSetRenderTargets call (per-attachment calls would silently
     // overwrite, leaving only the last target bound).
-    var rtv_handles: [8]d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = undefined;
+    const max_rtvs = 8; // D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT
+    var rtv_handles: [max_rtvs]d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = undefined;
     var rtv_count: u32 = 0;
 
     // Track viewport dimensions from the first valid target.
     var vp_width: usize = 0;
     var vp_height: usize = 0;
 
-    for (opts.attachments) |at| {
+    for (opts.attachments) |*at| {
         switch (at.target) {
-            .target => |t| {
+            .target => |*t| {
                 // Skip if this target has no GPU resource yet (stub).
                 if (t.resource == null) continue;
 
                 // Transition PRESENT -> RENDER_TARGET.
-                Target.transitionBarrier(
-                    t.resource,
+                t.transitionBarrier(
                     cl,
-                    d3d12.D3D12_RESOURCE_STATE_PRESENT,
-                    d3d12.D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    ResourceStates.PRESENT,
+                    ResourceStates.RENDER_TARGET,
                 );
 
                 // Collect RTV handle.
@@ -151,7 +152,9 @@ pub fn begin(opts: Options) RenderPass {
 }
 
 /// Add a step to this render pass.
+/// No-op if the render pass has no command list (stub path).
 pub fn step(self: *RenderPass, s: Step) void {
+    if (self.command_list == null) return;
     if (s.draw.instance_count == 0) return;
 
     // Pipeline, buffer bindings, texture/sampler bindings will be
@@ -162,16 +165,17 @@ pub fn step(self: *RenderPass, s: Step) void {
 }
 
 /// Complete the render pass. Transitions targets back to PRESENT.
+/// No-op if the render pass has no command list (stub path).
 pub fn complete(self: *const RenderPass) void {
-    for (self.attachments) |at| {
+    const cl = self.command_list orelse return;
+    for (self.attachments) |*at| {
         switch (at.target) {
-            .target => |t| {
+            .target => |*t| {
                 if (t.resource == null) continue;
-                Target.transitionBarrier(
-                    t.resource,
-                    self.command_list,
-                    d3d12.D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    d3d12.D3D12_RESOURCE_STATE_PRESENT,
+                t.transitionBarrier(
+                    cl,
+                    ResourceStates.RENDER_TARGET,
+                    ResourceStates.PRESENT,
                 );
             },
             .texture => {},

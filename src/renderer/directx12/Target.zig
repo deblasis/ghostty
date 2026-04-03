@@ -23,17 +23,18 @@ height: usize = 0,
 
 pub fn deinit(self: *Target) void {
     if (self.resource) |r| _ = r.Release();
+    self.resource = null;
 }
 
 /// Record a transition barrier on the given command list.
 /// No-op if resource is null (stub target without a GPU resource).
 pub fn transitionBarrier(
-    resource: ?*d3d12.ID3D12Resource,
+    self: *const Target,
     command_list: *d3d12.ID3D12GraphicsCommandList,
     state_before: d3d12.D3D12_RESOURCE_STATES,
     state_after: d3d12.D3D12_RESOURCE_STATES,
 ) void {
-    const res = resource orelse return;
+    const res = self.resource orelse return;
     const barrier = d3d12.D3D12_RESOURCE_BARRIER{
         .Type = .TRANSITION,
         .Flags = .NONE,
