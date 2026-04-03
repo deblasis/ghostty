@@ -83,7 +83,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
         const hr = d3d12.D3D12CreateDevice(
             null,
             d3d12.D3D_FEATURE_LEVEL_12_0,
-            &d3d12.IID_ID3D12Device,
+            &d3d12.ID3D12Device.IID,
             @ptrCast(&device),
         );
         if (FAILED(hr)) {
@@ -106,7 +106,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
         };
         const hr = dev.CreateCommandQueue(
             &desc,
-            &d3d12.IID_ID3D12CommandQueue,
+            &d3d12.ID3D12CommandQueue.IID,
             @ptrCast(&command_queue),
         );
         if (FAILED(hr)) {
@@ -122,7 +122,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
         const hr = dev.CreateFence(
             0,
             .NONE,
-            &d3d12.IID_ID3D12Fence,
+            &d3d12.ID3D12Fence.IID,
             @ptrCast(&fence),
         );
         if (FAILED(hr)) {
@@ -251,7 +251,7 @@ pub fn waitForGpu(self: *Device) !void {
 fn enableDebugLayer() void {
     var debug: ?*d3d12.ID3D12Debug = null;
     const hr = d3d12.D3D12GetDebugInterface(
-        &d3d12.IID_ID3D12Debug,
+        &d3d12.ID3D12Debug.IID,
         @ptrCast(&debug),
     );
     if (SUCCEEDED(hr)) {
