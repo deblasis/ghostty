@@ -124,10 +124,10 @@ pub fn renderPass(
     self: *Frame,
     attachments: []const RenderPass.Options.Attachment,
 ) RenderPass {
-    _ = self;
-    _ = attachments;
-    // Will wire to command list recording in a later PR.
-    return .{};
+    return RenderPass.begin(.{
+        .command_list = self.command_list,
+        .attachments = attachments,
+    });
 }
 
 /// Close the command list and report frame health.
