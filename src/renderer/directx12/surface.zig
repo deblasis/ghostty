@@ -16,6 +16,9 @@ pub const Surface = union(enum) {
 };
 
 pub const SharedTextureConfig = struct {
+    /// Output parameter: the shared handle will be written here after
+    /// device creation. The caller owns the storage and must keep it
+    /// alive until init returns.
     handle_out: *?std.os.windows.HANDLE,
     width: u32,
     height: u32,

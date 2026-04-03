@@ -4,6 +4,11 @@
 //! Metal's layout since GenericRenderer writes to them directly. The HLSL
 //! shaders interpret them differently but the CPU-side layout is shared
 //! across backends.
+//!
+//! The comptime assertions below guard against layout changes in this file
+//! but do not cross-reference the Metal backend's actual struct definitions.
+//! If layout drift between backends is suspected, compare against the Metal
+//! structs manually.
 const std = @import("std");
 const math = @import("../../math.zig");
 
@@ -56,10 +61,6 @@ pub const CellText = extern struct {
         grayscale = 0,
         color = 1,
     };
-
-    test {
-        try std.testing.expectEqual(32, @sizeOf(CellText));
-    }
 };
 
 /// Single parameter for the cell bg shader.
