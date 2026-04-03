@@ -69,6 +69,17 @@ pub const ImageTextureFormat = enum {
     bgra,
 };
 
+
+/// Number of CBV/SRV/UAV descriptors in the shader-visible heap.
+/// Covers: font atlas (grayscale + color), grid texture, image textures,
+/// and up to ~50 custom shader textures. Will need tuning if custom
+/// shaders exceed this.
+const srv_heap_capacity: u32 = 64;
+
+/// Number of sampler descriptors in the shader-visible heap.
+/// Covers: default point/linear samplers + per-pipeline overrides.
+const sampler_heap_capacity: u32 = 16;
+
 // --- GraphicsAPI contract: mutable state ---
 
 /// Runtime blending mode, set by GenericRenderer when config changes.
@@ -189,11 +200,10 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
     }
 
     // Shader-visible CBV/SRV/UAV heap for texture SRVs.
-    // 64 slots is enough for atlas textures + custom shader textures.
     result.srv_heap = DescriptorHeap.init(
         dev_ptr.device,
         .CBV_SRV_UAV,
-        64,
+        srv_heap_capacity,
         true,
     ) catch |err| {
         log.err("SRV descriptor heap creation failed: {}", .{err});
@@ -208,7 +218,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
     result.sampler_heap = DescriptorHeap.init(
         dev_ptr.device,
         .SAMPLER,
-        16,
+        sampler_heap_capacity,
         true,
     ) catch |err| {
         log.err("Sampler descriptor heap creation failed: {}", .{err});
@@ -476,6 +486,7 @@ pub inline fn textureOptions(self: DirectX12) Texture.Options {
     return .{
         .device = if (self.dev) |*d| d.device else null,
         .command_list = self.pending_command_list,
+        // @constCast is safe: DescriptorHeap wraps a COM object on the heap.
         .srv_heap = if (self.srv_heap) |*h| @constCast(h) else null,
     };
 }
@@ -483,6 +494,7 @@ pub inline fn textureOptions(self: DirectX12) Texture.Options {
 pub inline fn samplerOptions(self: DirectX12) Sampler.Options {
     return .{
         .device = if (self.dev) |*d| d.device else null,
+        // @constCast is safe: DescriptorHeap wraps a COM object on the heap.
         .sampler_heap = if (self.sampler_heap) |*h| @constCast(h) else null,
     };
 }
@@ -496,6 +508,7 @@ pub inline fn imageTextureOptions(
     return .{
         .device = if (self.dev) |*d| d.device else null,
         .command_list = self.pending_command_list,
+        // @constCast is safe: DescriptorHeap wraps a COM object on the heap.
         .srv_heap = if (self.srv_heap) |*h| @constCast(h) else null,
         .pixel_format = switch (format) {
             .gray => .R8_UNORM,
@@ -520,6 +533,7 @@ pub fn initAtlasTexture(
     return Texture.init(.{
         .device = if (self.dev) |*d| d.device else null,
         .command_list = self.pending_command_list,
+        // @constCast is safe: DescriptorHeap wraps a COM object on the heap.
         .srv_heap = if (self.srv_heap) |*h| @constCast(h) else null,
         .pixel_format = pixel_format,
     }, size, size, null);

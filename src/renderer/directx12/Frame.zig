@@ -146,7 +146,8 @@ pub fn renderPass(
         };
     };
     // Pass GPU-visible descriptor heaps from the DirectX12 API so
-    // RenderPass.step() can bind SRV and sampler tables.
+    // RenderPass.begin() can bind them via SetDescriptorHeaps before
+    // any root descriptor table calls.
     const api = &self.renderer.api;
     return RenderPass.begin(.{
         .command_list = cl,

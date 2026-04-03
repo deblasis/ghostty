@@ -205,8 +205,11 @@ pub fn step(self: *RenderPass, s: Step) void {
         }
     }
 
-    // Bind textures via the SRV descriptor table at root parameter 1.
-    // Use the GPU handle of the first texture's SRV descriptor.
+    // Bind the SRV descriptor table at root parameter 1.
+    // The root signature declares a contiguous range of srv_table_size (3)
+    // descriptors. Unlike Metal which binds textures individually at indices,
+    // DX12 binds the whole table from one base GPU handle. Textures must be
+    // allocated contiguously in the SRV heap so the range covers all slots.
     for (s.textures) |t| {
         if (t) |tex| {
             if (tex.srv.gpu.ptr != 0) {
@@ -219,7 +222,8 @@ pub fn step(self: *RenderPass, s: Step) void {
         }
     }
 
-    // Bind samplers via the sampler descriptor table at root parameter 2.
+    // Bind the sampler descriptor table at root parameter 2.
+    // Same table-based binding as textures -- one call covers s0.
     for (s.samplers) |samp| {
         if (samp) |sampler| {
             if (sampler.descriptor.gpu.ptr != 0) {
@@ -232,8 +236,11 @@ pub fn step(self: *RenderPass, s: Step) void {
         }
     }
 
-    // Set vertex buffer view for instance data (first non-null buffer
-    // with a non-zero stride, which indicates it carries per-instance data).
+    // Bind the first buffer as the instance vertex buffer.
+    // TODO: Metal binds buffers[0] as vertex+fragment at index 0, then
+    // buffers[1..] at index 2+. OpenGL uses SSBOs for the rest. DX12
+    // will need root descriptor table entries for storage buffers when
+    // pipelines that use multiple buffers (e.g. cell_text) are wired.
     for (s.buffers) |b| {
         if (b) |buf| {
             if (buf.gpu_address != 0 and buf.size > 0 and buf.stride > 0) {
