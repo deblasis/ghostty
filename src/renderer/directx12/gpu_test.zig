@@ -76,8 +76,8 @@ const TestDevice = struct {
 
 /// Create a D3D12 device for testing. Returns null on non-Windows or if
 /// device creation fails (e.g. no GPU in CI).
-fn createTestDevice() ?TestDevice {
-    if (comptime builtin.os.tag != .windows) return null;
+fn createTestDevice() !TestDevice {
+    if (comptime builtin.os.tag != .windows) return error.TestSkipped;
 
     // Device
     var device: ?*d3d12.ID3D12Device = null;
@@ -87,7 +87,8 @@ fn createTestDevice() ?TestDevice {
         &d3d12.IID_ID3D12Device,
         @ptrCast(&device),
     );
-    if (com.FAILED(hr) or device == null) return null;
+    if (com.FAILED(hr) or device == null) return error.DeviceCreationFailed;
+    errdefer _ = device.?.Release();
 
     // Command queue
     var command_queue: ?*d3d12.ID3D12CommandQueue = null;
@@ -102,10 +103,8 @@ fn createTestDevice() ?TestDevice {
         &d3d12.IID_ID3D12CommandQueue,
         @ptrCast(&command_queue),
     );
-    if (com.FAILED(hr) or command_queue == null) {
-        _ = device.?.Release();
-        return null;
-    }
+    if (com.FAILED(hr) or command_queue == null) return error.CommandQueueCreationFailed;
+    errdefer _ = command_queue.?.Release();
 
     // Command allocator
     var command_allocator: ?*d3d12.ID3D12CommandAllocator = null;
@@ -114,11 +113,8 @@ fn createTestDevice() ?TestDevice {
         &d3d12.IID_ID3D12CommandAllocator,
         @ptrCast(&command_allocator),
     );
-    if (com.FAILED(hr) or command_allocator == null) {
-        _ = command_queue.?.Release();
-        _ = device.?.Release();
-        return null;
-    }
+    if (com.FAILED(hr) or command_allocator == null) return error.CommandAllocatorCreationFailed;
+    errdefer _ = command_allocator.?.Release();
 
     // Command list (created open)
     var command_list: ?*d3d12.ID3D12GraphicsCommandList = null;
@@ -130,12 +126,8 @@ fn createTestDevice() ?TestDevice {
         &d3d12.IID_ID3D12GraphicsCommandList,
         @ptrCast(&command_list),
     );
-    if (com.FAILED(hr) or command_list == null) {
-        _ = command_allocator.?.Release();
-        _ = command_queue.?.Release();
-        _ = device.?.Release();
-        return null;
-    }
+    if (com.FAILED(hr) or command_list == null) return error.CommandListCreationFailed;
+    errdefer _ = command_list.?.Release();
 
     // Fence
     var fence: ?*d3d12.ID3D12Fence = null;
@@ -145,22 +137,12 @@ fn createTestDevice() ?TestDevice {
         &d3d12.IID_ID3D12Fence,
         @ptrCast(&fence),
     );
-    if (com.FAILED(hr) or fence == null) {
-        _ = command_list.?.Release();
-        _ = command_allocator.?.Release();
-        _ = command_queue.?.Release();
-        _ = device.?.Release();
-        return null;
-    }
+    if (com.FAILED(hr) or fence == null) return error.FenceCreationFailed;
+    errdefer _ = fence.?.Release();
 
-    const fence_event = d3d12.CreateEventW(null, 0, 0, null) orelse {
-        _ = fence.?.Release();
-        _ = command_list.?.Release();
-        _ = command_allocator.?.Release();
-        _ = command_queue.?.Release();
-        _ = device.?.Release();
-        return null;
-    };
+    const fence_event = d3d12.CreateEventW(null, 0, 0, null) orelse
+        return error.FenceEventCreationFailed;
+    errdefer _ = d3d12.CloseHandle(fence_event);
 
     return .{
         .device = device.?,
@@ -176,7 +158,7 @@ fn createTestDevice() ?TestDevice {
 // ---- Device + command queue + fence tests ----
 
 test "Device: create and feature level" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     // If we got here, D3D12CreateDevice succeeded at feature level 12.0.
@@ -186,7 +168,7 @@ test "Device: create and feature level" {
 }
 
 test "Command queue: fence signal and wait" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     // Close the open command list (we don't need to record anything).
@@ -210,7 +192,7 @@ test "Command queue: fence signal and wait" {
 // ---- Descriptor heap tests ----
 
 test "DescriptorHeap: create CBV/SRV/UAV and allocate" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var heap = DescriptorHeap.init(
@@ -234,7 +216,7 @@ test "DescriptorHeap: create CBV/SRV/UAV and allocate" {
 }
 
 test "DescriptorHeap: create sampler heap" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var heap = DescriptorHeap.init(
@@ -256,7 +238,7 @@ test "DescriptorHeap: create sampler heap" {
 }
 
 test "DescriptorHeap: create RTV heap (non-shader-visible)" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var heap = DescriptorHeap.init(
@@ -275,7 +257,7 @@ test "DescriptorHeap: create RTV heap (non-shader-visible)" {
 // ---- Buffer tests ----
 
 test "Buffer: create, sync, deinit" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const TestFloat = Buffer(f32);
@@ -294,7 +276,7 @@ test "Buffer: create, sync, deinit" {
 }
 
 test "Buffer: sync triggers realloc when data exceeds capacity" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const TestU32 = Buffer(u32);
@@ -306,12 +288,12 @@ test "Buffer: sync triggers realloc when data exceeds capacity" {
     for (&big_data, 0..) |*v, i| v.* = @intCast(i);
     try buf.sync(&big_data);
 
-    // After realloc, capacity should be >= 200 (100 * 2).
-    try std.testing.expect(buf.len >= 200);
+    // After realloc at 2x, capacity should be exactly 200 (100 * 2).
+    try std.testing.expectEqual(@as(usize, 200), buf.len);
 }
 
 test "Buffer: syncFromArrayLists concatenates correctly" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const TestU32 = Buffer(u32);
@@ -331,7 +313,7 @@ test "Buffer: syncFromArrayLists concatenates correctly" {
 }
 
 test "Buffer: persistent mapping allows direct writes" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const TestF32 = Buffer(f32);
@@ -352,7 +334,7 @@ test "Buffer: persistent mapping allows direct writes" {
 }
 
 test "Buffer: constant buffer (Uniforms)" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const Uniforms = extern struct { x: f32, y: f32, z: f32, w: f32 };
@@ -365,7 +347,7 @@ test "Buffer: constant buffer (Uniforms)" {
 }
 
 test "Buffer: initFill creates buffer with data" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const TestU8 = Buffer(u8);
@@ -380,7 +362,7 @@ test "Buffer: initFill creates buffer with data" {
 // ---- Texture tests ----
 
 test "Texture: create R8_UNORM with initial data" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var srv_heap = DescriptorHeap.init(
@@ -415,7 +397,7 @@ test "Texture: create R8_UNORM with initial data" {
 }
 
 test "Texture: create B8G8R8A8_UNORM without initial data" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var srv_heap = DescriptorHeap.init(
@@ -440,7 +422,7 @@ test "Texture: create B8G8R8A8_UNORM without initial data" {
 }
 
 test "Texture: replaceRegion updates sub-region" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var srv_heap = DescriptorHeap.init(
@@ -477,7 +459,7 @@ test "Texture: replaceRegion updates sub-region" {
 // ---- Sampler tests ----
 
 test "Sampler: create and deinit" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var sampler_heap = DescriptorHeap.init(
@@ -499,7 +481,7 @@ test "Sampler: create and deinit" {
 }
 
 test "Sampler: custom filter and address mode" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var sampler_heap = DescriptorHeap.init(
@@ -525,7 +507,7 @@ test "Sampler: custom filter and address mode" {
 // ---- Pipeline tests ----
 
 test "Pipeline: root signature creation" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     const root_sig = Pipeline.createRootSignature(dev.device) catch return;
@@ -534,10 +516,10 @@ test "Pipeline: root signature creation" {
     // Root signature is a COM object -- if we got here, it was created.
 }
 
-test "Pipeline: all 5 PSOs created from DXIL bytecode via Shaders.init" {
+test "Pipeline: all PSOs created from DXIL bytecode via Shaders.init" {
     if (comptime builtin.os.tag != .windows) return;
 
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     var s = Shaders.init(dev.device) catch return;
@@ -553,12 +535,14 @@ test "Pipeline: all 5 PSOs created from DXIL bytecode via Shaders.init" {
 // ---- Frame tests ----
 
 test "Frame: create, reset, deinit" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     // Close the test device's command list so it doesn't conflict.
     _ = dev.command_list.Close();
 
+    // Frame.init sets renderer/target to undefined -- reset() only
+    // touches command_allocator and command_list, so this is safe.
     var frame = Frame.init(dev.device) catch return;
     defer frame.deinit();
 
@@ -677,7 +661,7 @@ test "Device: shared texture mode has no swap chain or dcomp" {
 // ---- Execute and wait test (fence lifecycle) ----
 
 test "Fence: execute empty command list and wait" {
-    var dev = createTestDevice() orelse return;
+    var dev = createTestDevice() catch return;
     defer dev.deinit();
 
     // The command list is open from createTestDevice. Execute it empty.
