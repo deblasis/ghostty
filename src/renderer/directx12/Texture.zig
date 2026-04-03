@@ -51,7 +51,7 @@ device: ?*d3d12.ID3D12Device = null,
 /// Cached command list for replaceRegion uploads.
 command_list: ?*d3d12.ID3D12GraphicsCommandList = null,
 /// Current resource state for barrier tracking.
-state: d3d12.D3D12_RESOURCE_STATES = d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+state: d3d12.D3D12_RESOURCE_STATES = d3d12.D3D12_RESOURCE_STATES.PIXEL_SHADER_RESOURCE,
 
 const TEXTURE_DATA_PITCH_ALIGNMENT: u32 = 256;
 
@@ -67,6 +67,8 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
     errdefer _ = resource.Release();
 
     // Allocate SRV descriptor.
+    // Note: the linear allocator has no individual free, so a failed init()
+    // after this point permanently consumes one descriptor slot.
     const srv = srv_heap.allocate() catch return error.TextureCreateFailed;
 
     // Create the SRV.
@@ -97,7 +99,7 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
         .command_list = opts.command_list,
         // Texture starts in COPY_DEST so the initial upload (if any) can proceed
         // without a barrier. After the upload we transition to PIXEL_SHADER_RESOURCE.
-        .state = d3d12.D3D12_RESOURCE_STATE_COPY_DEST,
+        .state = d3d12.D3D12_RESOURCE_STATES.COPY_DEST,
     };
 
     // Upload initial data if provided.
@@ -106,7 +108,7 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
     }
     // Transition to shader-readable. The texture was created in COPY_DEST
     // so the initial upload (if any) could proceed without a barrier.
-    tex.transition(d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    tex.transition(d3d12.D3D12_RESOURCE_STATES.PIXEL_SHADER_RESOURCE);
 
     return tex;
 }
@@ -120,26 +122,41 @@ pub fn deinit(self: Texture) void {
 }
 
 /// Upload pixel data to a sub-region of this texture.
-/// The staging buffer is recorded on the command list; the caller
-/// must execute and wait before the staging memory becomes invalid.
+///
+/// Precondition: the command list must be executed and the GPU must
+/// finish before this texture is used for rendering. In practice,
+/// GenericRenderer calls waitForGpu() after each frame which satisfies
+/// this requirement.
+///
+/// Returns error{}!void for API compatibility with Metal's replaceRegion
+/// which cannot fail. DX12 upload failures are logged but not propagated.
 pub fn replaceRegion(self: *Texture, x: usize, y: usize, width: usize, height: usize, data: []const u8) error{}!void {
     // Transition to COPY_DEST if needed.
-    if (self.state != d3d12.D3D12_RESOURCE_STATE_COPY_DEST) {
-        self.transition(d3d12.D3D12_RESOURCE_STATE_COPY_DEST);
+    if (self.state != d3d12.D3D12_RESOURCE_STATES.COPY_DEST) {
+        self.transition(d3d12.D3D12_RESOURCE_STATES.COPY_DEST);
     }
 
     self.uploadRegion(@intCast(x), @intCast(y), @intCast(width), @intCast(height), data);
 
     // Transition back to shader-readable.
-    self.transition(d3d12.D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    self.transition(d3d12.D3D12_RESOURCE_STATES.PIXEL_SHADER_RESOURCE);
 }
 
 // --- Internal helpers ---
 
 fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: []const u8) void {
-    const device = self.device orelse return;
-    const cmd_list = self.command_list orelse return;
-    const texture = self.resource orelse return;
+    const device = self.device orelse {
+        log.err("uploadRegion called with null device", .{});
+        return;
+    };
+    const cmd_list = self.command_list orelse {
+        log.err("uploadRegion called with null command_list", .{});
+        return;
+    };
+    const texture = self.resource orelse {
+        log.err("uploadRegion called with null resource", .{});
+        return;
+    };
 
     const region_aligned_pitch = alignPitch(width * self.bpp);
     const staging_size: u64 = @as(u64, region_aligned_pitch) * @as(u64, height);
@@ -208,10 +225,10 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
 
     cmd_list.CopyTextureRegion(&dst_loc, x, y, 0, &src_loc, &src_box);
 
-    // Release staging buffer. The copy command has been recorded; the GPU
-    // will read from this memory when the command list executes. This is
-    // safe because we release the COM reference AFTER recording -- the
-    // runtime keeps the resource alive until the GPU finishes the copy.
+    // Release staging buffer. DX12 does NOT extend resource lifetimes for
+    // recorded commands (unlike D3D11). This Release is only safe because
+    // the caller ensures the command list is executed and the GPU finishes
+    // before the texture is used again (GenericRenderer.waitForGpu).
     _ = staging.Release();
 }
 
@@ -265,9 +282,9 @@ fn createTextureResource(device: *d3d12.ID3D12Device, width: u32, height: u32, f
         &heap_props,
         0,
         &desc,
-        d3d12.D3D12_RESOURCE_STATE_COPY_DEST,
+        d3d12.D3D12_RESOURCE_STATES.COPY_DEST,
         null,
-        &d3d12.IID_ID3D12Resource,
+        &d3d12.ID3D12Resource.IID,
         @ptrCast(&resource),
     );
     if (com.FAILED(hr)) {
@@ -304,9 +321,9 @@ fn createStagingBuffer(device: *d3d12.ID3D12Device, size: u64) ?*d3d12.ID3D12Res
         &heap_props,
         0,
         &desc,
-        d3d12.D3D12_RESOURCE_STATE_GENERIC_READ,
+        d3d12.D3D12_RESOURCE_STATES.GENERIC_READ,
         null,
-        &d3d12.IID_ID3D12Resource,
+        &d3d12.ID3D12Resource.IID,
         @ptrCast(&resource),
     );
     if (com.FAILED(hr)) {
@@ -325,8 +342,8 @@ fn bppForFormat(format: dxgi.DXGI_FORMAT) u32 {
         .R8_UNORM => 1,
         .R8G8B8A8_UNORM, .B8G8R8A8_UNORM => 4,
         else => {
-            log.warn("unhandled pixel format in bppForFormat, defaulting to 4 bpp", .{});
-            break :switch 4;
+            log.err("unhandled pixel format in bppForFormat, defaulting to 4 bpp", .{});
+            return 4;
         },
     };
 }
