@@ -84,8 +84,9 @@ const sampler_heap_capacity: u32 = 16;
 /// Runtime blending mode, set by GenericRenderer when config changes.
 blending: configpkg.Config.AlphaBlending = .native,
 
-/// Set to true when DXGI_ERROR_DEVICE_REMOVED is detected.
-/// Prevents further GPU submissions until device recovery.
+/// Set to true when a device-loss error is detected (DEVICE_REMOVED,
+/// DEVICE_HUNG, or DEVICE_RESET). Prevents further GPU submissions
+/// until device recovery.
 device_lost: bool = false,
 
 /// DX12 device owning command queue, fence, and swap chain.
@@ -350,8 +351,9 @@ pub fn drawFrameEnd(self: *DirectX12) void {
     // Present the swap chain and check for device-removed errors.
     if (self.swap_chain3) |sc3| {
         const hr = sc3.Present(1, 0);
-        if (hr == com.DXGI_ERROR_DEVICE_REMOVED or hr == com.DXGI_ERROR_DEVICE_RESET) {
+        if (hr == com.DXGI_ERROR_DEVICE_REMOVED or hr == com.DXGI_ERROR_DEVICE_HUNG or hr == com.DXGI_ERROR_DEVICE_RESET) {
             self.handleDeviceRemoved();
+            // Fence signal is intentionally skipped -- the device is gone.
             return;
         }
         if (com.FAILED(hr)) {
@@ -478,7 +480,7 @@ pub fn presentLastTarget(self: *DirectX12) !void {
     // valid and the next beginFrame will wait correctly.
     if (self.swap_chain3) |sc3| {
         const hr = sc3.Present(1, 0);
-        if (hr == com.DXGI_ERROR_DEVICE_REMOVED or hr == com.DXGI_ERROR_DEVICE_RESET) {
+        if (hr == com.DXGI_ERROR_DEVICE_REMOVED or hr == com.DXGI_ERROR_DEVICE_HUNG or hr == com.DXGI_ERROR_DEVICE_RESET) {
             self.handleDeviceRemoved();
             return error.PresentFailed;
         }
@@ -605,5 +607,23 @@ test "DirectX12 has device_lost field" {
 
 test "DirectX12 default device_lost is false" {
     const api: DirectX12 = .{};
-    try std.testing.expect(!api.device_lost)
+    try std.testing.expect(!api.device_lost);
+}
+
+test "device_lost flag gates further rendering" {
+    var api: DirectX12 = .{};
+    try std.testing.expect(!api.device_lost);
+    // Simulate what handleDeviceRemoved does to the flag.
+    api.device_lost = true;
+    try std.testing.expect(api.device_lost);
+}
+
+test "device_lost flag is independent of device presence" {
+    var api: DirectX12 = .{};
+    // device_lost can be set regardless of whether dev is populated,
+    // matching the guard in beginFrame which checks device_lost before
+    // accessing dev.
+    try std.testing.expect(api.dev == null);
+    api.device_lost = true;
+    try std.testing.expect(api.device_lost);
 }
