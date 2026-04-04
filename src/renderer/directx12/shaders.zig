@@ -171,14 +171,26 @@ const bg_image_input_elements = [_]d3d12.D3D12_INPUT_ELEMENT_DESC{
     },
 };
 
-// Verify input layouts match GPU data struct sizes and offsets.
+// Cross-reference input layout byte offsets against GPU data struct offsets.
+// gpu_data.zig already asserts struct sizes; these verify the input element
+// descriptions stay in sync with the struct layout.
 comptime {
-    std.debug.assert(@sizeOf(CellText) == 32);
-    std.debug.assert(@offsetOf(CellText, "bools") == 29);
-    std.debug.assert(@sizeOf(Image) == 40);
-    std.debug.assert(@offsetOf(Image, "dest_size") == 32);
-    std.debug.assert(@sizeOf(BgImage) == 8);
-    std.debug.assert(@offsetOf(BgImage, "info") == 4);
+    // CellText: last element (bools) must match struct offset
+    std.debug.assert(cell_text_input_elements[0].AlignedByteOffset == @offsetOf(CellText, "glyph_pos"));
+    std.debug.assert(cell_text_input_elements[1].AlignedByteOffset == @offsetOf(CellText, "glyph_size"));
+    std.debug.assert(cell_text_input_elements[2].AlignedByteOffset == @offsetOf(CellText, "bearings"));
+    std.debug.assert(cell_text_input_elements[3].AlignedByteOffset == @offsetOf(CellText, "grid_pos"));
+    std.debug.assert(cell_text_input_elements[4].AlignedByteOffset == @offsetOf(CellText, "color"));
+    std.debug.assert(cell_text_input_elements[5].AlignedByteOffset == @offsetOf(CellText, "atlas"));
+    std.debug.assert(cell_text_input_elements[6].AlignedByteOffset == @offsetOf(CellText, "bools"));
+    // Image: last element (dest_size) must match struct offset
+    std.debug.assert(image_input_elements[0].AlignedByteOffset == @offsetOf(Image, "grid_pos"));
+    std.debug.assert(image_input_elements[1].AlignedByteOffset == @offsetOf(Image, "cell_offset"));
+    std.debug.assert(image_input_elements[2].AlignedByteOffset == @offsetOf(Image, "source_rect"));
+    std.debug.assert(image_input_elements[3].AlignedByteOffset == @offsetOf(Image, "dest_size"));
+    // BgImage: info element must match struct offset
+    std.debug.assert(bg_image_input_elements[0].AlignedByteOffset == @offsetOf(BgImage, "opacity"));
+    std.debug.assert(bg_image_input_elements[1].AlignedByteOffset == @offsetOf(BgImage, "info"));
 }
 
 /// Shader management for DX12.
@@ -277,13 +289,13 @@ pub const Shaders = struct {
         }
         self.post_pipelines = &.{};
 
-        if (self.root_signature) |rs| _ = rs.Release();
-        self.root_signature = null;
-
         inline for (@typeInfo(Pipelines).@"struct".fields) |field| {
             @field(self.pipelines, field.name).deinit();
         }
         self.pipelines = .{};
+
+        if (self.root_signature) |rs| _ = rs.Release();
+        self.root_signature = null;
     }
 };
 

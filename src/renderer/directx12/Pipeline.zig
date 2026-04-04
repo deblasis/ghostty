@@ -125,6 +125,9 @@ pub fn createRootSignature(device: *d3d12.ID3D12Device) !*d3d12.ID3D12RootSignat
     // Serialize the root signature to a blob.
     var blob: ?*d3d12.ID3DBlob = null;
     var error_blob: ?*d3d12.ID3DBlob = null;
+    // TODO(#127): upgrade to D3D_ROOT_SIGNATURE_VERSION_1_1 for DATA_STATIC /
+    // DESCRIPTORS_VOLATILE flags -- allows driver to optimize descriptor
+    // access for our workload (static atlas textures, per-frame uniforms).
     var hr = d3d12.D3D12SerializeRootSignature(
         &desc,
         1, // D3D_ROOT_SIGNATURE_VERSION_1

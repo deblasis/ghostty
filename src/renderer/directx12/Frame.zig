@@ -199,7 +199,7 @@ test "Frame reset error set includes expected errors" {
     }
 }
 
-test "Frame has expected optional fields" {
+test "Frame has expected fields" {
     try std.testing.expect(@hasField(Frame, "command_list"));
     try std.testing.expect(@hasField(Frame, "command_allocator"));
     try std.testing.expect(@hasField(Frame, "fence_value"));
