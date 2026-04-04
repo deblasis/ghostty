@@ -271,9 +271,13 @@ fn createCompositionSwapChain(
     width: u32,
     height: u32,
 ) !*dxgi.IDXGISwapChain1 {
+    // DXGI rejects 0-dimension swap chains.
+    const actual_width = if (width == 0) 1 else width;
+    const actual_height = if (height == 0) 1 else height;
+
     const desc = dxgi.DXGI_SWAP_CHAIN_DESC1{
-        .Width = width,
-        .Height = height,
+        .Width = actual_width,
+        .Height = actual_height,
         .Format = .B8G8R8A8_UNORM,
         .Stereo = 0,
         .SampleDesc = .{ .Count = 1, .Quality = 0 },

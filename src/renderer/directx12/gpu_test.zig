@@ -657,6 +657,26 @@ test "Device: shared texture mode has no swap chain or dcomp" {
     try std.testing.expect(device.dcomp_visual == null);
 }
 
+// ---- Device.init edge case tests ----
+
+test "Device: shared texture 0x0 dimensions does not crash" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    const HANDLE = std.os.windows.HANDLE;
+    var shared_handle: ?HANDLE = null;
+
+    // SharedTexture mode has no swap chain, so 0x0 should not hit DXGI.
+    var device = Device.init(.{ .shared_texture = .{
+        .handle_out = &shared_handle,
+        .width = 0,
+        .height = 0,
+    } }, .{}) catch return;
+    defer device.deinit();
+
+    try std.testing.expect(device.swap_chain == null);
+    try std.testing.expect(device.fence_value == 0);
+}
+
 // ---- Execute and wait test (fence lifecycle) ----
 
 test "Fence: execute empty command list and wait" {
