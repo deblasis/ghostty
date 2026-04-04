@@ -605,6 +605,13 @@ pub const D3D12_ROOT_SIGNATURE_DESC = extern struct {
     Flags: D3D12_ROOT_SIGNATURE_FLAGS,
 };
 
+// --- Root Signature versioning ---
+
+pub const D3D_ROOT_SIGNATURE_VERSION = enum(u32) {
+    VERSION_1_0 = 1,
+    VERSION_1_1 = 2,
+};
+
 // --- Root Signature v1.1 types ---
 
 pub const D3D12_DESCRIPTOR_RANGE_FLAGS = enum(u32) {
@@ -664,7 +671,7 @@ pub const D3D12_ROOT_SIGNATURE_DESC1 = extern struct {
 };
 
 pub const D3D12_VERSIONED_ROOT_SIGNATURE_DESC = extern struct {
-    Version: u32,
+    Version: D3D_ROOT_SIGNATURE_VERSION,
     u: extern union {
         Desc_1_0: D3D12_ROOT_SIGNATURE_DESC,
         Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1,
@@ -1466,13 +1473,6 @@ pub extern "d3d12" fn D3D12GetDebugInterface(
     ppvDebug: *?*anyopaque,
 ) callconv(.winapi) HRESULT;
 
-pub extern "d3d12" fn D3D12SerializeRootSignature(
-    pRootSignature: *const D3D12_ROOT_SIGNATURE_DESC,
-    Version: u32,
-    ppBlob: *?*ID3DBlob,
-    ppErrorBlob: *?*ID3DBlob,
-) callconv(.winapi) HRESULT;
-
 pub extern "d3d12" fn D3D12SerializeVersionedRootSignature(
     pRootSignature: *const D3D12_VERSIONED_ROOT_SIGNATURE_DESC,
     ppBlob: *?*ID3DBlob,
@@ -1517,18 +1517,13 @@ test "D3D12 struct sizes" {
     try std.testing.expectEqual(32, @sizeOf(D3D12_RESOURCE_BARRIER));
     try std.testing.expectEqual(32, @sizeOf(D3D12_ROOT_PARAMETER));
     try std.testing.expectEqual(656, @sizeOf(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-}
 
-test "D3D12_DESCRIPTOR_RANGE1 size" {
+    // v1.1 root signature types
     try std.testing.expectEqual(24, @sizeOf(D3D12_DESCRIPTOR_RANGE1));
-}
-
-test "D3D12_ROOT_DESCRIPTOR1 size" {
     try std.testing.expectEqual(12, @sizeOf(D3D12_ROOT_DESCRIPTOR1));
-}
-
-test "D3D12_ROOT_PARAMETER1 size" {
     try std.testing.expectEqual(32, @sizeOf(D3D12_ROOT_PARAMETER1));
+    try std.testing.expectEqual(40, @sizeOf(D3D12_ROOT_SIGNATURE_DESC1));
+    try std.testing.expectEqual(48, @sizeOf(D3D12_VERSIONED_ROOT_SIGNATURE_DESC));
 }
 
 test "D3D12 GUID constants" {

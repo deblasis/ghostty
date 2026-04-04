@@ -122,7 +122,7 @@ pub fn createRootSignature(device: *d3d12.ID3D12Device) !*d3d12.ID3D12RootSignat
     };
 
     const desc = d3d12.D3D12_VERSIONED_ROOT_SIGNATURE_DESC{
-        .Version = 2, // D3D_ROOT_SIGNATURE_VERSION_1_1
+        .Version = .VERSION_1_1,
         .u = .{ .Desc_1_1 = .{
             .NumParameters = root_params.len,
             .pParameters = &root_params,
