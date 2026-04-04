@@ -252,8 +252,8 @@ pub fn step(self: *RenderPass, s: Step) void {
         }
     }
 
-    // Bind additional buffers as root SRV descriptors.
-    // buffers[0] is bound as a vertex buffer above. buffers[1..] are
+    // Bind buffers[1] as a root SRV descriptor (e.g. cells_bg).
+    // buffers[0] is bound as a vertex buffer above. buffers[1] is
     // structured buffer data accessed via SRV in the pixel/vertex shader.
     if (s.buffers.len > 1) {
         if (s.buffers[1]) |buf| {

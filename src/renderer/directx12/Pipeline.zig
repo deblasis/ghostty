@@ -5,8 +5,9 @@
 //! layout that all pipelines share:
 //!
 //!   Param 0: CBV at b0 (Uniforms constant buffer)
-//!   Param 1: Descriptor table for SRVs at t0..t2 (textures, structured buffers)
+//!   Param 1: Descriptor table for SRVs at t0..t2 (atlas textures)
 //!   Param 2: Descriptor table for samplers at s0
+//!   Param 3: Inline SRV at t3 (structured buffer, e.g. cells_bg)
 //!
 //! This matches the HLSL register layout in shaders.hlsl. All five
 //! pipelines (bg_color, cell_bg, cell_text, image, bg_image) share the
@@ -124,11 +125,13 @@ pub fn createRootSignature(device: *d3d12.ID3D12Device) !*d3d12.ID3D12RootSignat
         // [3] Inline SRV for structured buffer data (cells_bg).
         // Binds with SetGraphicsRootShaderResourceView -- the GPU virtual
         // address is passed directly, no descriptor heap slot needed.
+        // DATA_VOLATILE: the buffer binding changes per draw call.
         .{
             .ParameterType = .SRV,
             .u = .{ .Descriptor = .{
                 .ShaderRegister = 3,
                 .RegisterSpace = 0,
+                .Flags = .DATA_VOLATILE,
             } },
             .ShaderVisibility = .ALL,
         },
