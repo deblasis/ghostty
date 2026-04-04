@@ -10,7 +10,6 @@ const builtin = @import("builtin");
 const com = @import("com.zig");
 const d3d12 = @import("d3d12.zig");
 const dxgi = @import("dxgi.zig");
-const dcomp = @import("dcomp.zig");
 const buffer_mod = @import("buffer.zig");
 const DescriptorHeap = @import("descriptor_heap.zig").DescriptorHeap;
 const Texture = @import("Texture.zig");
@@ -25,8 +24,7 @@ const Buffer = buffer_mod.Buffer;
 
 // ---- Test device helper ----
 
-/// DX12 needs more objects than DX11 to do useful work. This struct
-/// bundles a device, command queue, command list, and fence so tests
+/// Bundles a device, command queue, command list, and fence so tests
 /// can create resources and record/execute commands.
 const TestDevice = struct {
     device: *d3d12.ID3D12Device,
@@ -44,6 +42,7 @@ const TestDevice = struct {
         _ = self.command_allocator.Release();
         _ = self.command_queue.Release();
         _ = self.device.Release();
+        self.* = undefined;
     }
 
     /// Execute the command list and wait for the GPU to finish.
@@ -61,7 +60,8 @@ const TestDevice = struct {
         if (self.fence.GetCompletedValue() < self.fence_value) {
             hr = self.fence.SetEventOnCompletion(self.fence_value, self.fence_event);
             if (com.FAILED(hr)) return error.FenceSetEventFailed;
-            _ = d3d12.WaitForSingleObject(self.fence_event, d3d12.INFINITE);
+            const wait_result = d3d12.WaitForSingleObject(self.fence_event, d3d12.INFINITE);
+            if (wait_result != 0) return error.WaitFailed;
         }
     }
 
@@ -183,7 +183,8 @@ test "Command queue: fence signal and wait" {
     if (dev.fence.GetCompletedValue() < dev.fence_value) {
         const hr2 = dev.fence.SetEventOnCompletion(dev.fence_value, dev.fence_event);
         try std.testing.expect(!com.FAILED(hr2));
-        _ = d3d12.WaitForSingleObject(dev.fence_event, d3d12.INFINITE);
+        const wait_result = d3d12.WaitForSingleObject(dev.fence_event, d3d12.INFINITE);
+        try std.testing.expectEqual(@as(u32, 0), wait_result);
     }
 
     try std.testing.expect(dev.fence.GetCompletedValue() >= dev.fence_value);
@@ -386,8 +387,8 @@ test "Texture: create R8_UNORM with initial data" {
     defer tex.deinit();
 
     // Execute the copy commands and wait for GPU to finish.
-    dev.executeAndWait() catch {};
-    dev.reset() catch {};
+    try dev.executeAndWait();
+    try dev.reset();
 
     try std.testing.expectEqual(@as(usize, 4), tex.width);
     try std.testing.expectEqual(@as(usize, 4), tex.height);
@@ -446,8 +447,8 @@ test "Texture: replaceRegion updates sub-region" {
     tex.replaceRegion(1, 1, 2, 2, &region_data) catch return;
 
     // Execute the copy commands and wait for GPU to finish.
-    dev.executeAndWait() catch {};
-    dev.reset() catch {};
+    try dev.executeAndWait();
+    try dev.reset();
 
     // State should be back to PIXEL_SHADER_RESOURCE after replaceRegion.
     try std.testing.expectEqual(
@@ -593,13 +594,11 @@ test "Device: HWND surface uses DirectComposition with PREMULTIPLIED alpha" {
             ?*anyopaque,
         ) callconv(.winapi) ?HWND;
         extern "user32" fn DestroyWindow(HWND) callconv(.winapi) i32;
-        fn defWindowProc(_: HWND, _: u32, _: usize, _: isize) callconv(.winapi) isize {
-            return 0;
-        }
+        extern "user32" fn DefWindowProcW(HWND, u32, usize, isize) callconv(.winapi) isize;
     };
 
     const class_name = std.unicode.utf8ToUtf16LeStringLiteral("GhosttyDX12DCompTestClass");
-    const wc = WNDCLASSEXW{ .lpfnWndProc = user32.defWindowProc, .lpszClassName = class_name };
+    const wc = WNDCLASSEXW{ .lpfnWndProc = user32.DefWindowProcW, .lpszClassName = class_name };
     _ = user32.RegisterClassExW(&wc);
 
     const hwnd = user32.CreateWindowExW(
@@ -653,9 +652,9 @@ test "Device: shared texture mode has no swap chain or dcomp" {
 
     // Shared texture mode: no swap chain, no DirectComposition.
     try std.testing.expect(device.swap_chain == null);
-    try std.testing.expectEqual(@as(?*dcomp.IDCompositionDevice, null), device.dcomp_device);
-    try std.testing.expectEqual(@as(?*dcomp.IDCompositionTarget, null), device.dcomp_target);
-    try std.testing.expectEqual(@as(?*dcomp.IDCompositionVisual, null), device.dcomp_visual);
+    try std.testing.expect(device.dcomp_device == null);
+    try std.testing.expect(device.dcomp_target == null);
+    try std.testing.expect(device.dcomp_visual == null);
 }
 
 // ---- Execute and wait test (fence lifecycle) ----
