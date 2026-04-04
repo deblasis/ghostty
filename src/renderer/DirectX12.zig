@@ -118,8 +118,14 @@ pending_command_list: ?*d3d12.ID3D12GraphicsCommandList = null,
 /// Must be saved here because GetCurrentBackBufferIndex advances after Present.
 pending_frame_index: u32 = 0,
 
-/// Cached swap chain dimensions, updated by setTargetSize.
-/// Zero means not yet set; surfaceSize falls back to GetDesc1.
+/// Cached surface dimensions, updated by setTargetSize and seeded in init.
+///
+/// DX12 uses composition swap chains for all surface types (HWND via
+/// DirectComposition, SwapChainPanel via XAML). Unlike DX11's GetClientRect
+/// path, there is no way to query the actual window size from within the
+/// renderer -- the apprt must forward it via setTargetSize. The GetDesc1
+/// fallback returns buffer dimensions which lag behind until ResizeBuffers
+/// is called, so this cache is the primary source of truth.
 cached_width: u32 = 0,
 cached_height: u32 = 0,
 
@@ -372,18 +378,24 @@ pub fn initShaders(
     return shaders.Shaders.init(dev_device);
 }
 
+/// Called by the apprt (via generic.zig) when the surface is resized.
+/// This is the only resize signal DX12 gets -- composition swap chains
+/// have no equivalent of DX11's GetClientRect-based windowSize().
 pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
     self.cached_width = width;
     self.cached_height = height;
 }
 
 pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
-    // Return cached dimensions if available.
     if (self.cached_width != 0 and self.cached_height != 0) {
         return .{ .width = self.cached_width, .height = self.cached_height };
     }
 
-    // Fallback: query swap chain (first frame before setTargetSize is called).
+    // Fallback: query swap chain buffer dimensions via GetDesc1.
+    // init() seeds the cache, so this only fires on the very first frame
+    // if surfaceSize() is called before init() finishes. GetDesc1 returns
+    // the *buffer* size, which may lag behind the window until ResizeBuffers
+    // runs -- but it is the best we can do without the cache.
     const dev_ptr = self.dev orelse return .{ .width = 0, .height = 0 };
     if (dev_ptr.swap_chain) |sc| {
         var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
@@ -394,6 +406,7 @@ pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
         log.warn("GetDesc1 failed: 0x{x}", .{@as(u32, @bitCast(hr))});
     }
 
+    // No swap chain (SharedTexture surface) or query failed.
     return .{ .width = 0, .height = 0 };
 }
 
