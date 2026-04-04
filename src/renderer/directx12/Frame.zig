@@ -39,8 +39,7 @@ fn hrFmt(hr: HRESULT) u32 {
 command_allocator: ?*d3d12.ID3D12CommandAllocator,
 command_list: ?*d3d12.ID3D12GraphicsCommandList,
 /// Fence value for GPU synchronization.
-/// TODO: fence wait is the caller's responsibility -- will be wired
-/// when the frame pool lands in a later PR.
+/// Caller must wait on this before reusing the frame -- see #132.
 fence_value: u64,
 
 renderer: *Renderer,

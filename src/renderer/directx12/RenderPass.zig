@@ -237,10 +237,9 @@ pub fn step(self: *RenderPass, s: Step) void {
     }
 
     // Bind the first buffer as the instance vertex buffer.
-    // TODO: Metal binds buffers[0] as vertex+fragment at index 0, then
-    // buffers[1..] at index 2+. OpenGL uses SSBOs for the rest. DX12
-    // will need root descriptor table entries for storage buffers when
-    // pipelines that use multiple buffers (e.g. cell_text) are wired.
+    // Only the first non-null buffer with a stride is bound as a VB.
+    // Multi-buffer pipelines (e.g. cell_text) will need root descriptor
+    // table entries for storage buffers -- see #128.
     for (s.buffers) |b| {
         if (b) |buf| {
             if (buf.gpu_address != 0 and buf.size > 0 and buf.stride > 0) {

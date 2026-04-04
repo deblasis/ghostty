@@ -48,9 +48,8 @@ pub const descriptor_heap = @import("directx12/descriptor_heap.zig");
 pub const device = @import("directx12/device.zig");
 pub const dxgi = @import("directx12/dxgi.zig");
 
-// TODO: custom shaders not yet supported on DX12. Using .glsl as placeholder;
-// DX12 will need its own shadertoy.Target variant (.hlsl) when custom shaders
-// are implemented. Can't add it without modifying upstream shadertoy.zig.
+// Custom shaders not yet supported on DX12. Using .glsl as placeholder;
+// DX12 will need its own shadertoy.Target variant (.hlsl) -- see #129.
 pub const custom_shader_target: shadertoy.Target = .glsl;
 
 /// DX12 uses top-left origin, same as Metal and DX11.
@@ -334,8 +333,7 @@ pub fn drawFrameEnd(self: *DirectX12) void {
     dev_ptr.command_queue.ExecuteCommandLists(1, &lists);
 
     // Present the swap chain.
-    // TODO: check for DXGI_ERROR_DEVICE_REMOVED and trigger TDR recovery
-    // once device-lost handling is implemented.
+    // Does not yet check for DXGI_ERROR_DEVICE_REMOVED -- see #130.
     if (self.swap_chain3) |sc3| {
         const hr = sc3.Present(1, 0);
         if (com.FAILED(hr)) {
@@ -371,8 +369,7 @@ pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
     _ = self;
     _ = width;
     _ = height;
-    // TODO: for composition surfaces, store the target size so
-    // surfaceSize() can return it (no HWND to query).
+    // Composition surfaces should store the target size -- see #131.
 }
 
 pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
@@ -380,10 +377,8 @@ pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
 
     if (dev_ptr.swap_chain) |sc| {
         // Query the swap chain's current buffer dimensions.
-        // TODO: GetDesc1 is called every frame -- cache the dimensions and
-        // only re-query on resize. For HWND surfaces, store the HWND on
-        // Device and query the client rect directly, so resize is detected
-        // before the swap chain is resized.
+        // GetDesc1 is called every frame -- should cache and re-query
+        // only on resize. See #131.
         var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
         const hr = sc.GetDesc1(&desc);
         if (com.SUCCEEDED(hr)) {
