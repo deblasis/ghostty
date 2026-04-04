@@ -345,6 +345,25 @@ test "Pipelines has all 5 fields" {
     try std.testing.expect(@hasField(Shaders.Pipelines, "bg_image"));
 }
 
+test "pipeline deinit loop does not touch root_signature" {
+    // Shaders.deinit releases root_signature separately, after calling
+    // deinit on each pipeline. If Pipeline.deinit ever started releasing
+    // root_signature, the second release in Shaders.deinit would
+    // double-free. This test catches that by setting a bogus
+    // root_signature that would crash if dereferenced.
+    const sentinel: *d3d12.ID3D12RootSignature = @ptrFromInt(0xDEAD_BEF0);
+    var pipelines: Shaders.Pipelines = .{};
+
+    inline for (@typeInfo(Shaders.Pipelines).@"struct".fields) |field| {
+        @field(pipelines, field.name).root_signature = sentinel;
+    }
+
+    // Same loop as Shaders.deinit -- must not dereference root_signature.
+    inline for (@typeInfo(Shaders.Pipelines).@"struct".fields) |field| {
+        @field(pipelines, field.name).deinit();
+    }
+}
+
 test "all input elements use PER_INSTANCE_DATA" {
     for (&cell_text_input_elements) |elem| {
         try std.testing.expectEqual(PER_INSTANCE, elem.InputSlotClass);
