@@ -48,8 +48,6 @@ pub const descriptor_heap = @import("directx12/descriptor_heap.zig");
 pub const device = @import("directx12/device.zig");
 pub const dxgi = @import("directx12/dxgi.zig");
 
-// Custom shaders use HLSL for DX12, cross-compiled from GLSL via
-// SPIR-V -> SPIRV-Cross (HLSL backend) -> Shader Model 6.0.
 pub const custom_shader_target: shadertoy.Target = .hlsl;
 
 /// DX12 uses top-left origin, same as Metal and DX11.
