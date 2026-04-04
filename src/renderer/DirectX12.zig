@@ -118,6 +118,11 @@ pending_command_list: ?*d3d12.ID3D12GraphicsCommandList = null,
 /// Must be saved here because GetCurrentBackBufferIndex advances after Present.
 pending_frame_index: u32 = 0,
 
+/// Cached swap chain dimensions, updated by setTargetSize.
+/// Zero means not yet set; surfaceSize falls back to GetDesc1.
+cached_width: u32 = 0,
+cached_height: u32 = 0,
+
 // --- GraphicsAPI contract: functions ---
 
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
@@ -267,6 +272,9 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
         }
     }
 
+    result.cached_width = size.width;
+    result.cached_height = size.height;
+
     return result;
 }
 
@@ -365,19 +373,19 @@ pub fn initShaders(
 }
 
 pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
-    _ = self;
-    _ = width;
-    _ = height;
-    // Composition surfaces should store the target size -- see #131.
+    self.cached_width = width;
+    self.cached_height = height;
 }
 
 pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
-    const dev_ptr = self.dev orelse return .{ .width = 0, .height = 0 };
+    // Return cached dimensions if available.
+    if (self.cached_width != 0 and self.cached_height != 0) {
+        return .{ .width = self.cached_width, .height = self.cached_height };
+    }
 
+    // Fallback: query swap chain (first frame before setTargetSize is called).
+    const dev_ptr = self.dev orelse return .{ .width = 0, .height = 0 };
     if (dev_ptr.swap_chain) |sc| {
-        // Query the swap chain's current buffer dimensions.
-        // GetDesc1 is called every frame -- should cache and re-query
-        // only on resize. See #131.
         var desc: dxgi.DXGI_SWAP_CHAIN_DESC1 = undefined;
         const hr = sc.GetDesc1(&desc);
         if (com.SUCCEEDED(hr)) {
@@ -386,7 +394,6 @@ pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
         log.warn("GetDesc1 failed: 0x{x}", .{@as(u32, @bitCast(hr))});
     }
 
-    // No swap chain (SharedTexture surface) or query failed.
     return .{ .width = 0, .height = 0 };
 }
 
@@ -544,4 +551,15 @@ test {
 
 test "DirectX12 does not have frame_fence_values" {
     try std.testing.expect(!@hasField(DirectX12, "frame_fence_values"));
+}
+
+test "DirectX12 has cached size fields" {
+    try std.testing.expect(@hasField(DirectX12, "cached_width"));
+    try std.testing.expect(@hasField(DirectX12, "cached_height"));
+}
+
+test "DirectX12 default cached size is zero" {
+    const api: DirectX12 = .{};
+    try std.testing.expectEqual(@as(u32, 0), api.cached_width);
+    try std.testing.expectEqual(@as(u32, 0), api.cached_height);
 }
