@@ -2444,3 +2444,10 @@ test "ctrlseq: ctrl c with no text uses logical key" {
     const seq = ctrlSeq(.key_c, "", 'c', .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
+
+test "ctrlseq: DEL byte in text returns null" {
+    // If 0x7F (DEL) leaks through as text, ctrlSeq can't map it.
+    // The embedded apprt filters this before it reaches the encoder.
+    const seq = ctrlSeq(.backspace, "\x7f", 0x7f, .{ .ctrl = true });
+    try testing.expect(seq == null);
+}
