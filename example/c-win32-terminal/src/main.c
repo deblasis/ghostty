@@ -91,19 +91,6 @@ static ghostty_input_mods_e current_mods(void) {
     return mods;
 }
 
-// Get the unshifted codepoint for a virtual key. This gives ghostty the
-// base character without Shift applied, matching what GTK provides via
-// gdk_keyval_to_unicode on the unshifted keyval.
-static uint32_t unshifted_codepoint_from_vk(WPARAM vk) {
-    // MapVirtualKeyW with MAPVK_VK_TO_CHAR returns the unshifted character
-    // for the key. Bit 31 is set for dead keys -- mask it off.
-    UINT ch = MapVirtualKeyW((UINT)vk, MAPVK_VK_TO_CHAR) & 0x7FFFFFFF;
-    // The result is an uppercase letter for A-Z; lowercase it to match
-    // the unshifted interpretation (physical key without Shift).
-    if (ch >= 'A' && ch <= 'Z') ch = ch - 'A' + 'a';
-    return (uint32_t)ch;
-}
-
 // --- Window procedure ---
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -121,7 +108,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             .consumed_mods = GHOSTTY_MODS_NONE,
             .keycode = scancode_from_lparam(lp),
             .text = NULL,
-            .unshifted_codepoint = unshifted_codepoint_from_vk(wp),
+            .unshifted_codepoint = 0,
             .composing = false,
         };
         ghostty_surface_key(g_surface, key);
@@ -137,7 +124,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             .consumed_mods = GHOSTTY_MODS_NONE,
             .keycode = scancode_from_lparam(lp),
             .text = NULL,
-            .unshifted_codepoint = unshifted_codepoint_from_vk(wp),
+            .unshifted_codepoint = 0,
             .composing = false,
         };
         ghostty_surface_key(g_surface, key);

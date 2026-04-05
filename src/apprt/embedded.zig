@@ -1351,9 +1351,41 @@ pub const CAPI = struct {
                 )),
                 .keycode = self.keycode,
                 .text = if (self.text) |ptr| std.mem.sliceTo(ptr, 0) else null,
-                .unshifted_codepoint = self.unshifted_codepoint,
+                .unshifted_codepoint = if (self.unshifted_codepoint != 0)
+                    self.unshifted_codepoint
+                else
+                    unshiftedCodepointFromKeycode(self.keycode),
                 .composing = self.composing,
             };
+        }
+
+        /// Derive the unshifted codepoint from a Win32 scancode so
+        /// embedders don't need to provide it themselves. Uses
+        /// MapVirtualKeyW to go scancode -> VK -> base character,
+        /// matching what the C example does with MAPVK_VK_TO_CHAR.
+        /// On non-Windows this returns 0 (no-op).
+        fn unshiftedCodepointFromKeycode(keycode: u32) u32 {
+            if (comptime builtin.os.tag != .windows) return 0;
+
+            const win32 = struct {
+                const MAPVK_VSC_TO_VK_EX = 3;
+                const MAPVK_VK_TO_CHAR = 2;
+                extern "user32" fn MapVirtualKeyW(uCode: u32, uMapType: u32) callconv(.winapi) u32;
+            };
+
+            // Extended keys have 0xE000 prefix in our scancode
+            // encoding. MapVirtualKeyW expects the raw scancode
+            // with the extended bit in the high byte (0xE0xx).
+            const vk = win32.MapVirtualKeyW(keycode, win32.MAPVK_VSC_TO_VK_EX);
+            if (vk == 0) return 0;
+
+            // Bit 31 set means dead key -- mask it off.
+            var ch = win32.MapVirtualKeyW(vk, win32.MAPVK_VK_TO_CHAR) & 0x7FFFFFFF;
+
+            // Lowercase A-Z to match the unshifted physical key.
+            if (ch >= 'A' and ch <= 'Z') ch = ch - 'A' + 'a';
+
+            return ch;
         }
     };
 
