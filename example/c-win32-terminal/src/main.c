@@ -144,33 +144,31 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    // WM_UNICHAR is sent by some IME frameworks (e.g. IBUS on Wine) and
+    // accessibility tools that bypass TranslateMessage. Unlike WM_CHAR
+    // which delivers UTF-16, WM_UNICHAR carries a full UTF-32 codepoint.
     case WM_UNICHAR: {
         if (wp == UNICODE_NOCHAR) return TRUE;
         if (!g_surface) break;
 
+        // Convert the UTF-32 codepoint to a surrogate pair (or single
+        // wchar_t) so we can use WideCharToMultiByte like WM_CHAR.
         uint32_t cp = (uint32_t)wp;
+        wchar_t wc_buf[3] = {0};
+        int count;
+        if (cp >= 0x10000 && cp < 0x110000) {
+            cp -= 0x10000;
+            wc_buf[0] = (wchar_t)(0xD800 | (cp >> 10));
+            wc_buf[1] = (wchar_t)(0xDC00 | (cp & 0x3FF));
+            count = 2;
+        } else {
+            wc_buf[0] = (wchar_t)cp;
+            count = 1;
+        }
 
         char utf8[8] = {0};
-        int len = 0;
-        if (cp < 0x80) {
-            utf8[0] = (char)cp;
-            len = 1;
-        } else if (cp < 0x800) {
-            utf8[0] = (char)(0xC0 | (cp >> 6));
-            utf8[1] = (char)(0x80 | (cp & 0x3F));
-            len = 2;
-        } else if (cp < 0x10000) {
-            utf8[0] = (char)(0xE0 | (cp >> 12));
-            utf8[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
-            utf8[2] = (char)(0x80 | (cp & 0x3F));
-            len = 3;
-        } else if (cp < 0x110000) {
-            utf8[0] = (char)(0xF0 | (cp >> 18));
-            utf8[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
-            utf8[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
-            utf8[3] = (char)(0x80 | (cp & 0x3F));
-            len = 4;
-        }
+        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, count,
+                                       utf8, sizeof(utf8) - 1, NULL, NULL);
         if (len <= 0) return 0;
         utf8[len] = '\0';
 

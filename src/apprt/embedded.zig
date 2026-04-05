@@ -463,11 +463,12 @@ pub const Surface = struct {
     /// Text buffer for Windows key event combining. Lives outside the
     /// pending_key optional so it doesn't get poisoned when the optional
     /// is set to null in debug builds. The event.text pointer references
-    /// this buffer during dispatch.
+    /// this buffer during dispatch. Sized to match GTK's im_buf (128)
+    /// so IME compositions aren't silently truncated.
     pending_key_text: if (builtin.os.tag == .windows)
-        [16]u8
+        [128]u8
     else
-        void = if (builtin.os.tag == .windows) .{0} ** 16 else {},
+        void = if (builtin.os.tag == .windows) .{0} ** 128 else {},
 
     const PendingKey = struct {
         event: App.KeyEvent,
@@ -983,6 +984,11 @@ pub const Surface = struct {
     }
 
     pub fn focusCallback(self: *Surface, focused: bool) void {
+        // Flush any buffered key event on focus loss so it isn't
+        // silently dropped (e.g. user presses a key then Alt-Tabs
+        // before WM_CHAR arrives).
+        if (!focused) self.flushPendingKey();
+
         self.core_surface.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
             return;
