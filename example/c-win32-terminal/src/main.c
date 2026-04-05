@@ -91,6 +91,19 @@ static ghostty_input_mods_e current_mods(void) {
     return mods;
 }
 
+// Get the unshifted codepoint for a virtual key. This gives ghostty the
+// base character without Shift applied, matching what GTK provides via
+// gdk_keyval_to_unicode on the unshifted keyval.
+static uint32_t unshifted_codepoint_from_vk(WPARAM vk) {
+    // MapVirtualKeyW with MAPVK_VK_TO_CHAR returns the unshifted character
+    // for the key. Bit 31 is set for dead keys -- mask it off.
+    UINT ch = MapVirtualKeyW((UINT)vk, MAPVK_VK_TO_CHAR) & 0x7FFFFFFF;
+    // The result is an uppercase letter for A-Z; lowercase it to match
+    // the unshifted interpretation (physical key without Shift).
+    if (ch >= 'A' && ch <= 'Z') ch = ch - 'A' + 'a';
+    return (uint32_t)ch;
+}
+
 // --- Window procedure ---
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -108,8 +121,8 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             .consumed_mods = GHOSTTY_MODS_NONE,
             .keycode = scancode_from_lparam(lp),
             .text = NULL,
+            .unshifted_codepoint = unshifted_codepoint_from_vk(wp),
             .composing = false,
-            .unshifted_codepoint = 0,
         };
         ghostty_surface_key(g_surface, key);
         return 0;
@@ -124,25 +137,64 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             .consumed_mods = GHOSTTY_MODS_NONE,
             .keycode = scancode_from_lparam(lp),
             .text = NULL,
+            .unshifted_codepoint = unshifted_codepoint_from_vk(wp),
             .composing = false,
-            .unshifted_codepoint = 0,
         };
         ghostty_surface_key(g_surface, key);
         return 0;
     }
 
-    case WM_CHAR: {
+    case WM_UNICHAR: {
+        if (wp == UNICODE_NOCHAR) return TRUE;
         if (!g_surface) break;
-        // wp is a UTF-16 code unit. Characters outside the BMP arrive as
-        // two WM_CHAR messages (high surrogate then low surrogate).
+
+        uint32_t cp = (uint32_t)wp;
+
+        char utf8[8] = {0};
+        int len = 0;
+        if (cp < 0x80) {
+            utf8[0] = (char)cp;
+            len = 1;
+        } else if (cp < 0x800) {
+            utf8[0] = (char)(0xC0 | (cp >> 6));
+            utf8[1] = (char)(0x80 | (cp & 0x3F));
+            len = 2;
+        } else if (cp < 0x10000) {
+            utf8[0] = (char)(0xE0 | (cp >> 12));
+            utf8[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+            utf8[2] = (char)(0x80 | (cp & 0x3F));
+            len = 3;
+        } else if (cp < 0x110000) {
+            utf8[0] = (char)(0xF0 | (cp >> 18));
+            utf8[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+            utf8[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+            utf8[3] = (char)(0x80 | (cp & 0x3F));
+            len = 4;
+        }
+        if (len <= 0) return 0;
+        utf8[len] = '\0';
+
+        ghostty_surface_text(g_surface, utf8, (uintptr_t)len);
+        return 0;
+    }
+
+    case WM_DEADCHAR:
+    case WM_SYSDEADCHAR:
+        return 0;
+
+    case WM_CHAR:
+    case WM_SYSCHAR: {
+        if (!g_surface) break;
+
         WCHAR wc = (WCHAR)wp;
-        wchar_t wc_buf[3] = {0};
-        int count;
 
         if (IS_HIGH_SURROGATE(wc)) {
             g_high_surrogate = wc;
             return 0;
         }
+
+        wchar_t wc_buf[3] = {0};
+        int count;
         if (IS_LOW_SURROGATE(wc)) {
             if (g_high_surrogate) {
                 wc_buf[0] = g_high_surrogate;
@@ -150,7 +202,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 g_high_surrogate = 0;
                 count = 2;
             } else {
-                return 0;  // orphaned low surrogate
+                return 0;
             }
         } else {
             g_high_surrogate = 0;
@@ -159,11 +211,12 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         char utf8[8] = {0};
-        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, count, utf8, sizeof(utf8) - 1, NULL, NULL);
-        if (len > 0) {
-            utf8[len] = '\0';
-            ghostty_surface_text(g_surface, utf8, (uintptr_t)len);
-        }
+        int len = WideCharToMultiByte(CP_UTF8, 0, wc_buf, count,
+                                       utf8, sizeof(utf8) - 1, NULL, NULL);
+        if (len <= 0) return 0;
+        utf8[len] = '\0';
+
+        ghostty_surface_text(g_surface, utf8, (uintptr_t)len);
         return 0;
     }
 
