@@ -409,6 +409,11 @@ pub fn flushInitCommands(self: *DirectX12) void {
                 log.err("waitForGpu after init commands failed: {}", .{err});
             };
         } else {
+            // Close failed -- the recorded barriers won't reach the GPU.
+            // Texture.state already reads PIXEL_SHADER_RESOURCE but the
+            // GPU-side state is still COPY_DEST, so the first render frame
+            // will likely hit a resource state mismatch. This typically
+            // means the device is already in a bad state.
             log.err("init command list Close failed: 0x{x}", .{@as(u32, @bitCast(close_hr))});
         }
 

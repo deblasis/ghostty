@@ -192,9 +192,9 @@ fn uploadRegion(self: *Texture, x: u32, y: u32, width: u32, height: u32, data: [
         log.err("failed to create staging buffer for texture upload (size={d})", .{staging_size});
         return;
     };
-    // The staging buffer will be released after the command list executes.
-    // For now we rely on the caller to manage staging lifetime via GPU sync.
-    // In practice, GenericRenderer calls waitForGpu() after each frame.
+    // Staging buffer is saved to self.pending_staging after the copy is
+    // recorded, and released at the start of the next replaceRegion or
+    // in deinit (after the GPU has finished reading from it).
 
     // Map and copy row-by-row with pitch alignment.
     var mapped: ?*anyopaque = null;
