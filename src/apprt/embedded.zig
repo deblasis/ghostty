@@ -1984,19 +1984,33 @@ pub const CAPI = struct {
         if (comptime builtin.os.tag == .windows) {
             if (surface.pending_key) |*pending| {
                 const text = ptr[0..len];
-                const copy_len: usize = @min(text.len, surface.pending_key_text.len - 1);
 
-                // Copy text into the Surface-level buffer (not
-                // inside the optional) so it survives clearing
-                // pending_key. Zig poisons optional payloads in
-                // debug mode when set to null.
-                @memcpy(surface.pending_key_text[0..copy_len], text[0..copy_len]);
-                surface.pending_key_text[copy_len] = 0; // null-terminate
+                // Don't attach C0 control characters as text. Windows
+                // WM_CHAR delivers the control byte directly (e.g. 0x03
+                // for Ctrl+C) but the key encoder expects the printable
+                // character and derives the control byte from the logical
+                // key and modifier. Passing the raw control byte causes
+                // ctrlSeq to miss its switch match and fall through to
+                // CSI u, which ConPTY cannot translate into CTRL_C_EVENT.
+                // This matches GTK, which filters cp < 0x20 from IM text.
+                // We also filter 0x7F (DEL) since it has no printable form.
+                const is_c0 = text.len == 1 and (text[0] < 0x20 or text[0] == 0x7f);
 
-                // Rebuild the event with text attached and dispatch
-                // through key encoding, not the paste path.
                 var event = pending.event;
-                event.text = surface.pending_key_text[0..copy_len :0];
+
+                if (!is_c0) {
+                    const copy_len: usize = @min(text.len, surface.pending_key_text.len - 1);
+
+                    // Copy text into the Surface-level buffer (not
+                    // inside the optional) so it survives clearing
+                    // pending_key. Zig poisons optional payloads in
+                    // debug mode when set to null.
+                    @memcpy(surface.pending_key_text[0..copy_len], text[0..copy_len]);
+                    surface.pending_key_text[copy_len] = 0; // null-terminate
+
+                    event.text = surface.pending_key_text[0..copy_len :0];
+                }
+
                 surface.pending_key = null;
                 _ = surface.dispatchKey(event);
                 return;

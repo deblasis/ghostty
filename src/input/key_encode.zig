@@ -2018,6 +2018,21 @@ test "legacy: ctrl+c" {
     try testing.expectEqualStrings("\x03", writer.buffered());
 }
 
+test "legacy: ctrl+c no text" {
+    // On Windows, C0 text from WM_CHAR is filtered so the encoder
+    // receives empty text. It should still produce 0x03 via the
+    // logical key fallback in ctrlSeq.
+    var buf: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+    try legacy(&writer, .{
+        .key = .key_c,
+        .mods = .{ .ctrl = true },
+        .utf8 = "",
+        .unshifted_codepoint = 'c',
+    }, .{});
+    try testing.expectEqualStrings("\x03", writer.buffered());
+}
+
 test "legacy: ctrl+space" {
     var buf: [128]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
@@ -2420,5 +2435,12 @@ test "ctrlseq: right ctrl c" {
         .ctrl = true,
         .sides = .{ .ctrl = .right },
     });
+    try testing.expectEqual(@as(u8, 0x03), seq.?);
+}
+
+test "ctrlseq: ctrl c with no text uses logical key" {
+    // When text is empty (e.g. C0 filtered on Windows), ctrlSeq falls
+    // through to the logical key path and still produces 0x03.
+    const seq = ctrlSeq(.key_c, "", 'c', .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
