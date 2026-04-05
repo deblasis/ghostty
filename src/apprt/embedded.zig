@@ -1984,7 +1984,7 @@ pub const CAPI = struct {
         if (comptime builtin.os.tag == .windows) {
             if (surface.pending_key) |*pending| {
                 const text = ptr[0..len];
-                const copy_len: u8 = @intCast(@min(text.len, surface.pending_key_text.len - 1));
+                const copy_len: usize = @min(text.len, surface.pending_key_text.len - 1);
 
                 // Copy text into the Surface-level buffer (not
                 // inside the optional) so it survives clearing
