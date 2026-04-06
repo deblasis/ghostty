@@ -42,6 +42,14 @@ public sealed partial class TerminalControl : UserControl
     private GhosttyWriteClipboardCb? _writeClipboardCb;
     private GhosttyCloseSurfaceCb? _closeSurfaceCb;
 
+    // Events raised from the runtime action callback. They always fire
+    // on the UI thread: the callback itself runs on libghostty's thread
+    // and uses DispatcherQueue.TryEnqueue before invoking these.
+    //
+    // MainWindow subscribes to update the window chrome.
+    public event EventHandler<string>? TitleChanged;
+    public event EventHandler? CloseRequested;
+
     public TerminalControl()
     {
         InitializeComponent();
@@ -155,6 +163,11 @@ public sealed partial class TerminalControl : UserControl
         _commandUtf8 = IntPtr.Zero;
         _initialInputUtf8 = IntPtr.Zero;
         _initialized = false;
+
+        // Drop subscribers so MainWindow is not rooted via these events
+        // after the control tears down.
+        TitleChanged = null;
+        CloseRequested = null;
     }
 
     private static IntPtr AllocEmptyUtf8()
