@@ -268,7 +268,6 @@ public sealed partial class TerminalControl : UserControl
     // Size / scale -------------------------------------------------------
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _resizeTimer;
-    private Windows.Foundation.Size _pendingSize;
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -280,7 +279,6 @@ public sealed partial class TerminalControl : UserControl
         // during a drag. The fix is in the renderer: ResizeBuffers instead
         // of full recreate. Until that lands, debounce here. Drop this
         // entire timer once the renderer is idempotent.
-        _pendingSize = e.NewSize;
         if (_resizeTimer is null)
         {
             _resizeTimer = DispatcherQueue.CreateTimer();
@@ -295,10 +293,17 @@ public sealed partial class TerminalControl : UserControl
     {
         sender.Stop();
         if (_surface.Handle == IntPtr.Zero) return;
+
+        // Read the panel's own layout bounds rather than the
+        // SizeChangedEventArgs value. DPI rounding and any padding in
+        // the visual tree can make the two differ by a pixel, which
+        // manifests as letterboxing: the DX12 swap chain sizes off one
+        // value while the compositor stretches the panel to its own
+        // bounds, leaving a gap at the edges.
         var sx = Panel.CompositionScaleX > 0 ? Panel.CompositionScaleX : 1.0;
         var sy = Panel.CompositionScaleY > 0 ? Panel.CompositionScaleY : 1.0;
-        var w = (uint)Math.Max(1, _pendingSize.Width * sx);
-        var h = (uint)Math.Max(1, _pendingSize.Height * sy);
+        var w = (uint)Math.Max(1, Panel.ActualWidth * sx);
+        var h = (uint)Math.Max(1, Panel.ActualHeight * sy);
         NativeMethods.SurfaceSetSize(_surface, w, h);
     }
 

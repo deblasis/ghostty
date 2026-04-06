@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    IsTabStop must stay False on the outer UserControl. If both it and
+    the inner SwapChainPanel are tab stops, keyboard focus flaps between
+    them on Tab/Shift+Tab, which the apprt sees as a rapid focus on/off
+    cycle and libghostty interprets as losing focus for one tick between
+    keystrokes.
+-->
 <UserControl
     x:Class="Ghostty.Controls.TerminalControl"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
