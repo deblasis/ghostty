@@ -54,13 +54,11 @@ public sealed partial class TerminalControl : UserControl
         if (_initialized) return;
         _initialized = true;
 
-        // 1) ghostty_init — one-time per process, but calling multiple
-        //    times is documented as safe.
-        _ = NativeMethods.Init(UIntPtr.Zero, IntPtr.Zero);
+        // ghostty_init is documented safe to call repeatedly.
+        NativeMethods.Init(UIntPtr.Zero, IntPtr.Zero);
 
-        // 2) Build the global config. Default files are loaded from the
-        //    standard locations; we skip CLI args because WinUI 3's entry
-        //    point swallows them before we get here.
+        // Skip CLI args: WinUI 3's entry point swallows them before we get
+        // here. Default config files are loaded from the standard locations.
         _config = NativeMethods.ConfigNew();
         NativeMethods.ConfigLoadDefaultFiles(_config);
         NativeMethods.ConfigFinalize(_config);
@@ -131,8 +129,18 @@ public sealed partial class TerminalControl : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        // Tear down in reverse order. Each free is a no-op on a zero
-        // handle so we do not need to guard individually.
+        // Stop and detach the resize timer first so a pending tick cannot
+        // observe a half-freed surface. The timer holds a strong reference
+        // to this control via OnResizeTick, so leaving it pending across
+        // an Unloaded would also leak.
+        if (_resizeTimer is not null)
+        {
+            _resizeTimer.Stop();
+            _resizeTimer.Tick -= OnResizeTick;
+            _resizeTimer = null;
+        }
+
+        // Tear down in reverse order. Each free is a no-op on a zero handle.
         if (_surface.Handle != IntPtr.Zero) NativeMethods.SurfaceFree(_surface);
         if (_app.Handle != IntPtr.Zero) NativeMethods.AppFree(_app);
         if (_config.Handle != IntPtr.Zero) NativeMethods.ConfigFree(_config);
@@ -165,34 +173,25 @@ public sealed partial class TerminalControl : UserControl
 
     private void OnWakeup(IntPtr userdata)
     {
-        // libghostty is asking us to pump its event loop. We do it on the
-        // UI thread so any resulting draws land on the right dispatcher.
+        // Fires on libghostty's thread. Hop to the UI dispatcher so the
+        // tick (and any resulting draws) lands on the right queue.
         //
-        // This fires on libghostty's thread. The control may already be
-        // unloaded - DispatcherQueue becomes null once the visual tree
-        // detaches - so guard the enqueue. We also capture the app handle
-        // into a local so the lambda does not race with OnUnloaded zeroing
-        // the field between enqueue and dispatch.
+        // OnUnloaded also runs on the UI thread, so the dispatched lambda
+        // and the teardown are serialized: either Unloaded ran first and
+        // the lambda sees a zero handle, or the lambda ran first and
+        // Unloaded waits its turn. No lock needed.
         var dq = DispatcherQueue;
         if (dq is null) return;
-        var app = _app;
-        if (app.Handle == IntPtr.Zero) return;
         dq.TryEnqueue(() =>
         {
-            // Re-read the field on the UI thread: if Unloaded ran meanwhile
-            // the captured handle is stale and calling tick would use-after
-            // -free.
-            if (_app.Handle == app.Handle) NativeMethods.AppTick(app);
+            if (_app.Handle != IntPtr.Zero) NativeMethods.AppTick(_app);
         });
     }
 
     private bool OnAction(GhosttyApp app, GhosttyTarget target, IntPtr actionPtr)
     {
-        // Return false = "not handled, fall back to libghostty default".
-        // Returning true silently swallows actions (ring bell, open config,
-        // close surface, etc.) which hides behavior from the core. As the
-        // shell wires up real action handling these will become per-case
-        // returns.
+        // false = not handled, fall back to libghostty default. Per-action
+        // dispatch lands when the shell starts wiring real handlers.
         return false;
     }
 
@@ -210,13 +209,12 @@ public sealed partial class TerminalControl : UserControl
     {
         if (_surface.Handle == IntPtr.Zero) return;
 
-        // Debounce: WinUI 3 fires SizeChanged per pixel during a drag and
-        // libghostty's DX12 renderer currently recreates the swap chain on
-        // every set_size, which tears down GPU resources faster than the
-        // compositor can follow. Coalesce to a single resize ~30ms after
-        // the last event fires. TODO: the proper fix is to make the DX12
-        // renderer's resize path cheap/idempotent (ResizeBuffers instead of
-        // full recreate); once that lands, drop this debounce.
+        // FIXME: the DX12 renderer recreates the swap chain on every
+        // set_size, which tears down GPU resources faster than the
+        // compositor can follow when WinUI 3 fires SizeChanged per pixel
+        // during a drag. The fix is in the renderer: ResizeBuffers instead
+        // of full recreate. Until that lands, debounce here. Drop this
+        // entire timer once the renderer is idempotent.
         _pendingSize = e.NewSize;
         if (_resizeTimer is null)
         {
@@ -275,12 +273,12 @@ public sealed partial class TerminalControl : UserControl
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         if (_surface.Handle == IntPtr.Zero) return;
+        // ghostty_surface_mouse_pos expects unscaled coordinates (DIPs):
+        // src/apprt/embedded.zig cursorPosCallback runs the input through
+        // cursorPosToPixels using the surface's content scale. Multiplying
+        // by CompositionScaleX/Y here would double-scale on high DPI.
         var pt = e.GetCurrentPoint(Panel).Position;
-        NativeMethods.SurfaceMousePos(
-            _surface,
-            pt.X * Panel.CompositionScaleX,
-            pt.Y * Panel.CompositionScaleY,
-            CurrentMods());
+        NativeMethods.SurfaceMousePos(_surface, pt.X, pt.Y, CurrentMods());
     }
 
     private void OnPointerWheelChanged(object sender, PointerRoutedEventArgs e)

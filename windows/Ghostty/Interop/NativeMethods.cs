@@ -198,13 +198,19 @@ internal delegate void GhosttyCloseSurfaceCb(
     IntPtr userdata,
     [MarshalAs(UnmanagedType.I1)] bool processAlive);
 
-[StructLayout(LayoutKind.Sequential)]
+// Mirrors ghostty_target_s in include/ghostty.h:
+//   typedef struct { ghostty_target_tag_e tag; ghostty_target_u target; }
+// On x64 the enum is 4 bytes, the union is one 8-byte pointer aligned to 8,
+// giving a 4-byte tail pad after the tag. We pin the offsets explicitly so
+// this layout cannot drift if the union ever gains a wider variant — we
+// would notice via a build failure rather than a silent ABI mismatch.
+[StructLayout(LayoutKind.Explicit, Size = 16)]
 internal struct GhosttyTarget
 {
     // tag: 0 = app, 1 = surface
-    public int Tag;
-    // union: only surface is non-empty in practice
-    public IntPtr Surface;
+    [FieldOffset(0)] public int Tag;
+    // union: only the surface variant is populated today
+    [FieldOffset(8)] public IntPtr Surface;
 }
 
 [StructLayout(LayoutKind.Sequential)]
