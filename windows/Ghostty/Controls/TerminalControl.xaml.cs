@@ -203,10 +203,61 @@ public sealed partial class TerminalControl : UserControl
 
     private bool OnAction(GhosttyApp app, IntPtr targetPtr, IntPtr actionPtr)
     {
-        // Real decode lands in a follow-up step. For now preserve existing
-        // behavior: return false so the core falls back to its defaults
-        // for every action.
-        return false;
+        // ghostty_action_s layout:
+        //   { int32 tag; <union> action; }
+        // The union is 8-byte aligned on x64 so it starts at offset 8.
+        // We read the tag first and only touch the union for variants we
+        // actually handle. Returning false for an unhandled tag lets the
+        // core fall back to its default behavior.
+        if (actionPtr == IntPtr.Zero) return false;
+        var tag = (GhosttyActionTag)Marshal.ReadInt32(actionPtr);
+
+        switch (tag)
+        {
+            case GhosttyActionTag.SetTitle:
+            {
+                // set_title_s is { const char* title }, so the first
+                // pointer-sized word of the union is the UTF-8 title.
+                var titlePtr = Marshal.ReadIntPtr(actionPtr, 8);
+                var title = PtrToStringUtf8(titlePtr) ?? string.Empty;
+                var dq = DispatcherQueue;
+                if (dq is null) return true;
+                dq.TryEnqueue(() => TitleChanged?.Invoke(this, title));
+                return true;
+            }
+
+            case GhosttyActionTag.RingBell:
+            {
+                // MessageBeep is thread-safe; no dispatcher hop needed.
+                NativeMethods.MessageBeep(NativeMethods.MB_OK);
+                return true;
+            }
+
+            case GhosttyActionTag.CloseWindow:
+            {
+                var dq = DispatcherQueue;
+                if (dq is null) return true;
+                dq.TryEnqueue(() => CloseRequested?.Invoke(this, EventArgs.Empty));
+                return true;
+            }
+
+            default:
+                // Everything else falls back to libghostty defaults.
+                return false;
+        }
+    }
+
+    private static string? PtrToStringUtf8(IntPtr p)
+    {
+        if (p == IntPtr.Zero) return null;
+        // Walk to the null terminator. UTF-8 strings from libghostty are
+        // always null-terminated.
+        int len = 0;
+        while (Marshal.ReadByte(p, len) != 0) len++;
+        if (len == 0) return string.Empty;
+        var bytes = new byte[len];
+        Marshal.Copy(p, bytes, 0, len);
+        return Encoding.UTF8.GetString(bytes);
     }
 
     private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state) => false;
