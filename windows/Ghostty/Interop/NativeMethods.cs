@@ -218,6 +218,88 @@ internal struct GhosttyTarget
     [FieldOffset(8)] public IntPtr Surface;
 }
 
+// ghostty_action_tag_e from ghostty.h. Keep this in sync on rebase:
+// grep for "ghostty_action_tag_e" in include/ghostty.h. New variants
+// added upstream land at the end of the enum; any tag we do not
+// explicitly handle falls through to "return false" in the callback,
+// so drift is safe - at worst a new action is ignored until wired.
+internal enum GhosttyActionTag
+{
+    Quit = 0,
+    NewWindow,
+    NewTab,
+    CloseTab,
+    NewSplit,
+    CloseAllWindows,
+    ToggleMaximize,
+    ToggleFullscreen,
+    ToggleTabOverview,
+    ToggleWindowDecorations,
+    ToggleQuickTerminal,
+    ToggleCommandPalette,
+    ToggleVisibility,
+    ToggleBackgroundOpacity,
+    MoveTab,
+    GotoTab,
+    GotoSplit,
+    GotoWindow,
+    ResizeSplit,
+    EqualizeSplits,
+    ToggleSplitZoom,
+    PresentTerminal,
+    SizeLimit,
+    ResetWindowSize,
+    InitialSize,
+    CellSize,
+    Scrollbar,
+    Render,
+    Inspector,
+    ShowGtkInspector,
+    RenderInspector,
+    DesktopNotification,
+    SetTitle,
+    SetTabTitle,
+    PromptTitle,
+    Pwd,
+    MouseShape,
+    MouseVisibility,
+    MouseOverLink,
+    RendererHealth,
+    OpenConfig,
+    QuitTimer,
+    FloatWindow,
+    SecureInput,
+    KeySequence,
+    KeyTable,
+    ColorChange,
+    ReloadConfig,
+    ConfigChange,
+    CloseWindow,
+    RingBell,
+    Undo,
+    Redo,
+    CheckForUpdates,
+    OpenUrl,
+    ShowChildExited,
+    ProgressReport,
+    ShowOnScreenKeyboard,
+    CommandFinished,
+    StartSearch,
+    EndSearch,
+    SearchTotal,
+    SearchSelected,
+    Readonly,
+    CopyTitleToClipboard,
+}
+
+// ghostty_action_set_title_s { const char* title; }
+// We only read .title; the struct is declared so the offset is explicit.
+[StructLayout(LayoutKind.Sequential)]
+internal struct GhosttyActionSetTitle
+{
+    public IntPtr Title;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct GhosttyRuntimeConfig
 {
@@ -345,4 +427,15 @@ internal static class NativeMethods
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ghostty_surface_process_exited")]
     [return: MarshalAs(UnmanagedType.I1)]
     internal static extern bool SurfaceProcessExited(GhosttySurface surface);
+
+    // ---- user32 --------------------------------------------------------
+
+    // MessageBeep is thread-safe and minimal-dependency. Used by the
+    // action callback for RING_BELL without any dispatcher hop.
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebeep
+    internal const uint MB_OK = 0x00000000;
+
+    [DllImport("user32.dll", CallingConvention = CallingConvention.Winapi)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool MessageBeep(uint uType);
 }
