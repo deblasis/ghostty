@@ -96,16 +96,6 @@ internal enum GhosttyInputAction
     Repeat = 2,
 }
 
-// ghostty_input_key_e. Values matter because they cross the FFI boundary;
-// keep in sync with include/ghostty.h § "Writing System Keys" onward.
-internal enum GhosttyKey
-{
-    Unidentified = 0,
-    // Only the entries the shell currently maps are listed; the enum is
-    // backed by int so unmapped values round-trip fine.
-    // See include/ghostty.h for the full list.
-}
-
 [StructLayout(LayoutKind.Sequential)]
 internal struct GhosttyInputKey
 {

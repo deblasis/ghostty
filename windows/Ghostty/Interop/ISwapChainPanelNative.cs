@@ -39,9 +39,13 @@ internal static class SwapChainPanelInterop
     /// the IUnknown of the WinRT projection.
     /// </summary>
     /// <remarks>
-    /// This returns an AddRef'd pointer. libghostty is expected to Release
-    /// it when the surface is destroyed. The managed SwapChainPanel still
-    /// holds its own reference so nothing leaks if lifetimes line up.
+    /// Returns an AddRef'd pointer. libghostty's DX12 device init only uses
+    /// the pointer synchronously during ghostty_surface_new (it calls
+    /// ISwapChainPanelNative::SetSwapChain once and never stores it), so the
+    /// caller MUST Release this pointer immediately after SurfaceNew returns.
+    /// Confirmed in src/renderer/directx12/device.zig (swap_chain_panel
+    /// branch only calls SetSwapChain, no field retention). The managed
+    /// SwapChainPanel keeps composition alive via its own ref.
     /// </remarks>
     public static IntPtr QueryInterface(Microsoft.UI.Xaml.Controls.SwapChainPanel panel)
     {
@@ -52,5 +56,14 @@ internal static class SwapChainPanelInterop
             throw new InvalidOperationException(
                 $"QueryInterface for ISwapChainPanelNative failed: 0x{hr:X8}");
         return ppv;
+    }
+
+    /// <summary>
+    /// Release a pointer obtained from <see cref="QueryInterface"/>. Safe on
+    /// IntPtr.Zero.
+    /// </summary>
+    public static void Release(IntPtr ppv)
+    {
+        if (ppv != IntPtr.Zero) Marshal.Release(ppv);
     }
 }

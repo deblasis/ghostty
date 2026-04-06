@@ -26,7 +26,9 @@ public sealed partial class TerminalControl : UserControl
     private GhosttyConfig _config;
     private GhosttyApp _app;
     private GhosttySurface _surface;
-    private IntPtr _emptyCString;
+    private IntPtr _workingDirectoryUtf8;
+    private IntPtr _commandUtf8;
+    private IntPtr _initialInputUtf8;
     private bool _initialized;
 
     // Keep delegates alive for as long as the runtime config references
@@ -87,33 +89,41 @@ public sealed partial class TerminalControl : UserControl
 
         _app = NativeMethods.AppNew(runtime, _config);
 
-        // 4) Surface config. swap_chain_panel takes the panel's IUnknown
-        //    pointer; libghostty QIs for ISwapChainPanelNative internally.
+        // 4) Surface config. swap_chain_panel takes an ISwapChainPanelNative*
+        //    which libghostty's DX12 device init uses synchronously (it calls
+        //    SetSwapChain once and never stores it - see
+        //    src/renderer/directx12/device.zig). We Release the COM ptr right
+        //    after SurfaceNew returns to avoid leaking a ref per open/close.
+        //
         //    The string fields (working_directory, command, initial_input)
-        //    must be non-null: Zig dereferences them unconditionally. The
-        //    macOS side passes empty C strings via withCString; we do the
-        //    same by allocating a single null-terminated byte and pointing
-        //    all three at it. These live until the surface is freed.
+        //    must be non-null: Zig dereferences them unconditionally. We
+        //    allocate three independent UTF-8 empty strings rather than
+        //    aliasing one buffer - aliasing was a footgun if Zig ever wrote
+        //    through any of them. These live until the surface is freed.
+        _workingDirectoryUtf8 = AllocEmptyUtf8();
+        _commandUtf8 = AllocEmptyUtf8();
+        _initialInputUtf8 = AllocEmptyUtf8();
+
         var surfaceConfig = NativeMethods.SurfaceConfigNew();
         surfaceConfig.PlatformTag = GhosttyPlatform.Windows;
+        var panelPtr = SwapChainPanelInterop.QueryInterface(Panel);
         surfaceConfig.Platform.Windows = new GhosttyPlatformWindows
         {
             Hwnd = IntPtr.Zero,
-            SwapChainPanel = SwapChainPanelInterop.QueryInterface(Panel),
+            SwapChainPanel = panelPtr,
             SharedTextureOut = IntPtr.Zero,
             TextureWidth = 0,
             TextureHeight = 0,
         };
         surfaceConfig.ScaleFactor = Panel.CompositionScaleX > 0 ? Panel.CompositionScaleX : 1.0;
         surfaceConfig.Context = GhosttySurfaceContext.Window;
-
-        _emptyCString = Marshal.AllocHGlobal(1);
-        Marshal.WriteByte(_emptyCString, 0);
-        surfaceConfig.WorkingDirectory = _emptyCString;
-        surfaceConfig.Command = _emptyCString;
-        surfaceConfig.InitialInput = _emptyCString;
+        surfaceConfig.WorkingDirectory = _workingDirectoryUtf8;
+        surfaceConfig.Command = _commandUtf8;
+        surfaceConfig.InitialInput = _initialInputUtf8;
 
         _surface = NativeMethods.SurfaceNew(_app, surfaceConfig);
+        // Drop our ref to the panel: libghostty did not retain it.
+        SwapChainPanelInterop.Release(panelPtr);
 
         // Request focus so keyboard input starts flowing immediately.
         Panel.Focus(FocusState.Programmatic);
@@ -126,13 +136,24 @@ public sealed partial class TerminalControl : UserControl
         if (_surface.Handle != IntPtr.Zero) NativeMethods.SurfaceFree(_surface);
         if (_app.Handle != IntPtr.Zero) NativeMethods.AppFree(_app);
         if (_config.Handle != IntPtr.Zero) NativeMethods.ConfigFree(_config);
-        if (_emptyCString != IntPtr.Zero) Marshal.FreeHGlobal(_emptyCString);
+        if (_workingDirectoryUtf8 != IntPtr.Zero) Marshal.FreeHGlobal(_workingDirectoryUtf8);
+        if (_commandUtf8 != IntPtr.Zero) Marshal.FreeHGlobal(_commandUtf8);
+        if (_initialInputUtf8 != IntPtr.Zero) Marshal.FreeHGlobal(_initialInputUtf8);
 
         _surface = default;
         _app = default;
         _config = default;
-        _emptyCString = IntPtr.Zero;
+        _workingDirectoryUtf8 = IntPtr.Zero;
+        _commandUtf8 = IntPtr.Zero;
+        _initialInputUtf8 = IntPtr.Zero;
         _initialized = false;
+    }
+
+    private static IntPtr AllocEmptyUtf8()
+    {
+        var p = Marshal.AllocHGlobal(1);
+        Marshal.WriteByte(p, 0);
+        return p;
     }
 
     // Runtime callbacks --------------------------------------------------
@@ -146,18 +167,33 @@ public sealed partial class TerminalControl : UserControl
     {
         // libghostty is asking us to pump its event loop. We do it on the
         // UI thread so any resulting draws land on the right dispatcher.
-        DispatcherQueue.TryEnqueue(() =>
+        //
+        // This fires on libghostty's thread. The control may already be
+        // unloaded - DispatcherQueue becomes null once the visual tree
+        // detaches - so guard the enqueue. We also capture the app handle
+        // into a local so the lambda does not race with OnUnloaded zeroing
+        // the field between enqueue and dispatch.
+        var dq = DispatcherQueue;
+        if (dq is null) return;
+        var app = _app;
+        if (app.Handle == IntPtr.Zero) return;
+        dq.TryEnqueue(() =>
         {
-            if (_app.Handle != IntPtr.Zero) NativeMethods.AppTick(_app);
+            // Re-read the field on the UI thread: if Unloaded ran meanwhile
+            // the captured handle is stale and calling tick would use-after
+            // -free.
+            if (_app.Handle == app.Handle) NativeMethods.AppTick(app);
         });
     }
 
     private bool OnAction(GhosttyApp app, GhosttyTarget target, IntPtr actionPtr)
     {
-        // Actions dispatch is not wired yet. Returning true tells ghostty
-        // the action was handled so it does not fall back to a default
-        // that we do not implement.
-        return true;
+        // Return false = "not handled, fall back to libghostty default".
+        // Returning true silently swallows actions (ring bell, open config,
+        // close surface, etc.) which hides behavior from the core. As the
+        // shell wires up real action handling these will become per-case
+        // returns.
+        return false;
     }
 
     private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state) => false;
@@ -174,16 +210,21 @@ public sealed partial class TerminalControl : UserControl
     {
         if (_surface.Handle == IntPtr.Zero) return;
 
-        // Debounce: WinUI 3 fires SizeChanged per pixel during a drag.
-        // libghostty's DX12 renderer recreates the swap chain on every
-        // set_size, which crashes under that kind of storm. Coalesce to a
-        // single resize ~30ms after the last event fires.
+        // Debounce: WinUI 3 fires SizeChanged per pixel during a drag and
+        // libghostty's DX12 renderer currently recreates the swap chain on
+        // every set_size, which tears down GPU resources faster than the
+        // compositor can follow. Coalesce to a single resize ~30ms after
+        // the last event fires. TODO: the proper fix is to make the DX12
+        // renderer's resize path cheap/idempotent (ResizeBuffers instead of
+        // full recreate); once that lands, drop this debounce.
         _pendingSize = e.NewSize;
-        _resizeTimer ??= DispatcherQueue.CreateTimer();
-        _resizeTimer.Interval = TimeSpan.FromMilliseconds(30);
-        _resizeTimer.IsRepeating = false;
-        _resizeTimer.Tick -= OnResizeTick;
-        _resizeTimer.Tick += OnResizeTick;
+        if (_resizeTimer is null)
+        {
+            _resizeTimer = DispatcherQueue.CreateTimer();
+            _resizeTimer.Interval = TimeSpan.FromMilliseconds(30);
+            _resizeTimer.IsRepeating = false;
+            _resizeTimer.Tick += OnResizeTick;
+        }
         _resizeTimer.Start();
     }
 
@@ -289,18 +330,24 @@ public sealed partial class TerminalControl : UserControl
     {
         if (_surface.Handle == IntPtr.Zero) return;
 
-        // First-pass key routing mirrors the WM_CHAR-combining fix landed
-        // in the Win32 example: we send the key event itself here, and the
-        // CharacterReceived handler below sends the translated text when
-        // it arrives. GhosttyKey mapping is intentionally skipped for now
-        // because ghostty can accept a bare keycode (Keycode field) with
-        // text filled in from CharacterReceived separately.
+        // The embedded apprt (src/apprt/embedded.zig) implements key+text
+        // combining on Windows at comptime: ghostty_surface_key buffers a
+        // keydown with no text, and the next ghostty_surface_text attaches
+        // the text and dispatches through the full key encoding pipeline.
+        // We just forward WM_KEYDOWN/WM_KEYUP here and forward WM_CHAR from
+        // OnCharacterReceived - embedders do not implement the combining
+        // themselves.
+        //
+        // The Keycode field carries the native Windows *scancode* (not a
+        // VirtualKey). embedded.zig matches it against keycodes.entries
+        // where the native column is the Win32 scancode, and derives
+        // unshifted_codepoint via MapVirtualKeyW when we pass 0.
         var key = new GhosttyInputKey
         {
             Action = action,
             Mods = CurrentMods(),
             ConsumedMods = GhosttyMods.None,
-            Keycode = (uint)e.OriginalKey,
+            Keycode = e.KeyStatus.ScanCode,
             Text = IntPtr.Zero,
             UnshiftedCodepoint = 0,
             Composing = false,
@@ -313,12 +360,12 @@ public sealed partial class TerminalControl : UserControl
     {
         if (_surface.Handle == IntPtr.Zero) return;
 
-        // Filter C0 control chars: these are already produced by the key
-        // event path (Ctrl+C, Backspace, etc). Mirrors the fix in
-        // 8dde86df5 for the Win32 example.
+        // Forward WM_CHAR unchanged. The embedded apprt's key+text combining
+        // handles C0 control filtering on its side: the preceding key event
+        // already produced Ctrl+C / Backspace / etc via the key encoder, and
+        // the apprt drops the duplicated WM_CHAR text. Filtering here would
+        // also clobber legitimate U+007F / U+001B text the core might want.
         var ch = e.Character;
-        if (ch < 0x20 || ch == 0x7F) return;
-
         Span<byte> buf = stackalloc byte[4];
         var len = new Rune(ch).EncodeToUtf8(buf);
         unsafe
@@ -337,20 +384,34 @@ public sealed partial class TerminalControl : UserControl
         // Use Win32 GetKeyState directly. WinUI 3's InputKeyboardSource
         // surface has moved several times between releases; Win32 is
         // stable and cheap (reads a thread-local state table).
+        //
+        // We query the left/right variants individually so the *Right
+        // flags in ghostty_mods_e are set correctly - these matter for
+        // keybinds that distinguish "right alt" (AltGr) from "left alt".
         var mods = GhosttyMods.None;
-        if ((GetKeyState(VK_SHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift;
-        if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl;
-        if ((GetKeyState(VK_MENU) & 0x8000) != 0) mods |= GhosttyMods.Alt;
+        if ((GetKeyState(VK_LSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift;
+        if ((GetKeyState(VK_RSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift | GhosttyMods.ShiftRight;
+        if ((GetKeyState(VK_LCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl;
+        if ((GetKeyState(VK_RCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl | GhosttyMods.CtrlRight;
+        if ((GetKeyState(VK_LMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt;
+        if ((GetKeyState(VK_RMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt | GhosttyMods.AltRight;
         if ((GetKeyState(VK_LWIN) & 0x8000) != 0) mods |= GhosttyMods.Super;
-        if ((GetKeyState(VK_RWIN) & 0x8000) != 0) mods |= GhosttyMods.Super;
+        if ((GetKeyState(VK_RWIN) & 0x8000) != 0) mods |= GhosttyMods.Super | GhosttyMods.SuperRight;
+        if ((GetKeyState(VK_CAPITAL) & 0x0001) != 0) mods |= GhosttyMods.Caps;
+        if ((GetKeyState(VK_NUMLOCK) & 0x0001) != 0) mods |= GhosttyMods.Num;
         return mods;
     }
 
-    private const int VK_SHIFT = 0x10;
-    private const int VK_CONTROL = 0x11;
-    private const int VK_MENU = 0x12;  // Alt
+    private const int VK_LSHIFT = 0xA0;
+    private const int VK_RSHIFT = 0xA1;
+    private const int VK_LCONTROL = 0xA2;
+    private const int VK_RCONTROL = 0xA3;
+    private const int VK_LMENU = 0xA4; // left Alt
+    private const int VK_RMENU = 0xA5; // right Alt / AltGr
     private const int VK_LWIN = 0x5B;
     private const int VK_RWIN = 0x5C;
+    private const int VK_CAPITAL = 0x14;
+    private const int VK_NUMLOCK = 0x90;
 
     [DllImport("user32.dll")]
     private static extern short GetKeyState(int vKey);
