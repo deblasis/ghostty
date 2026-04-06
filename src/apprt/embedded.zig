@@ -1985,15 +1985,10 @@ pub const CAPI = struct {
             if (surface.pending_key) |*pending| {
                 const text = ptr[0..len];
 
-                // Don't attach C0 control characters as text. Windows
-                // WM_CHAR delivers the control byte directly (e.g. 0x03
-                // for Ctrl+C) but the key encoder expects the printable
-                // character and derives the control byte from the logical
-                // key and modifier. Passing the raw control byte causes
-                // ctrlSeq to miss its switch match and fall through to
-                // CSI u, which ConPTY cannot translate into CTRL_C_EVENT.
-                // This matches GTK, which filters cp < 0x20 from IM text.
-                // We also filter 0x7F (DEL) since it has no printable form.
+                // Don't attach C0 control characters as text. WM_CHAR
+                // delivers the raw byte (e.g. 0x03 for Ctrl+C) but the
+                // key encoder expects the printable character. Matches
+                // GTK filtering (surface.zig:1390).
                 const is_c0 = text.len == 1 and (text[0] < 0x20 or text[0] == 0x7f);
 
                 var event = pending.event;

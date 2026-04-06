@@ -21,14 +21,10 @@ static WCHAR g_high_surrogate = 0;
 
 static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
 
-// Custom console ctrl handler. Returns TRUE to prevent the default
-// handler from terminating the process on Ctrl+C. Unlike
-// SetConsoleCtrlHandler(NULL, TRUE), a custom handler is NOT
-// inherited by child processes, so ConPTY children still receive
-// CTRL_C_EVENT normally.
+// Prevent default Ctrl+C handler from killing us. Custom handlers
+// (unlike NULL) are not inherited by child processes.
 static BOOL WINAPI ctrl_handler(DWORD type) {
-    (void)type;
-    return TRUE;  // handled -- don't kill us
+    return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
 }
 
 // --- Runtime callbacks ---
@@ -349,12 +345,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show) {
     freopen("CONOUT$", "w", stdout);
     freopen("CONOUT$", "w", stderr);
 
-    // Install a custom handler that prevents Ctrl+C from killing
-    // this process. The default handler calls ExitProcess; our
-    // handler returns TRUE ("handled") so the keystroke reaches
-    // the GUI window's WM_KEYDOWN instead. A custom handler is
-    // NOT inherited by child processes (unlike NULL/TRUE), so
-    // ConPTY children still receive CTRL_C_EVENT normally.
+    // Prevent Ctrl+C from killing this process. A custom handler
+    // (unlike NULL) is not inherited by child processes.
     SetConsoleCtrlHandler(ctrl_handler, TRUE);
 
     // 1. Register window class

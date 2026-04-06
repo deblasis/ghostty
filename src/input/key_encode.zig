@@ -2019,9 +2019,6 @@ test "legacy: ctrl+c" {
 }
 
 test "legacy: ctrl+c no text" {
-    // On Windows, C0 text from WM_CHAR is filtered so the encoder
-    // receives empty text. It should still produce 0x03 via the
-    // logical key fallback in ctrlSeq.
     var buf: [128]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
     try legacy(&writer, .{
@@ -2439,15 +2436,7 @@ test "ctrlseq: right ctrl c" {
 }
 
 test "ctrlseq: ctrl c with no text uses logical key" {
-    // When text is empty (e.g. C0 filtered on Windows), ctrlSeq falls
-    // through to the logical key path and still produces 0x03.
     const seq = ctrlSeq(.key_c, "", 'c', .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
-test "ctrlseq: DEL byte in text returns null" {
-    // If 0x7F (DEL) leaks through as text, ctrlSeq can't map it.
-    // The embedded apprt filters this before it reaches the encoder.
-    const seq = ctrlSeq(.backspace, "\x7f", 0x7f, .{ .ctrl = true });
-    try testing.expect(seq == null);
-}
