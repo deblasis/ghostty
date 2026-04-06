@@ -131,8 +131,38 @@ public sealed partial class TerminalControl : UserControl
         // Drop our ref to the panel: libghostty did not retain it.
         SwapChainPanelInterop.Release(panelPtr);
 
+        // Prime the initial size when layout is actually settled.
+        // SwapChainPanel.SizeChanged fires during the first layout pass,
+        // which happens BEFORE Loaded, so by the time the surface exists
+        // no further SizeChanged is queued until the user resizes the
+        // window. Reading Panel.ActualWidth/Height here directly is
+        // also unsafe: CompositionScaleX/Y is frequently reported as 1.0
+        // until a later CompositionScaleChanged fires. Wait for
+        // LayoutUpdated - the first one after the surface exists
+        // guarantees ActualWidth/Height and the composition scale are
+        // both valid - then revoke the handler.
+        Panel.LayoutUpdated += OnFirstLayoutUpdated;
+
         // Request focus so keyboard input starts flowing immediately.
-        Panel.Focus(FocusState.Programmatic);
+        // Focus lives on the UserControl now, not the panel.
+        this.Focus(FocusState.Programmatic);
+    }
+
+    private void OnFirstLayoutUpdated(object? sender, object e)
+    {
+        if (_surface.Handle == IntPtr.Zero) return;
+        var w = Panel.ActualWidth;
+        var h = Panel.ActualHeight;
+        if (w <= 0 || h <= 0) return;  // still not settled, wait for next tick
+        Panel.LayoutUpdated -= OnFirstLayoutUpdated;
+
+        var sx = Panel.CompositionScaleX > 0 ? Panel.CompositionScaleX : 1f;
+        var sy = Panel.CompositionScaleY > 0 ? Panel.CompositionScaleY : 1f;
+        NativeMethods.SurfaceSetContentScale(_surface, sx, sy);
+        NativeMethods.SurfaceSetSize(
+            _surface,
+            (uint)Math.Max(1, w * sx),
+            (uint)Math.Max(1, h * sy));
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -272,7 +302,11 @@ public sealed partial class TerminalControl : UserControl
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_surface.Handle == IntPtr.Zero) return;
+        KickResizeDebounce();
+    }
 
+    private void KickResizeDebounce()
+    {
         // FIXME: the DX12 renderer recreates the swap chain on every
         // set_size, which tears down GPU resources faster than the
         // compositor can follow when WinUI 3 fires SizeChanged per pixel
@@ -310,30 +344,45 @@ public sealed partial class TerminalControl : UserControl
     private void OnCompositionScaleChanged(SwapChainPanel sender, object args)
     {
         if (_surface.Handle == IntPtr.Zero) return;
+        // Push the new scale to libghostty, then re-kick the debounced
+        // resize path so the pixel dimensions get recomputed with the
+        // new scale. DPI change (e.g. moving the window between monitors)
+        // changes the pixel size even though the DIP size is unchanged.
         NativeMethods.SurfaceSetContentScale(_surface, sender.CompositionScaleX, sender.CompositionScaleY);
+        KickResizeDebounce();
     }
 
     // Focus --------------------------------------------------------------
+    //
+    // Focus is owned by the outer UserControl, not the SwapChainPanel -
+    // see the comment in the XAML for the full reasoning. These
+    // handlers fire off the UserControl's GotFocus/LostFocus routed
+    // events. We still dedupe on state change as a belt-and-braces
+    // guard so libghostty never sees a redundant focus event.
 
-    private void OnGotFocus(object sender, RoutedEventArgs e)
-    {
-        if (_surface.Handle == IntPtr.Zero) return;
-        NativeMethods.SurfaceSetFocus(_surface, true);
-        if (_app.Handle != IntPtr.Zero) NativeMethods.AppSetFocus(_app, true);
-    }
+    private bool _focused;
 
-    private void OnLostFocus(object sender, RoutedEventArgs e)
+    private void OnGotFocus(object sender, RoutedEventArgs e) => SetFocusState(true);
+
+    private void OnLostFocus(object sender, RoutedEventArgs e) => SetFocusState(false);
+
+    private void SetFocusState(bool focused)
     {
+        if (_focused == focused) return;
+        _focused = focused;
         if (_surface.Handle == IntPtr.Zero) return;
-        NativeMethods.SurfaceSetFocus(_surface, false);
-        if (_app.Handle != IntPtr.Zero) NativeMethods.AppSetFocus(_app, false);
+        NativeMethods.SurfaceSetFocus(_surface, focused);
+        if (_app.Handle != IntPtr.Zero) NativeMethods.AppSetFocus(_app, focused);
     }
 
     // Mouse --------------------------------------------------------------
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        Panel.Focus(FocusState.Pointer);
+        // Take focus on the UserControl, not the panel. Guard with the
+        // current focus state to avoid generating a Lost+Got pair when
+        // we already have focus.
+        if (!_focused) this.Focus(FocusState.Pointer);
         SendMouseButton(e, GhosttyMouseState.Press);
     }
 
