@@ -71,9 +71,9 @@ public sealed partial class TerminalControl : UserControl
         NativeMethods.ConfigLoadDefaultFiles(_config);
         NativeMethods.ConfigFinalize(_config);
 
-        // 3) Runtime config. The Zig side requires non-null callbacks even
-        //    if they are no-ops; storing each delegate in a field prevents
-        //    GC from freeing it while libghostty still holds the pointer.
+        // The Zig side requires non-null callbacks even if they are no-ops;
+        // storing each delegate in a field prevents GC from freeing it while
+        // libghostty still holds the pointer.
         _wakeupCb = OnWakeup;
         _actionCb = OnAction;
         _readClipboardCb = OnReadClipboard;
@@ -95,7 +95,7 @@ public sealed partial class TerminalControl : UserControl
 
         _app = NativeMethods.AppNew(runtime, _config);
 
-        // 4) Surface config. swap_chain_panel takes an ISwapChainPanelNative*
+        // Surface config. swap_chain_panel takes an ISwapChainPanelNative*
         //    which libghostty's DX12 device init uses synchronously (it calls
         //    SetSwapChain once and never stores it - see
         //    src/renderer/directx12/device.zig). We Release the COM ptr right
@@ -167,6 +167,11 @@ public sealed partial class TerminalControl : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        // Drop the one-shot LayoutUpdated handler in case the initial size
+        // never settled (zero ActualWidth/Height): otherwise it would keep
+        // firing after teardown and pin the control via the closure.
+        Panel.LayoutUpdated -= OnFirstLayoutUpdated;
+
         // Stop and detach the resize timer first so a pending tick cannot
         // observe a half-freed surface. The timer holds a strong reference
         // to this control via OnResizeTick, so leaving it pending across
@@ -231,14 +236,17 @@ public sealed partial class TerminalControl : UserControl
         });
     }
 
-    private bool OnAction(GhosttyApp app, IntPtr targetPtr, IntPtr actionPtr)
+    private bool OnAction(GhosttyApp _, IntPtr targetPtr, IntPtr actionPtr)
     {
         // ghostty_action_s layout:
         //   { int32 tag; <union> action; }
         // The union is 8-byte aligned on x64 so it starts at offset 8.
         // We read the tag first and only touch the union for variants we
         // actually handle. Returning false for an unhandled tag lets the
-        // core fall back to its default behavior.
+        // core fall back to its default behavior. We also return false on
+        // any path that fails to actually invoke the handler (null pointer,
+        // null dispatcher) so the core never thinks we handled an action
+        // we silently dropped.
         if (actionPtr == IntPtr.Zero) return false;
         var tag = (GhosttyActionTag)Marshal.ReadInt32(actionPtr);
 
@@ -249,9 +257,9 @@ public sealed partial class TerminalControl : UserControl
                 // set_title_s is { const char* title }, so the first
                 // pointer-sized word of the union is the UTF-8 title.
                 var titlePtr = Marshal.ReadIntPtr(actionPtr, 8);
-                var title = PtrToStringUtf8(titlePtr) ?? string.Empty;
+                var title = Marshal.PtrToStringUTF8(titlePtr) ?? string.Empty;
                 var dq = DispatcherQueue;
-                if (dq is null) return true;
+                if (dq is null) return false;
                 dq.TryEnqueue(() => TitleChanged?.Invoke(this, title));
                 return true;
             }
@@ -266,7 +274,7 @@ public sealed partial class TerminalControl : UserControl
             case GhosttyActionTag.CloseWindow:
             {
                 var dq = DispatcherQueue;
-                if (dq is null) return true;
+                if (dq is null) return false;
                 dq.TryEnqueue(() => CloseRequested?.Invoke(this, EventArgs.Empty));
                 return true;
             }
@@ -275,19 +283,6 @@ public sealed partial class TerminalControl : UserControl
                 // Everything else falls back to libghostty defaults.
                 return false;
         }
-    }
-
-    private static string? PtrToStringUtf8(IntPtr p)
-    {
-        if (p == IntPtr.Zero) return null;
-        // Walk to the null terminator. UTF-8 strings from libghostty are
-        // always null-terminated.
-        int len = 0;
-        while (Marshal.ReadByte(p, len) != 0) len++;
-        if (len == 0) return string.Empty;
-        var bytes = new byte[len];
-        Marshal.Copy(p, bytes, 0, len);
-        return Encoding.UTF8.GetString(bytes);
     }
 
     private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state) => false;
@@ -369,8 +364,11 @@ public sealed partial class TerminalControl : UserControl
     private void SetFocusState(bool focused)
     {
         if (_focused == focused) return;
-        _focused = focused;
+        // Don't flip _focused before we know we can actually push the new
+        // state to the surface: otherwise the next focus change after the
+        // surface is recreated would be deduped against a stale value.
         if (_surface.Handle == IntPtr.Zero) return;
+        _focused = focused;
         NativeMethods.SurfaceSetFocus(_surface, focused);
         if (_app.Handle != IntPtr.Zero) NativeMethods.AppSetFocus(_app, focused);
     }

@@ -218,78 +218,20 @@ internal struct GhosttyTarget
     [FieldOffset(8)] public IntPtr Surface;
 }
 
-// ghostty_action_tag_e from ghostty.h. Keep this in sync on rebase:
-// grep for "ghostty_action_tag_e" in include/ghostty.h. New variants
-// added upstream land at the end of the enum; any tag we do not
-// explicitly handle falls through to "return false" in the callback,
-// so drift is safe - at worst a new action is ignored until wired.
+// Subset of ghostty_action_tag_e from include/ghostty.h that we actually
+// dispatch on. Indices are pinned explicitly to the upstream values so a
+// reorder upstream cannot silently misroute one tag to another handler -
+// any tag we don't list falls through to "return false" in the action
+// callback and the core uses its default behavior.
+//
+// Synced against include/ghostty.h @ 2598bef60. To verify after a rebase:
+//   grep -n GHOSTTY_ACTION_ include/ghostty.h | grep -nE 'SET_TITLE|CLOSE_WINDOW|RING_BELL'
+// and confirm the ordinal positions still match the values below.
 internal enum GhosttyActionTag
 {
-    Quit = 0,
-    NewWindow,
-    NewTab,
-    CloseTab,
-    NewSplit,
-    CloseAllWindows,
-    ToggleMaximize,
-    ToggleFullscreen,
-    ToggleTabOverview,
-    ToggleWindowDecorations,
-    ToggleQuickTerminal,
-    ToggleCommandPalette,
-    ToggleVisibility,
-    ToggleBackgroundOpacity,
-    MoveTab,
-    GotoTab,
-    GotoSplit,
-    GotoWindow,
-    ResizeSplit,
-    EqualizeSplits,
-    ToggleSplitZoom,
-    PresentTerminal,
-    SizeLimit,
-    ResetWindowSize,
-    InitialSize,
-    CellSize,
-    Scrollbar,
-    Render,
-    Inspector,
-    ShowGtkInspector,
-    RenderInspector,
-    DesktopNotification,
-    SetTitle,
-    SetTabTitle,
-    PromptTitle,
-    Pwd,
-    MouseShape,
-    MouseVisibility,
-    MouseOverLink,
-    RendererHealth,
-    OpenConfig,
-    QuitTimer,
-    FloatWindow,
-    SecureInput,
-    KeySequence,
-    KeyTable,
-    ColorChange,
-    ReloadConfig,
-    ConfigChange,
-    CloseWindow,
-    RingBell,
-    Undo,
-    Redo,
-    CheckForUpdates,
-    OpenUrl,
-    ShowChildExited,
-    ProgressReport,
-    ShowOnScreenKeyboard,
-    CommandFinished,
-    StartSearch,
-    EndSearch,
-    SearchTotal,
-    SearchSelected,
-    Readonly,
-    CopyTitleToClipboard,
+    SetTitle = 32,
+    CloseWindow = 49,
+    RingBell = 50,
 }
 
 // ghostty_action_set_title_s { const char* title; }
