@@ -138,17 +138,32 @@ pending_frame_index: u32 = 0,
 /// path, there is no way to query the actual window size from within the
 /// renderer -- the apprt must forward it via setTargetSize.
 ///
-/// These are atomics because setTargetSize is invoked synchronously from
-/// ghostty_surface_set_size on the apprt thread (the C# UI thread for the
-/// WinUI 3 shell), while the renderer thread reads them in beginFrame to
-/// drive ResizeBuffers. The renderer thread tracks what it has actually
-/// applied in `applied_width` / `applied_height` -- if the desired and
-/// applied values differ at the start of beginFrame, it resizes the swap
-/// chain there (the only thread allowed to touch back_buffers/RTVs/fence).
-desired_width: std.atomic.Value(u32) = .init(0),
-desired_height: std.atomic.Value(u32) = .init(0),
+/// Width and height are packed into a single u64 (high 32 = width, low 32
+/// = height) so we can store/load both atomically. setTargetSize is invoked
+/// synchronously from ghostty_surface_set_size on the apprt thread (the C#
+/// UI thread for the WinUI 3 shell), while the renderer thread reads it
+/// in beginFrame to drive ResizeBuffers. Two separate atomics would tear
+/// during a drag: a resize that updates only width before the renderer
+/// reads height would briefly show a mismatched back buffer. The renderer
+/// thread tracks what it has actually applied in `applied_width` /
+/// `applied_height` -- if the desired and applied values differ at the
+/// start of beginFrame, it resizes the swap chain there (the only thread
+/// allowed to touch back_buffers/RTVs/fence).
+desired_size: std.atomic.Value(u64) = .init(0),
 applied_width: u32 = 0,
 applied_height: u32 = 0,
+
+/// Pack/unpack helpers for desired_size. Width in the high 32 bits so a
+/// hexdump reads naturally as WWWWWWWW_HHHHHHHH.
+inline fn packSize(width: u32, height: u32) u64 {
+    return (@as(u64, width) << 32) | @as(u64, height);
+}
+inline fn unpackSize(packed_size: u64) struct { width: u32, height: u32 } {
+    return .{
+        .width = @intCast(packed_size >> 32),
+        .height = @intCast(packed_size & 0xFFFFFFFF),
+    };
+}
 
 // --- GraphicsAPI contract: functions ---
 
@@ -337,8 +352,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
         result.pending_command_list = init_cl;
     }
 
-    result.desired_width.store(size.width, .monotonic);
-    result.desired_height.store(size.height, .monotonic);
+    result.desired_size.store(packSize(size.width, size.height), .monotonic);
     result.applied_width = size.width;
     result.applied_height = size.height;
 
@@ -507,9 +521,9 @@ pub fn initShaders(
 /// on the renderer thread) will pick it up and call `resizeSwapChain` at
 /// a safe point before any command-list work for the next frame.
 pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
+    // Guard against transient 0x0 reports during WinUI 3 layout passes.
     if (width == 0 or height == 0) return;
-    self.desired_width.store(width, .monotonic);
-    self.desired_height.store(height, .monotonic);
+    self.desired_size.store(packSize(width, height), .monotonic);
 }
 
 /// Resize the swap chain back buffers in place via IDXGISwapChain1::ResizeBuffers.
@@ -518,8 +532,12 @@ pub fn setTargetSize(self: *DirectX12, width: u32, height: u32) void {
 /// RTVs implicitly via the resource) to be released before ResizeBuffers,
 /// and the GPU must be idle so it isn't still reading them.
 fn resizeSwapChain(self: *DirectX12, width: u32, height: u32) !void {
-    const dev_ptr = &(self.dev orelse return);
-    const sc3 = self.swap_chain3 orelse return;
+    // Reaching this path without a device or swap chain is a programming
+    // error: beginFrame on the renderer thread already short-circuited on
+    // both. Return real errors so the caller logs and we never silently
+    // loop on the same desired size forever (applied_* would never advance).
+    const dev_ptr = &(self.dev orelse return error.NoDevice);
+    const sc3 = self.swap_chain3 orelse return error.NoSwapChain;
 
     // Drain in-flight frames so back_buffers[*] aren't being read by the GPU.
     dev_ptr.waitForGpu() catch |err| {
@@ -539,7 +557,10 @@ fn resizeSwapChain(self: *DirectX12, width: u32, height: u32) !void {
 
     // UNKNOWN format and 0 flags preserve whatever the swap chain was
     // created with -- the same values device.zig used at creation time.
-    // ResizeBuffers lives on IDXGISwapChain1; cast our SwapChain3 down.
+    // ResizeBuffers lives on IDXGISwapChain1. IDXGISwapChain3 inherits
+    // from IDXGISwapChain1 in COM, so the v-table prefix is identical and
+    // a pointer reinterpret is safe; we use it instead of QueryInterface
+    // to avoid an AddRef/Release pair on every resize.
     const sc1: *dxgi.IDXGISwapChain1 = @ptrCast(sc3);
     const hr = sc1.ResizeBuffers(
         device.Device.frame_count,
@@ -598,10 +619,9 @@ fn resizeSwapChain(self: *DirectX12, width: u32, height: u32) !void {
 }
 
 pub fn surfaceSize(self: *const DirectX12) !struct { width: u32, height: u32 } {
-    const w = self.desired_width.load(.monotonic);
-    const h = self.desired_height.load(.monotonic);
-    if (w != 0 and h != 0) {
-        return .{ .width = w, .height = h };
+    const sz = unpackSize(self.desired_size.load(.monotonic));
+    if (sz.width != 0 and sz.height != 0) {
+        return .{ .width = sz.width, .height = sz.height };
     }
 
     // Fallback: query swap chain buffer dimensions via GetDesc1.
@@ -651,12 +671,11 @@ pub inline fn beginFrame(
     // command list work. setTargetSize only records the desired size;
     // it cannot touch GPU state because it runs on the apprt thread.
     {
-        const want_w = api.desired_width.load(.monotonic);
-        const want_h = api.desired_height.load(.monotonic);
-        if (want_w != 0 and want_h != 0 and
-            (want_w != api.applied_width or want_h != api.applied_height))
+        const want = unpackSize(api.desired_size.load(.monotonic));
+        if (want.width != 0 and want.height != 0 and
+            (want.width != api.applied_width or want.height != api.applied_height))
         {
-            api.resizeSwapChain(want_w, want_h) catch |err| {
+            api.resizeSwapChain(want.width, want.height) catch |err| {
                 log.err("DX12 swap chain resize failed: {}", .{err});
                 return error.ResizeFailed;
             };
@@ -696,7 +715,6 @@ pub inline fn beginFrame(
 }
 
 pub fn presentLastTarget(self: *DirectX12) !void {
-    log.info("presentLastTarget", .{});
     // Called when no redraw is needed -- re-present the current frame.
     // No new GPU work is submitted, so the existing fence values remain
     // valid and the next beginFrame will wait correctly.
@@ -820,18 +838,23 @@ test "DirectX12 does not have frame_fence_values" {
 }
 
 test "DirectX12 has desired/applied size fields" {
-    try std.testing.expect(@hasField(DirectX12, "desired_width"));
-    try std.testing.expect(@hasField(DirectX12, "desired_height"));
+    try std.testing.expect(@hasField(DirectX12, "desired_size"));
     try std.testing.expect(@hasField(DirectX12, "applied_width"));
     try std.testing.expect(@hasField(DirectX12, "applied_height"));
 }
 
 test "DirectX12 default size is zero" {
     const api: DirectX12 = .{};
-    try std.testing.expectEqual(@as(u32, 0), api.desired_width.load(.monotonic));
-    try std.testing.expectEqual(@as(u32, 0), api.desired_height.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 0), api.desired_size.load(.monotonic));
     try std.testing.expectEqual(@as(u32, 0), api.applied_width);
     try std.testing.expectEqual(@as(u32, 0), api.applied_height);
+}
+
+test "DirectX12 packSize/unpackSize roundtrip" {
+    const packed_size = DirectX12.packSize(1920, 1080);
+    const sz = DirectX12.unpackSize(packed_size);
+    try std.testing.expectEqual(@as(u32, 1920), sz.width);
+    try std.testing.expectEqual(@as(u32, 1080), sz.height);
 }
 
 test "DirectX12 has device_lost field" {
