@@ -188,10 +188,11 @@ public sealed partial class TerminalControl : UserControl
         });
     }
 
-    private bool OnAction(GhosttyApp app, GhosttyTarget target, IntPtr actionPtr)
+    private bool OnAction(GhosttyApp app, IntPtr targetPtr, IntPtr actionPtr)
     {
-        // false = not handled, fall back to libghostty default. Per-action
-        // dispatch lands when the shell starts wiring real handlers.
+        // Real decode lands in a follow-up step. For now preserve existing
+        // behavior: return false so the core falls back to its defaults
+        // for every action.
         return false;
     }
 
