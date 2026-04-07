@@ -454,12 +454,44 @@ public sealed partial class TerminalControl : UserControl
         // VirtualKey). embedded.zig matches it against keycodes.entries
         // where the native column is the Win32 scancode, and derives
         // unshifted_codepoint via MapVirtualKeyW when we pass 0.
+        //
+        // Two scancode adjustments are required to match what the C
+        // example/c-win32-terminal/src/main.c (the canonical Win32
+        // embedder) computes from raw lParam:
+        //
+        //  1. Extended keys (arrows, navigation cluster, numpad enter,
+        //     right-side modifiers) need the 0xE000 prefix or'd in.
+        //     PhysicalKeyStatus.ScanCode only returns the low byte;
+        //     IsExtendedKey tells us whether to set the prefix.
+        //     Without this, Up/Down/Left/Right/Home/End/PgUp/PgDn never
+        //     find a match in input.keycodes.entries (the table uses
+        //     0xE048 etc on the Windows column) and the dispatch returns
+        //     .ignored.
+        //
+        //  2. WinUI 3 strips ScanCode entirely for some keys that the
+        //     framework treats as "navigation" (most notably Tab),
+        //     reporting 0 even on the press path. Fall back to
+        //     MapVirtualKey(VK, MAPVK_VK_TO_VSC) using e.Key as the
+        //     virtual-key when ScanCode is 0, so the apprt sees the
+        //     real scancode.
+        uint scancode = e.KeyStatus.ScanCode;
+        if (scancode == 0)
+        {
+            // Recover the OEM scancode from the VirtualKey. This handles
+            // Tab and any other key WinUI 3 strips ScanCode for.
+            scancode = NativeMethods.MapVirtualKeyW((uint)e.Key, NativeMethods.MAPVK_VK_TO_VSC);
+        }
+        if (e.KeyStatus.IsExtendedKey)
+        {
+            scancode |= 0xE000;
+        }
+
         var key = new GhosttyInputKey
         {
             Action = action,
             Mods = CurrentMods(),
             ConsumedMods = GhosttyMods.None,
-            Keycode = e.KeyStatus.ScanCode,
+            Keycode = scancode,
             Text = IntPtr.Zero,
             UnshiftedCodepoint = 0,
             Composing = false,
