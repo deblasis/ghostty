@@ -93,5 +93,9 @@ internal sealed class KeyBindings
         new KeyBinding(VirtualKeyModifiers.Control, VirtualKey.Number9, PaneAction.JumpTabLast),
         new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.PageDown, PaneAction.MoveTabRight),
         new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.PageUp, PaneAction.MoveTabLeft),
+        // Vertical tabs (plan 2). Only meaningful when vertical-tabs
+        // is enabled; PaneActionRouter no-ops if the host is not a
+        // VerticalTabHost.
+        new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.Space, PaneAction.ToggleVerticalTabsPinned),
     });
 }

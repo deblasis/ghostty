@@ -30,4 +30,5 @@ internal enum PaneAction
     JumpTabLast,
     MoveTabRight,
     MoveTabLeft,
+    ToggleVerticalTabsPinned,
 }

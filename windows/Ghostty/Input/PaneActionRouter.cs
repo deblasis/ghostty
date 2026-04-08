@@ -61,10 +61,25 @@ internal static class PaneActionRouter
                 if (i > 0) tabs.Move(i, i - 1);
                 break;
             }
+            case PaneAction.ToggleVerticalTabsPinned:
+                // Route to the ITabHost via an event so the router
+                // stays free of direct ITabHost dependencies.
+                // MainWindow listens and calls TogglePinnedFromKeyboard
+                // on the VerticalTabHost if that's the active layout;
+                // horizontal layout ignores it.
+                ToggleVerticalTabsPinnedFromKeyboard?.Invoke(null, tabs);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
     }
+
+    /// <summary>
+    /// Raised when the Ctrl+Shift+Space chord fires. MainWindow
+    /// listens and calls <c>VerticalTabHost.TogglePinnedFromKeyboard</c>
+    /// if the current <see cref="ITabHost"/> is a VerticalTabHost.
+    /// </summary>
+    public static event EventHandler<TabManager>? ToggleVerticalTabsPinnedFromKeyboard;
 
     private static void HandleProgressiveClose(TabManager tabs)
     {

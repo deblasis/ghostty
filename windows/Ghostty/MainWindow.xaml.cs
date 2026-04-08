@@ -241,5 +241,15 @@ public sealed partial class MainWindow : Window
             if (!ReferenceEquals(mgr, _tabManager)) return;
             await _tabHost.RequestCloseTabAsync(_tabManager.ActiveTab);
         };
+
+        // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
+        // when the layout is horizontal (TabHost) — the chord is
+        // registered globally but only VerticalTabHost responds.
+        PaneActionRouter.ToggleVerticalTabsPinnedFromKeyboard += (_, mgr) =>
+        {
+            if (!ReferenceEquals(mgr, _tabManager)) return;
+            if (_tabHost is VerticalTabHost vth)
+                vth.TogglePinnedFromKeyboard();
+        };
     }
 }
