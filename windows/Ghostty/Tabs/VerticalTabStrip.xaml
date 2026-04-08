@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Ghostty.Tabs.VerticalTabStrip"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Background="Transparent">
+    <Grid x:Name="StripRoot">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- chevron -->
+            <RowDefinition Height="*"/>    <!-- tab list -->
+            <RowDefinition Height="Auto"/> <!-- new-tab button -->
+        </Grid.RowDefinitions>
+
+        <Button x:Name="ChevronButton"
+                Grid.Row="0"
+                Width="32" Height="32"
+                Margin="4"
+                Padding="0"
+                Background="Transparent"
+                BorderThickness="0"
+                Click="OnChevronClick">
+            <FontIcon x:Name="ChevronIcon"
+                      FontFamily="{StaticResource SymbolThemeFontFamily}"
+                      Glyph="&#xE76C;"/>
+        </Button>
+
+        <ListView x:Name="TabList"
+                  Grid.Row="1"
+                  SelectionMode="None"
+                  IsItemClickEnabled="True"
+                  ItemClick="OnTabRowClicked">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+        </ListView>
+
+        <Button x:Name="NewTabButton"
+                Grid.Row="2"
+                Width="32" Height="32"
+                Margin="4"
+                Padding="0"
+                Background="Transparent"
+                BorderThickness="0"
+                Click="OnNewTabClick">
+            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE710;"/>
+        </Button>
+
+        <!-- Active-tab accent bar overlay. Canvas sibling of the
+             tab list, positioned absolutely over the active row. -->
+        <Canvas x:Name="AccentOverlay" Grid.Row="1" IsHitTestVisible="False">
+            <Rectangle x:Name="AccentBar"
+                       Width="3"
+                       Fill="{ThemeResource SystemAccentColorBrush}"
+                       IsHitTestVisible="False"/>
+        </Canvas>
+    </Grid>
+</UserControl>
