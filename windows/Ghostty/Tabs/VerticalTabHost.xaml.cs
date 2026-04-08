@@ -31,6 +31,7 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         _manager = manager;
 
         _strip = new VerticalTabStrip(manager);
+        _strip.CloseRequestedFromRow += async tab => await RequestCloseTabAsync(tab);
         StripHost.Content = _strip;
 
         foreach (var t in _manager.Tabs) AddPane(t);
