@@ -100,7 +100,7 @@ build-dll:
 # Build the WinUI 3 app shell (expects ghostty.dll at zig-out/bin/).
 [windows]
 build-win:
-    dotnet build windows/Ghostty/Ghostty.sln
+    dotnet build windows/Ghostty/Ghostty.sln /p:Platform=x64
 
 # Recipe body has no shebang so it runs under the platform shell selected by
 # `set windows-shell` above (pwsh on Windows). The previous version used a
@@ -110,7 +110,7 @@ build-win:
 # Build the DLL and the shell, then launch it.
 [windows]
 run-win: build-dll build-win
-    ./windows/Ghostty/bin/Debug/net9.0-windows10.0.19041.0/Ghostty.exe
+    ./windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/Ghostty.exe
 
 # === Upstream Sync ===
 
