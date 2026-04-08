@@ -97,11 +97,104 @@ internal sealed class GhosttyHost : IDisposable
         _closeSurfaceCb = null;
     }
 
-    // Runtime callbacks - implemented in Task 2.
-    private void OnWakeup(IntPtr userdata) { }
-    private bool OnAction(GhosttyApp _, IntPtr targetPtr, IntPtr actionPtr) => false;
+    private void OnWakeup(IntPtr userdata)
+    {
+        // Fires on libghostty's thread. Hop to the UI dispatcher so the
+        // tick (and any resulting draws) lands on the right queue.
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (_app.Handle != IntPtr.Zero) NativeMethods.AppTick(_app);
+        });
+    }
+
+    // ghostty_target_s tag values, mirroring ghostty.h ghostty_target_tag_e.
+    private const int GhosttyTargetApp = 0;
+    private const int GhosttyTargetSurface = 1;
+
+    private bool OnAction(GhosttyApp _, IntPtr targetPtr, IntPtr actionPtr)
+    {
+        // ABI note: ghostty_runtime_action_cb is declared as
+        //
+        //   bool action_cb(ghostty_app_t, ghostty_target_s, ghostty_action_s);
+        //
+        // Both target and action are passed BY VALUE in C, but on the Windows
+        // x64 calling convention any struct larger than 8 bytes is passed via
+        // a hidden pointer to a caller-allocated copy. ghostty_target_s is
+        // 16 bytes:
+        //
+        //   struct ghostty_target_s {
+        //     ghostty_target_tag_e tag;   // int32 at offset 0
+        //     // 4 bytes padding
+        //     union {                     // 8-byte aligned
+        //       ghostty_surface_t surface; // pointer at offset 8
+        //     } target;
+        //   };
+        //
+        // ghostty_action_s is similarly oversized. The C# delegate therefore
+        // declares both as IntPtr - the actual pointers we receive point at
+        // ephemeral stack copies of the structs and must be DEREFERENCED to
+        // get at their contents. Treating targetPtr as if it were the surface
+        // handle silently misses every dictionary lookup.
+        if (actionPtr == IntPtr.Zero || targetPtr == IntPtr.Zero) return false;
+
+        var targetTag = Marshal.ReadInt32(targetPtr);
+        if (targetTag != GhosttyTargetSurface) return false;
+        var surfaceHandle = Marshal.ReadIntPtr(targetPtr, 8);
+        if (!_surfaces.TryGetValue(surfaceHandle, out var control)) return false;
+
+        // ghostty_action_s layout: { int32 tag; <union> action; }
+        // Union starts at offset 8 (8-byte aligned on x64).
+        var tag = (GhosttyActionTag)Marshal.ReadInt32(actionPtr);
+        switch (tag)
+        {
+            case GhosttyActionTag.SetTitle:
+            {
+                var titlePtr = Marshal.ReadIntPtr(actionPtr, 8);
+                var title = Marshal.PtrToStringUTF8(titlePtr) ?? string.Empty;
+                _dispatcher.TryEnqueue(() => control.RaiseTitleChanged(title));
+                return true;
+            }
+
+            case GhosttyActionTag.RingBell:
+            {
+                NativeMethods.MessageBeep(NativeMethods.MB_OK);
+                return true;
+            }
+
+            case GhosttyActionTag.CloseWindow:
+            {
+                _dispatcher.TryEnqueue(() => control.RaiseCloseRequested());
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
     private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state) => false;
-    private void OnConfirmReadClipboard(IntPtr userdata, IntPtr str, IntPtr state, GhosttyClipboardRequest req) { }
+    private void OnConfirmReadClipboard(IntPtr userdata, IntPtr str, IntPtr state, GhosttyClipboardRequest request) { }
     private void OnWriteClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr content, UIntPtr count, bool confirm) { }
-    private void OnCloseSurface(IntPtr userdata, bool processAlive) { }
+
+    private void OnCloseSurface(IntPtr userdata, bool processAlive)
+    {
+        // userdata is the GCHandle.ToIntPtr value the owning TerminalControl
+        // pinned for itself before SurfaceNew. Decode it back to the managed
+        // control and raise CloseRequested on the UI thread; MainWindow's
+        // CloseRequested handler is what actually closes the window.
+        //
+        // This callback fires from libghostty's thread on two paths today:
+        // (1) the user typed `exit` in the shell and then pressed any key,
+        //     which makes Surface.zig encode the keystroke, notice
+        //     child_exited, and call self.close().
+        // (2) a binding action ran .close_surface or .close_window.
+        //
+        // We deliberately ignore processAlive here. Confirm-on-close lives
+        // at the libghostty layer and only invokes us once the user has
+        // already agreed (or wait_after_command was off).
+        if (userdata == IntPtr.Zero) return;
+        var control = GCHandle.FromIntPtr(userdata).Target as TerminalControl;
+        if (control is null) return;
+        _dispatcher.TryEnqueue(() => control.RaiseCloseRequested());
+    }
 }
