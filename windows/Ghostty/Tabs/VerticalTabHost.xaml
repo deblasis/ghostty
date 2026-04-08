@@ -22,7 +22,15 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="146"/>
             </Grid.ColumnDefinitions>
-            <Grid x:Name="CustomDragRegion" Grid.Column="0" Background="Transparent"/>
+            <Grid x:Name="CustomDragRegion" Grid.Column="0" Background="Transparent">
+                <TextBlock x:Name="TitleText"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           IsHitTestVisible="False"/>
+            </Grid>
         </Grid>
 
         <!-- Row 1: strip in column 0, active PaneHost container in column 1. -->
@@ -34,12 +42,14 @@
 
             <ContentPresenter x:Name="StripHost" Grid.Column="0"/>
 
-            <!-- Canvas host for the drag handle, positioned on the
-                 right edge of the strip column so it falls just
-                 inside the boundary with the content column. -->
-            <Canvas x:Name="HandleHost"
-                    Grid.Column="0"
-                    HorizontalAlignment="Right"/>
+            <!-- Grid host for the drag handle, right-aligned inside
+                 the strip column. Was originally a Canvas — Canvas
+                 ignores HorizontalAlignment on children, so the
+                 handle rendered at (0,0) with zero position and was
+                 invisible in practice. -->
+            <Grid x:Name="HandleHost"
+                  Grid.Column="0"
+                  HorizontalAlignment="Right"/>
 
             <Grid x:Name="PaneHostContainer"
                   Grid.Column="1"

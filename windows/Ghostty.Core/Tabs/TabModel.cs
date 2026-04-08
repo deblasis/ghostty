@@ -31,14 +31,28 @@ internal sealed class TabModel : INotifyPropertyChanged
     public string? UserOverrideTitle
     {
         get => _userOverrideTitle;
-        set { if (_userOverrideTitle != value) { _userOverrideTitle = value; Raise(); } }
+        set
+        {
+            if (_userOverrideTitle == value) return;
+            _userOverrideTitle = value;
+            Raise();
+            // EffectiveTitle is computed; classic bindings listen for
+            // the exact property name, so raise it explicitly.
+            Raise(nameof(EffectiveTitle));
+        }
     }
 
     private string? _shellReportedTitle;
     public string? ShellReportedTitle
     {
         get => _shellReportedTitle;
-        set { if (_shellReportedTitle != value) { _shellReportedTitle = value; Raise(); } }
+        set
+        {
+            if (_shellReportedTitle == value) return;
+            _shellReportedTitle = value;
+            Raise();
+            Raise(nameof(EffectiveTitle));
+        }
     }
 
     private TabProgressState _progress = TabProgressState.None;

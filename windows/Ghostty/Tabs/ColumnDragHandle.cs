@@ -29,8 +29,11 @@ internal sealed class ColumnDragHandle : Grid
     {
         _onWidthChanged = onWidthChanged;
         _readCurrentWidth = readCurrentWidth;
-        Width = 1;
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        // 4px wide, subtle visible fill so the user can actually find
+        // it. A 1px transparent strip is technically grabbable but
+        // invisible, which was the original complaint.
+        Width = 4;
+        Background = (SolidColorBrush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
         HorizontalAlignment = HorizontalAlignment.Right;
         VerticalAlignment = VerticalAlignment.Stretch;
         IsHitTestVisible = true;

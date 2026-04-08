@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
 using Ghostty.Hosting;
@@ -87,10 +88,11 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
 
         foreach (var t in _manager.Tabs) AddPane(t);
         SwapActivePane();
+        RebindActiveTitle();
 
         _manager.TabAdded += (_, t) => { AddPane(t); SwapActivePane(); };
         _manager.TabRemoved += (_, t) => RemovePane(t);
-        _manager.ActiveTabChanged += (_, _) => SwapActivePane();
+        _manager.ActiveTabChanged += (_, _) => { SwapActivePane(); RebindActiveTitle(); };
 
         _strip.NewTabRequested += (_, _) => _manager.NewTab();
         _strip.ChevronToggled += (_, _) => TogglePinned();
@@ -251,6 +253,35 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         StripHost.Width = double.NaN;
         Canvas.SetZIndex(StripHost, 0);
         _state = VerticalTabStripState.Collapsed;
+    }
+
+    // Active-tab title binding for the custom title bar. We switch
+    // subscription across tabs rather than binding once, because the
+    // TextBlock needs to follow whichever tab is currently active.
+    private TabModel? _titleBoundTab;
+    private void RebindActiveTitle()
+    {
+        if (_titleBoundTab is not null)
+            _titleBoundTab.PropertyChanged -= OnActiveTitlePropertyChanged;
+        _titleBoundTab = _manager.ActiveTab;
+        if (_titleBoundTab is not null)
+            _titleBoundTab.PropertyChanged += OnActiveTitlePropertyChanged;
+        UpdateTitleText();
+    }
+
+    private void OnActiveTitlePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TabModel.EffectiveTitle) ||
+            e.PropertyName == nameof(TabModel.ShellReportedTitle) ||
+            e.PropertyName == nameof(TabModel.UserOverrideTitle))
+        {
+            UpdateTitleText();
+        }
+    }
+
+    private void UpdateTitleText()
+    {
+        TitleText.Text = _titleBoundTab?.EffectiveTitle ?? "Ghostty";
     }
 
     /// <inheritdoc/>
