@@ -44,8 +44,20 @@ public sealed partial class TerminalControl : UserControl
     /// </summary>
     internal GhosttyHost? Host { get; set; }
 
+    /// <summary>
+    /// Last title pushed by libghostty for this surface, or null if no
+    /// title has been set yet. Used by MainWindow to update the window
+    /// chrome immediately on focus change without waiting for the next
+    /// TitleChanged.
+    /// </summary>
+    public string? CurrentTitle { get; private set; }
+
     // Raisers invoked by GhosttyHost after routing an action to this leaf.
-    internal void RaiseTitleChanged(string title) => TitleChanged?.Invoke(this, title);
+    internal void RaiseTitleChanged(string title)
+    {
+        CurrentTitle = title;
+        TitleChanged?.Invoke(this, title);
+    }
     internal void RaiseCloseRequested() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
     // Events raised from the runtime action callback. They always fire

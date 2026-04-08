@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Ghostty.Controls;
 using Ghostty.Hosting;
+using Ghostty.Panes;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -12,6 +13,8 @@ namespace Ghostty;
 public sealed partial class MainWindow : Window
 {
     private readonly GhosttyHost _host;
+    private readonly PaneHost _paneHost;
+    private LeafPane? _activeLeaf;
 
     // Win32 interop for the window class background brush. WinUI 3 hosts
     // the XAML island inside a Win32 HWND whose WNDCLASS hbrBackground
@@ -34,7 +37,6 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         _host = new GhosttyHost(DispatcherQueue);
-        Terminal.Host = _host;
 
         // Match the RootGrid background (#0C0C0C). Win32 COLORREF is 0x00BBGGRR.
         var hwnd = WindowNative.GetWindowHandle(this);
@@ -53,37 +55,32 @@ public sealed partial class MainWindow : Window
         if (MicaController.IsSupported())
             SystemBackdrop = new MicaBackdrop();
 
-        // Route title updates and close requests from the terminal's
-        // runtime action callback to the window chrome. Both events
-        // are raised on the UI thread by TerminalControl.
-        Terminal.TitleChanged += (_, title) => Title = title;
-        Terminal.CloseRequested += (sender, _) => RequestCloseLeaf((TerminalControl)sender!);
+        _paneHost = new PaneHost(_host, terminalFactory: () => new TerminalControl());
+        RootGrid.Children.Add(_paneHost);
+
+        _paneHost.LeafFocused += OnLeafFocused;
+        _paneHost.LastLeafClosed += (_, _) => Close();
+
         Closed += (_, _) => _host.Dispose();
     }
 
     /// <summary>
-    /// Handle a close request from a single terminal leaf.
-    ///
-    /// This is the close cascade entry point. The cascade runs:
-    ///
-    ///     leaf -> pane -> tab -> window
-    ///
-    /// In the multi-pane PR (next stacked) the leaf will be removed from
-    /// its parent split, focus will move to the sibling subtree, and the
-    /// window only closes when the last leaf goes away. With tabs (a
-    /// later PR) the same logic runs at the tab level: closing the last
-    /// leaf in a tab closes the tab; closing the last tab closes the
-    /// window.
-    ///
-    /// PR 1 has exactly one leaf per window, so the cascade collapses to
-    /// "close the window". The shape of this method is intentional - it
-    /// is the single point that future code will extend, mirroring
-    /// macOS's BaseTerminalController.closeSurface(_).
+    /// Re-route the window title when the active pane changes. We
+    /// unsubscribe the previous active leaf's TitleChanged so a
+    /// background pane setting its title via OSC does not affect the
+    /// window chrome.
     /// </summary>
-    private void RequestCloseLeaf(TerminalControl leaf)
+    private void OnLeafFocused(object? sender, LeafPane leaf)
     {
-        // Today the only leaf is `Terminal`. When the surface tree exists,
-        // this becomes: tree.remove(leaf); if (tree.IsEmpty) Close();
-        if (leaf == Terminal) Close();
+        if (_activeLeaf is { } previous)
+            previous.Terminal.TitleChanged -= OnActiveLeafTitleChanged;
+        _activeLeaf = leaf;
+        leaf.Terminal.TitleChanged += OnActiveLeafTitleChanged;
+        Title = leaf.Terminal.CurrentTitle ?? "Ghostty";
+    }
+
+    private void OnActiveLeafTitleChanged(object? sender, string title)
+    {
+        Title = title;
     }
 }
