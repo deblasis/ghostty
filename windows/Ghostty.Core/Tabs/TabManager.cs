@@ -32,7 +32,11 @@ internal sealed class TabManager
     private readonly ObservableCollection<TabModel> _tabs = new();
     private TabModel _activeTab = null!;
 
-    public IReadOnlyList<TabModel> Tabs => _tabs;
+    // Exposed as the concrete ObservableCollection so WinUI can bind
+    // ItemsSource directly and pick up INotifyCollectionChanged for
+    // free. Tests only depend on IReadOnlyList surface (Count, indexer),
+    // which ObservableCollection satisfies.
+    public ObservableCollection<TabModel> Tabs => _tabs;
     public TabModel ActiveTab => _activeTab;
 
     /// <summary>
