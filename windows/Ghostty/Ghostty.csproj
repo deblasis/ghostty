@@ -20,6 +20,10 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Ghostty.Core\Ghostty.Core.csproj" />
+  </ItemGroup>
+
   <!--
     Copy libghostty.dll from the zig-out install dir produced by
     `zig build -Dapp-runtime=none`. This mirrors how macos/Ghostty.xcodeproj

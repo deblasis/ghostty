@@ -4,6 +4,7 @@ using Ghostty.Controls;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Panes;
+using Ghostty.Core.Panes;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -101,10 +102,10 @@ public sealed partial class MainWindow : Window
     private void OnLeafFocused(object? sender, LeafPane leaf)
     {
         if (_activeLeaf is { } previous)
-            previous.Terminal.TitleChanged -= OnActiveLeafTitleChanged;
+            previous.Terminal().TitleChanged -= OnActiveLeafTitleChanged;
         _activeLeaf = leaf;
-        leaf.Terminal.TitleChanged += OnActiveLeafTitleChanged;
-        Title = leaf.Terminal.CurrentTitle ?? "Ghostty";
+        leaf.Terminal().TitleChanged += OnActiveLeafTitleChanged;
+        Title = leaf.Terminal().CurrentTitle ?? "Ghostty";
     }
 
     private void OnActiveLeafTitleChanged(object? sender, string title)

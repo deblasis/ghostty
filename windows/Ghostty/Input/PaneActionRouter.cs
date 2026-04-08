@@ -1,5 +1,6 @@
 using System;
 using Ghostty.Panes;
+using Ghostty.Core.Panes;
 
 namespace Ghostty.Input;
 

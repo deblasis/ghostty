@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Ghostty.Core.Panes;
 using Ghostty.Controls;
 using Ghostty.Hosting;
 using Microsoft.UI.Xaml;
@@ -128,7 +129,7 @@ internal sealed class PaneHost : UserControl
 
         // Initial single leaf.
         var firstTerminal = CreateTerminal();
-        _activeLeaf = new LeafPane(firstTerminal);
+        _activeLeaf = new LeafPane { Tag = firstTerminal };
         _root = _activeLeaf;
 
         // Two-layer host Grid: the actual split tree below, the
@@ -167,7 +168,7 @@ internal sealed class PaneHost : UserControl
         var oldActive = _activeLeaf;
         var wasRoot = ReferenceEquals(_root, oldActive);
         var newTerminal = CreateTerminal();
-        var newLeaf = new LeafPane(newTerminal);
+        var newLeaf = new LeafPane { Tag = newTerminal };
         _root = PaneTree.Split(_root, oldActive, newLeaf, orientation);
         _activeLeaf = newLeaf;
 
@@ -193,7 +194,7 @@ internal sealed class PaneHost : UserControl
             ? (SplitPane)_root
             : PaneTree.FindParent(_root, oldActive)?.Parent;
 
-        if (newSubSplit is null || oldActive.Terminal.Parent is not Grid currentParent)
+        if (newSubSplit is null || oldActive.Terminal().Parent is not Grid currentParent)
         {
             // Root replacement (oldActive was the entire content of
             // PaneHost), or some unexpected state. Full rebuild handles
@@ -205,9 +206,9 @@ internal sealed class PaneHost : UserControl
         {
             // In-place replacement of the single old-active leaf with
             // a fresh sub-Grid for the new SplitPane.
-            int col = Grid.GetColumn(oldActive.Terminal);
-            int row = Grid.GetRow(oldActive.Terminal);
-            currentParent.Children.Remove(oldActive.Terminal);
+            int col = Grid.GetColumn(oldActive.Terminal());
+            int row = Grid.GetRow(oldActive.Terminal());
+            currentParent.Children.Remove(oldActive.Terminal());
             var subGrid = (Grid)BuildVisual(newSubSplit);
             Grid.SetColumn(subGrid, col);
             Grid.SetRow(subGrid, row);
@@ -252,7 +253,7 @@ internal sealed class PaneHost : UserControl
         if (_allLeavesClosed) return;
         foreach (var leaf in PaneTree.Leaves(_root))
         {
-            leaf.Terminal.DisposeSurface();
+            leaf.Terminal().DisposeSurface();
         }
     }
 
@@ -264,13 +265,13 @@ internal sealed class PaneHost : UserControl
     public void CloseLeaf(LeafPane leaf)
     {
         // Detach the terminal from focus tracking BEFORE we drop it.
-        leaf.Terminal.GotFocus -= OnTerminalGotFocus;
+        leaf.Terminal().GotFocus -= OnTerminalGotFocus;
 
         // Tear down the libghostty surface for the leaf being removed.
         // The surface lifetime is decoupled from OnLoaded/OnUnloaded
         // (see TerminalControl.DisposeSurface comment), so we have to
         // do it explicitly here.
-        leaf.Terminal.DisposeSurface();
+        leaf.Terminal().DisposeSurface();
 
         var newRoot = PaneTree.Close(_root, leaf);
         if (newRoot is null)
@@ -291,7 +292,7 @@ internal sealed class PaneHost : UserControl
         _activeLeaf = nextActive;
         Rebuild();
         UpdateHighlightPosition();
-        DispatcherQueue.TryEnqueue(() => nextActive.Terminal.Focus(FocusState.Programmatic));
+        DispatcherQueue.TryEnqueue(() => nextActive.Terminal().Focus(FocusState.Programmatic));
     }
 
     /// <summary>
@@ -356,7 +357,7 @@ internal sealed class PaneHost : UserControl
             }
         }
 
-        best?.Terminal.Focus(FocusState.Keyboard);
+        best?.Terminal().Focus(FocusState.Keyboard);
     }
 
     // Internals ---------------------------------------------------------
@@ -378,7 +379,7 @@ internal sealed class PaneHost : UserControl
     private void OnTerminalGotFocus(object sender, RoutedEventArgs e)
     {
         if (sender is not TerminalControl tc) return;
-        var leaf = PaneTree.Leaves(_root).FirstOrDefault(l => ReferenceEquals(l.Terminal, tc));
+        var leaf = PaneTree.Leaves(_root).FirstOrDefault(l => ReferenceEquals(l.Terminal(), tc));
         if (leaf is null) return;
         if (ReferenceEquals(leaf, _activeLeaf)) return;
         _activeLeaf = leaf;
@@ -447,7 +448,7 @@ internal sealed class PaneHost : UserControl
 
     private void PositionOverlayOverLeaf(Rectangle rect, LeafPane leaf, bool insetForStroke)
     {
-        var ctl = leaf.Terminal;
+        var ctl = leaf.Terminal();
         if (ctl.ActualWidth <= 0 || ctl.ActualHeight <= 0)
         {
             rect.Visibility = Visibility.Collapsed;
@@ -478,7 +479,7 @@ internal sealed class PaneHost : UserControl
     private void OnTerminalCloseRequested(object? sender, EventArgs e)
     {
         if (sender is not TerminalControl tc) return;
-        var leaf = PaneTree.Leaves(_root).FirstOrDefault(l => ReferenceEquals(l.Terminal, tc));
+        var leaf = PaneTree.Leaves(_root).FirstOrDefault(l => ReferenceEquals(l.Terminal(), tc));
         if (leaf is null) return;
         CloseLeaf(leaf);
     }
@@ -502,8 +503,8 @@ internal sealed class PaneHost : UserControl
         {
             // The leaf's TerminalControl is stable across rebuilds.
             // Detach it from any previous parent before re-parenting.
-            DetachFromParent(leaf.Terminal);
-            return leaf.Terminal;
+            DetachFromParent(leaf.Terminal());
+            return leaf.Terminal();
         }
 
         var split = (SplitPane)node;
@@ -608,7 +609,7 @@ internal sealed class PaneHost : UserControl
 
     private Rect? GetLeafRect(LeafPane leaf)
     {
-        var ctl = leaf.Terminal;
+        var ctl = leaf.Terminal();
         if (ctl.ActualWidth <= 0 || ctl.ActualHeight <= 0) return null;
         try
         {
