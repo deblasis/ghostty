@@ -25,6 +25,18 @@ internal sealed class GhosttyHost : IDisposable
     private GhosttyConfig _config;
     private GhosttyApp _app;
 
+    /// <summary>
+    /// UTC timestamp of the most recent key event seen by any
+    /// <see cref="Ghostty.Controls.TerminalControl"/> bound to this
+    /// host. Read by <see cref="Tabs.VerticalTabHost"/>'s
+    /// hover-expand suppression to decide whether the user is
+    /// mid-typing (popping the sidebar in that case would feel
+    /// jarring and could interfere with an IME composition).
+    /// </summary>
+    public DateTime LastKeystrokeTimestamp { get; private set; } = DateTime.MinValue;
+
+    internal void NoteKeystroke() => LastKeystrokeTimestamp = DateTime.UtcNow;
+
     // Delegates must be retained as fields; P/Invoke hands out native
     // function pointers the GC cannot track.
     private GhosttyWakeupCb? _wakeupCb;

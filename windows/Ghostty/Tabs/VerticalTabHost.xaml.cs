@@ -1,9 +1,12 @@
 using System;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
+using Ghostty.Hosting;
 using Ghostty.Panes;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 
 namespace Ghostty.Tabs;
@@ -22,6 +25,7 @@ namespace Ghostty.Tabs;
 internal sealed partial class VerticalTabHost : UserControl, ITabHost
 {
     private readonly TabManager _manager;
+    private readonly GhosttyHost? _host;
     private readonly VerticalTabStrip _strip;
     private readonly GridLengthProxy _columnProxy;
     private readonly ColumnDragHandle _dragHandle;
@@ -31,13 +35,24 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
     // TODO(config): vertical-tabs-pinned (bool, default false)
     private bool _pinnedExpanded = false;
 
+    // TODO(config): vertical-tabs-hover-expand (bool, default false)
+    private const bool HoverExpandEnabled = false;
+    private const int HoverEnterDelayMs = 200;
+    private const int HoverLeaveDelayMs = 400;
+    private const int TypingSuppressionMs = 1500;
+
+    private VerticalTabStripState _state = VerticalTabStripState.Collapsed;
+    private DispatcherQueueTimer? _hoverEnterTimer;
+    private DispatcherQueueTimer? _hoverLeaveTimer;
+
     public FrameworkElement HostElement => this;
     public UIElement DragRegion => CustomDragRegion;
 
-    public VerticalTabHost(TabManager manager)
+    public VerticalTabHost(TabManager manager, GhosttyHost? host = null)
     {
         InitializeComponent();
         _manager = manager;
+        _host = host;
 
         _columnProxy = new GridLengthProxy(StripColumn);
         _columnProxy.Width = StripColumn.Width.Value;
@@ -67,6 +82,20 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         // Bind the handle's height to the HandleHost size so it
         // spans the whole strip vertically.
         HandleHost.SizeChanged += (_, e) => _dragHandle.Height = e.NewSize.Height;
+
+        // Hover-expand pointer hooks. The state machine is gated
+        // behind HoverExpandEnabled so flipping the constant is
+        // the only thing needed to test it. The constant makes one
+        // branch of the if statically unreachable; suppress CS0162
+        // here specifically because the whole point of this gate
+        // is to be toggled for manual testing.
+#pragma warning disable CS0162
+        if (HoverExpandEnabled)
+        {
+            StripHost.PointerEntered += OnStripPointerEntered;
+            StripHost.PointerExited += OnStripPointerExited;
+        }
+#pragma warning restore CS0162
 
         foreach (var t in _manager.Tabs) AddPane(t);
         SwapActivePane();
@@ -144,6 +173,79 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
+    }
+
+    // Hover-expand state machine -----------------------------------------
+
+    private void OnStripPointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (_state != VerticalTabStripState.Collapsed) return;
+        if (_pinnedExpanded) return;
+        if (IsUserCurrentlyTyping()) return;
+
+        _hoverEnterTimer ??= DispatcherQueue.CreateTimer();
+        _hoverEnterTimer.Interval = TimeSpan.FromMilliseconds(HoverEnterDelayMs);
+        _hoverEnterTimer.IsRepeating = false;
+        _hoverEnterTimer.Tick += OnHoverEnterTick;
+        _hoverEnterTimer.Start();
+    }
+
+    private void OnHoverEnterTick(DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        sender.Tick -= OnHoverEnterTick;
+        if (_state != VerticalTabStripState.Collapsed) return;
+        BeginHoverExpand();
+    }
+
+    private void OnStripPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _hoverEnterTimer?.Stop();
+        if (_state != VerticalTabStripState.HoverExpanded) return;
+
+        _hoverLeaveTimer ??= DispatcherQueue.CreateTimer();
+        _hoverLeaveTimer.Interval = TimeSpan.FromMilliseconds(HoverLeaveDelayMs);
+        _hoverLeaveTimer.IsRepeating = false;
+        _hoverLeaveTimer.Tick += OnHoverLeaveTick;
+        _hoverLeaveTimer.Start();
+    }
+
+    private void OnHoverLeaveTick(DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        sender.Tick -= OnHoverLeaveTick;
+        if (_state != VerticalTabStripState.HoverExpanded) return;
+        BeginHoverCollapse();
+    }
+
+    private bool IsUserCurrentlyTyping()
+    {
+        if (_host is null) return false;
+        var elapsed = (DateTime.UtcNow - _host.LastKeystrokeTimestamp).TotalMilliseconds;
+        return elapsed < TypingSuppressionMs;
+    }
+
+    private void BeginHoverExpand()
+    {
+        // Render the strip as an overlay: raise its Z-order and
+        // give it an explicit Width so it floats over the terminal
+        // column. The ColumnDefinition is NOT resized, so the
+        // terminal content does not reflow — that's the key
+        // difference from pinned-expanded.
+        _state = VerticalTabStripState.HoverExpanding;
+        _strip.IsExpanded = true;
+        Canvas.SetZIndex(StripHost, 100);
+        StripHost.Width = ExpandedWidth;
+        _state = VerticalTabStripState.HoverExpanded;
+    }
+
+    private void BeginHoverCollapse()
+    {
+        _state = VerticalTabStripState.HoverCollapsing;
+        _strip.IsExpanded = false;
+        StripHost.Width = double.NaN;
+        Canvas.SetZIndex(StripHost, 0);
+        _state = VerticalTabStripState.Collapsed;
     }
 
     /// <inheritdoc/>

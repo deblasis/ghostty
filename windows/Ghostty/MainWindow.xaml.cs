@@ -123,12 +123,12 @@ public sealed partial class MainWindow : Window
     /// (<see cref="TabHost"/>) is the default; vertical
     /// (<see cref="VerticalTabHost"/>) opts in.
     /// </summary>
-    private static ITabHost CreateTabHost(TabManager manager)
+    private ITabHost CreateTabHost(TabManager manager)
     {
         // TODO(config): vertical-tabs (bool, default false)
         const bool verticalTabs = false;
         return verticalTabs
-            ? (ITabHost)new VerticalTabHost(manager)
+            ? (ITabHost)new VerticalTabHost(manager, _host)
             : new TabHost(manager);
     }
 
