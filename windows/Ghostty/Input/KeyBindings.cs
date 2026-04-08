@@ -47,6 +47,10 @@ internal sealed class KeyBindings
     /// Return the action bound to the given chord, or null if no
     /// binding matches. Modifier comparison is exact: a binding for
     /// Ctrl+Shift+D will not match Ctrl+Shift+Alt+D, by design.
+    ///
+    /// Linear scan is fine at the current ~7 bindings. If the
+    /// config-driven loader lands with 50+ bindings, switch to a
+    /// Dictionary&lt;(mods,key), action&gt; built once in the ctor.
     /// </summary>
     public PaneAction? Match(VirtualKeyModifiers modifiers, VirtualKey key)
     {

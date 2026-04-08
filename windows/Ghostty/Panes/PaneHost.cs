@@ -61,6 +61,9 @@ internal sealed class PaneHost : UserControl
     private readonly Dictionary<LeafPane, Rectangle> _dimRects = new();
     private FrameworkElement _treeRoot = null!; // assigned in ctor before use
 
+    // TODO: route through a theme resource once the config layer
+    // exists so a light theme does not end up with a dark film over
+    // inactive panes and an accent-agnostic border over the active one.
     private static readonly Brush ActiveBorderBrush =
         new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
     // Subtle dark film over inactive panes. ~22% black matches the
@@ -71,6 +74,10 @@ internal sealed class PaneHost : UserControl
 
     private PaneNode _root;
     private LeafPane _activeLeaf;
+    // Set once the last leaf has been closed and the window is tearing
+    // down. DisposeAllLeaves honors it so it does not walk a tree that
+    // has already been disposed leaf-by-leaf in CloseLeaf.
+    private bool _allLeavesClosed;
 
     /// <summary>
     /// Raised when the active leaf changes (initially and on every focus
@@ -138,6 +145,10 @@ internal sealed class PaneHost : UserControl
         // single TransformToVisual + four set-property calls. Covers
         // window resize, splitter drag, and the post-Split layout
         // pass that finally exposes new-leaf bounds.
+        //
+        // TODO: LayoutUpdated fires aggressively (per arrange pass of
+        // any descendant). At <20 leaves this is imperceptible, but
+        // if ETW traces ever flag it, debounce via a DispatcherQueueTimer.
         LayoutUpdated += (_, _) => UpdateHighlightPosition();
 
         // Defer the first LeafFocused so subscribers (MainWindow) can
@@ -154,6 +165,7 @@ internal sealed class PaneHost : UserControl
     public void Split(PaneOrientation orientation)
     {
         var oldActive = _activeLeaf;
+        var wasRoot = ReferenceEquals(_root, oldActive);
         var newTerminal = CreateTerminal();
         var newLeaf = new LeafPane(newTerminal);
         _root = PaneTree.Split(_root, oldActive, newLeaf, orientation);
@@ -177,22 +189,9 @@ internal sealed class PaneHost : UserControl
         // before this split), there is no Grid parent. Fall back to
         // a full rebuild via the existing path - the single-pane to
         // two-pane case has no nested tree and works fine that way.
-        var splitNode = (SplitPane)_root;
-        // _root is the new SplitPane only if oldActive was the root.
-        // Otherwise we need to find the new SplitPane that wraps
-        // oldActive (which is now its Child1 by construction in
-        // PaneTree.Split).
-        SplitPane? newSubSplit;
-        if (ReferenceEquals(_root, splitNode) && ReferenceEquals(splitNode.Child1, oldActive))
-        {
-            // oldActive was the root and the new split IS the new root.
-            newSubSplit = splitNode;
-        }
-        else
-        {
-            var found = PaneTree.FindParent(_root, oldActive);
-            newSubSplit = found?.Parent;
-        }
+        SplitPane? newSubSplit = wasRoot
+            ? (SplitPane)_root
+            : PaneTree.FindParent(_root, oldActive)?.Parent;
 
         if (newSubSplit is null || oldActive.Terminal.Parent is not Grid currentParent)
         {
@@ -245,6 +244,12 @@ internal sealed class PaneHost : UserControl
     /// </summary>
     public void DisposeAllLeaves()
     {
+        // Every leaf was already disposed one-by-one as the tree
+        // collapsed; _root still references the last-closed leaf but
+        // walking it here would double-dispose (DisposeSurface is
+        // idempotent, but the walk is wasted work and a trap for the
+        // next reader).
+        if (_allLeavesClosed) return;
         foreach (var leaf in PaneTree.Leaves(_root))
         {
             leaf.Terminal.DisposeSurface();
@@ -270,7 +275,10 @@ internal sealed class PaneHost : UserControl
         var newRoot = PaneTree.Close(_root, leaf);
         if (newRoot is null)
         {
-            // Last leaf - tell MainWindow to close the window.
+            // Last leaf - flag the host so DisposeAllLeaves on window
+            // close skips iterating a tree whose only node is already
+            // disposed, and tell MainWindow to close the window.
+            _allLeavesClosed = true;
             LastLeafClosed?.Invoke(this, EventArgs.Empty);
             return;
         }
@@ -581,35 +589,19 @@ internal sealed class PaneHost : UserControl
     {
         // A UIElement can only have one parent. Before reparenting a
         // stable TerminalControl into a freshly built Grid, we have to
-        // explicitly remove it from wherever it currently lives. Three
-        // parent shapes show up in this app:
-        //
-        //   1. Initial state: PaneHost.Content holds the leaf's
-        //      Terminal directly (UserControl is a ContentControl, so
-        //      its Content slot is the parent).
-        //   2. After any split: the leaf's Terminal lives in a Grid's
-        //      Children collection.
-        //   3. Hypothetical Border wrapper: never used today, listed
-        //      for completeness in case we wrap leaves later.
+        // explicitly remove it from wherever it currently lives. In
+        // practice there is only one parent shape: PaneHost.Content is
+        // a host Grid, every leaf lives in some Grid's Children below
+        // it. The ContentControl fallback stays as a defense-in-depth
+        // guard in case future wrapping ever puts a leaf directly in a
+        // ContentControl.Content slot.
         switch (child.Parent)
         {
             case Panel panel:
                 panel.Children.Remove(child);
                 break;
-            // UserControl is the case that matters in practice: PaneHost
-            // is a UserControl and its Content slot directly holds the
-            // first leaf's TerminalControl until the first split. In
-            // WinUI 3 UserControl derives from Control (not from
-            // ContentControl as in WPF), so the ContentControl branch
-            // below would silently miss this case.
-            case UserControl userControl when ReferenceEquals(userControl.Content, child):
-                userControl.Content = null;
-                break;
             case ContentControl contentControl when ReferenceEquals(contentControl.Content, child):
                 contentControl.Content = null;
-                break;
-            case Border border when ReferenceEquals(border.Child, child):
-                border.Child = null;
                 break;
         }
     }

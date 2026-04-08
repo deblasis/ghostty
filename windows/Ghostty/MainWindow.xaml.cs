@@ -24,11 +24,17 @@ public sealed partial class MainWindow : Window
     // fires accelerator Invoked twice for a single key event when the
     // accelerator is registered on a parent of the focused element,
     // even with args.Handled = true and ScopeOwner explicitly set.
-    // Until we track down the root cause, ignore identical actions
-    // within a tight time window.
-    private PaneAction? _lastAcceleratorAction;
-    private DateTime _lastAcceleratorTime = DateTime.MinValue;
-    private static readonly TimeSpan AcceleratorDedupWindow = TimeSpan.FromMilliseconds(150);
+    //
+    // Workaround: remember which action just fired and swallow any
+    // subsequent Invoked for the same action until the next KeyUp
+    // resets the flag. Framework dupes arrive inside the same physical
+    // keypress (no KeyUp between them) so they are filtered, while
+    // legitimate user repeats (KeyDown -> KeyUp -> KeyDown) come
+    // through unmodified. This replaces an earlier 150 ms wall-clock
+    // window that ate muscle-memory double-splits.
+    //
+    // Tracked in https://github.com/deblasis/ghostty/issues/165
+    private PaneAction? _acceleratorFiredThisKeyDown;
 
     // Win32 interop for the window class background brush. WinUI 3 hosts
     // the XAML island inside a Win32 HWND whose WNDCLASS hbrBackground
@@ -148,21 +154,23 @@ public sealed partial class MainWindow : Window
                 args.Handled = true;
                 // WinUI 3 fires Invoked twice per key event for an
                 // accelerator on a parent of the focused element, even
-                // with args.Handled = true and ScopeOwner set. Until
-                // we find the root cause, drop the second dispatch
-                // within a tight time window.
-                var now = DateTime.UtcNow;
-                if (_lastAcceleratorAction == binding.Action
-                    && now - _lastAcceleratorTime < AcceleratorDedupWindow)
-                {
-                    return;
-                }
-                _lastAcceleratorAction = binding.Action;
-                _lastAcceleratorTime = now;
+                // with args.Handled = true and ScopeOwner set. Swallow
+                // the second dispatch inside the same physical keypress
+                // by remembering which action just fired; KeyUp on the
+                // host clears the flag, so the next KeyDown dispatches
+                // normally. See https://github.com/deblasis/ghostty/issues/165.
+                if (_acceleratorFiredThisKeyDown == binding.Action) return;
+                _acceleratorFiredThisKeyDown = binding.Action;
                 PaneActionRouter.Invoke(binding.Action, _paneHost);
             };
             _paneHost.KeyboardAccelerators.Add(accel);
         }
+
+        // Reset the per-keydown dedup flag on KeyUp so a user's rapid
+        // second Ctrl+Shift+D is not eaten as a framework dupe. Handled
+        // on the host (not the focused terminal) because KeyUp routes
+        // up the tree and the host is always on the path.
+        _paneHost.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
 
         // Suppress the auto-generated "Ctrl+Shift+D" tooltip that
         // KeyboardAccelerators normally show on hover. PaneHost fills

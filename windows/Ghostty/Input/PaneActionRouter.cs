@@ -1,3 +1,4 @@
+using System;
 using Ghostty.Panes;
 
 namespace Ghostty.Input;
@@ -34,6 +35,12 @@ internal static class PaneActionRouter
             case PaneAction.FocusDown:
                 host.FocusDirection(FocusDirection.Down);
                 break;
+            default:
+                // Non-exhaustive switch: new PaneAction values must
+                // grow a case here. Throwing rather than silently
+                // dropping the action surfaces the mistake in a dev
+                // build instead of at user report time.
+                throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
     }
 }

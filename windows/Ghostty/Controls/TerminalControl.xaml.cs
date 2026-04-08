@@ -423,7 +423,9 @@ public sealed partial class TerminalControl : UserControl
     {
         // Same short-circuit so the matching key-up never reaches
         // libghostty either. Without this, libghostty would see a
-        // stray release for a press it never saw.
+        // stray release for a press it never saw. Assumes every bound
+        // chord has at least one modifier; a plain unmodified bound
+        // key would swallow its key-up silently here.
         var mods = CurrentChordModifiers();
         if (KeyBindings.Default.Match(mods, e.Key) is not null) return;
         SendKey(e, GhosttyInputAction.Release);

@@ -44,7 +44,8 @@ internal sealed class Splitter : Grid
 
         // 1px line in a neutral terminal-chrome color. The dark grey
         // matches typical terminal panel chrome and stays visible
-        // against both #0C0C0C backgrounds and Mica.
+        // against both #0C0C0C backgrounds and Mica. TODO: source from
+        // a theme resource once the config layer exists.
         Background = new SolidColorBrush(Microsoft.UI.Colors.DimGray);
 
         if (split.Orientation == PaneOrientation.Vertical)
