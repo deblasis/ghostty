@@ -118,15 +118,18 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Pick which <see cref="ITabHost"/> implementation to use.
-    /// Horizontal (<see cref="TabHost"/>) is the only option today;
-    /// the vertical layout is added in a later commit of this plan
-    /// and will branch here behind a stubbed <c>vertical-tabs</c>
-    /// config flag.
+    /// Pick which <see cref="ITabHost"/> implementation to use based
+    /// on the stubbed <c>vertical-tabs</c> config flag. Horizontal
+    /// (<see cref="TabHost"/>) is the default; vertical
+    /// (<see cref="VerticalTabHost"/>) opts in.
     /// </summary>
     private static ITabHost CreateTabHost(TabManager manager)
     {
-        return new TabHost(manager);
+        // TODO(config): vertical-tabs (bool, default false)
+        const bool verticalTabs = false;
+        return verticalTabs
+            ? (ITabHost)new VerticalTabHost(manager)
+            : new TabHost(manager);
     }
 
     /// <summary>
