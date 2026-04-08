@@ -39,21 +39,25 @@ internal sealed partial class TabHost : UserControl
 
     private void AddItem(TabModel tab)
     {
-        // TabViewItemContentPresenter does NOT auto-stretch an
-        // imperatively-assigned UserControl: without explicit
-        // HorizontalAlignment/VerticalAlignment Stretch the content
-        // is measured with its DesiredSize and the terminal collapses
-        // to a single cell tall. PaneHost from #163 inherits the
-        // default alignment which is Stretch on paper but does not
-        // propagate through the TabViewItem content path.
+        // The PaneHost is parented into PaneHostContainer here, ONCE,
+        // for the lifetime of the tab. It is never reparented when the
+        // active tab changes — instead Visibility toggles. This keeps
+        // the SwapChainPanel's DCOMP visual stable; reparenting it
+        // (which is what TabViewItem.Content does) tears down the
+        // underlying composition surface and breaks rendering.
         var paneHost = (PaneHost)tab.PaneHost;
         paneHost.HorizontalAlignment = HorizontalAlignment.Stretch;
         paneHost.VerticalAlignment = VerticalAlignment.Stretch;
+        paneHost.Visibility = Visibility.Collapsed;
+        PaneHostContainer.Children.Add(paneHost);
 
+        // The TabView item is a header-only placeholder. Content is
+        // null on purpose; the actual terminal lives in
+        // PaneHostContainer above.
         var item = new TabViewItem
         {
             Header = tab.EffectiveTitle,
-            Content = paneHost,
+            Content = null,
             ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
             DataContext = tab,
         };
@@ -68,6 +72,12 @@ internal sealed partial class TabHost : UserControl
         if (!_itemByModel.TryGetValue(tab, out var item)) return;
         TabViewControl.TabItems.Remove(item);
         _itemByModel.Remove(tab);
+
+        // Dispose-time pane host removal. The PaneHost has already
+        // had DisposeAllLeaves called by TabManager.CloseTab; here we
+        // just detach the now-dead control from the visual tree.
+        var paneHost = (PaneHost)tab.PaneHost;
+        PaneHostContainer.Children.Remove(paneHost);
     }
 
     private void MoveItem(TabModel tab, int to)
@@ -75,11 +85,27 @@ internal sealed partial class TabHost : UserControl
         if (!_itemByModel.TryGetValue(tab, out var item)) return;
         TabViewControl.TabItems.Remove(item);
         TabViewControl.TabItems.Insert(to, item);
+        // PaneHostContainer order does not matter — Visibility picks
+        // the active one. No reorder needed there.
     }
 
     private void SelectActive()
     {
         if (!_itemByModel.TryGetValue(_manager.ActiveTab, out var item)) return;
+
+        // Toggle Visibility across all pane hosts: only the active
+        // tab's PaneHost is visible. This does NOT fire Unloaded on
+        // the inactive ones, so their SwapChainPanels keep rendering
+        // (even invisibly — libghostty does not stop the renderer
+        // thread on Visibility, which is fine; the cost is small).
+        var activePaneHost = (PaneHost)_manager.ActiveTab.PaneHost;
+        foreach (UIElement child in PaneHostContainer.Children)
+        {
+            child.Visibility = ReferenceEquals(child, activePaneHost)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
         if (ReferenceEquals(TabViewControl.SelectedItem, item)) return;
         _suppressSelectionEvent = true;
         TabViewControl.SelectedItem = item;
