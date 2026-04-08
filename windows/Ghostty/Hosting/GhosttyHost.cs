@@ -1,5 +1,6 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Ghostty.Controls;
 using Ghostty.Interop;
@@ -33,7 +34,10 @@ internal sealed class GhosttyHost : IDisposable
     private GhosttyWriteClipboardCb? _writeClipboardCb;
     private GhosttyCloseSurfaceCb? _closeSurfaceCb;
 
-    private readonly Dictionary<IntPtr, TerminalControl> _surfaces = new();
+    // ConcurrentDictionary: Register/Unregister run on the UI thread but
+    // lookups happen on libghostty's callback thread in OnAction and
+    // OnCloseSurface. A plain Dictionary would race here.
+    private readonly ConcurrentDictionary<IntPtr, TerminalControl> _surfaces = new();
     private readonly DispatcherQueue _dispatcher;
 
     public GhosttyApp App => _app;
@@ -73,17 +77,20 @@ internal sealed class GhosttyHost : IDisposable
     public void Register(GhosttySurface surface, TerminalControl control)
     {
         if (surface.Handle == IntPtr.Zero) return;
-        _surfaces[surface.Handle] = control;
+        var added = _surfaces.TryAdd(surface.Handle, control);
+        Debug.Assert(added, "surface handle collision in GhosttyHost registry");
     }
 
     public void Unregister(GhosttySurface surface)
     {
         if (surface.Handle == IntPtr.Zero) return;
-        _surfaces.Remove(surface.Handle);
+        _surfaces.TryRemove(surface.Handle, out _);
     }
 
     public void Dispose()
     {
+        // Clear before AppFree so any late callbacks libghostty emits during
+        // teardown miss the lookup and become harmless no-ops.
         _surfaces.Clear();
         if (_app.Handle != IntPtr.Zero) NativeMethods.AppFree(_app);
         if (_config.Handle != IntPtr.Zero) NativeMethods.ConfigFree(_config);
@@ -151,7 +158,14 @@ internal sealed class GhosttyHost : IDisposable
             {
                 var titlePtr = Marshal.ReadIntPtr(actionPtr, 8);
                 var title = Marshal.PtrToStringUTF8(titlePtr) ?? string.Empty;
-                _dispatcher.TryEnqueue(() => control.RaiseTitleChanged(title));
+                // Capture the surface handle, not `control`: by the time the
+                // dispatched lambda runs the control may have unregistered
+                // and torn down. Re-check the dictionary on the UI thread.
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (_surfaces.TryGetValue(surfaceHandle, out var c))
+                        c.RaiseTitleChanged(title);
+                });
                 return true;
             }
 
@@ -163,7 +177,11 @@ internal sealed class GhosttyHost : IDisposable
 
             case GhosttyActionTag.CloseWindow:
             {
-                _dispatcher.TryEnqueue(() => control.RaiseCloseRequested());
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (_surfaces.TryGetValue(surfaceHandle, out var c))
+                        c.RaiseCloseRequested();
+                });
                 return true;
             }
 
@@ -193,8 +211,25 @@ internal sealed class GhosttyHost : IDisposable
         // at the libghostty layer and only invokes us once the user has
         // already agreed (or wait_after_command was off).
         if (userdata == IntPtr.Zero) return;
+
+        // Decode the GCHandle, then confirm the resulting control is still
+        // registered. If Unregister already ran on the UI thread the surface
+        // is being torn down and this callback is a late arrival we drop.
+        // Using the thread-safe ConcurrentDictionary lookup avoids a race
+        // with a GCHandle that has been freed by OnUnloaded.
         var control = GCHandle.FromIntPtr(userdata).Target as TerminalControl;
         if (control is null) return;
-        _dispatcher.TryEnqueue(() => control.RaiseCloseRequested());
+        if (!IsRegistered(control)) return;
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (IsRegistered(control)) control.RaiseCloseRequested();
+        });
+    }
+
+    private bool IsRegistered(TerminalControl control)
+    {
+        foreach (var c in _surfaces.Values)
+            if (ReferenceEquals(c, control)) return true;
+        return false;
     }
 }
