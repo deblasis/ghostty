@@ -203,42 +203,15 @@ public sealed partial class MainWindow : Window
         _tabHost.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
         _tabHost.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
 
-        // Listen for keyboard-driven full-tab close so we can show
-        // the confirmation dialog from a context with an XamlRoot.
-        // PaneActionRouter raises this event instead of calling
-        // CloseTab directly because it has no way to reach a XamlRoot.
+        // Listen for keyboard-driven full-tab close. Route through
+        // TabHost.RequestCloseTabAsync so the confirmation dialog
+        // is the same code path as the per-tab X button and the
+        // context-menu Close item — single source of truth for
+        // close confirmation lives in TabHost, which has XamlRoot.
         PaneActionRouter.TabCloseRequestedFromKeyboard += async (_, mgr) =>
         {
             if (!ReferenceEquals(mgr, _tabManager)) return;
-            await ConfirmAndCloseActiveTabAsync();
+            await _tabHost.RequestCloseTabAsync(_tabManager.ActiveTab);
         };
-    }
-
-    /// <summary>
-    /// Show the multi-pane confirmation dialog (if configured) and
-    /// close the active tab.
-    /// </summary>
-    private async System.Threading.Tasks.Task ConfirmAndCloseActiveTabAsync()
-    {
-        // TODO(config): confirm-close-multi-pane (bool, default true)
-        const bool confirmCloseMultiPane = true;
-
-        var tab = _tabManager.ActiveTab;
-        var paneCount = tab.PaneHost.PaneCount;
-        if (confirmCloseMultiPane && paneCount > 1)
-        {
-            var dlg = new ContentDialog
-            {
-                Title = "Close tab?",
-                Content = $"This tab has {paneCount} panes. Close all of them?",
-                PrimaryButtonText = "Close all",
-                SecondaryButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Secondary,
-                XamlRoot = _tabHost.XamlRoot,
-            };
-            var res = await dlg.ShowAsync();
-            if (res != ContentDialogResult.Primary) return;
-        }
-        _tabManager.CloseTab(tab);
     }
 }

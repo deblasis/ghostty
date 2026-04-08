@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
 using Ghostty.Panes;
 using Microsoft.UI.Xaml;
@@ -42,7 +43,7 @@ internal sealed partial class TabHost : UserControl
         {
             Header = tab.EffectiveTitle,
             Content = (PaneHost)tab.PaneHost,
-            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab),
+            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
             DataContext = tab,
         };
         item.HeaderTemplate = BuildHeaderTemplate();
@@ -84,15 +85,46 @@ internal sealed partial class TabHost : UserControl
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
 
-    private void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
+    private async void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
         if (args.Item is TabViewItem item)
         {
             foreach (var (model, vi) in _itemByModel)
             {
-                if (vi == item) { _manager.CloseTab(model); return; }
+                if (vi == item) { await RequestCloseTabAsync(model); return; }
             }
         }
+    }
+
+    /// <summary>
+    /// Single entry point for every "close this tab" path: per-tab
+    /// X button, middle-click, context-menu Close, and the keyboard
+    /// chord (via <see cref="MainWindow"/>'s accelerator handler).
+    /// Shows the multi-pane confirmation dialog when needed and only
+    /// then calls <see cref="TabManager.CloseTab"/>. Centralising
+    /// here keeps every close path consistent.
+    /// </summary>
+    public async Task RequestCloseTabAsync(TabModel tab)
+    {
+        // TODO(config): confirm-close-multi-pane (bool, default true)
+        const bool confirmCloseMultiPane = true;
+
+        var paneCount = tab.PaneHost.PaneCount;
+        if (confirmCloseMultiPane && paneCount > 1)
+        {
+            var dlg = new ContentDialog
+            {
+                Title = "Close tab?",
+                Content = $"This tab has {paneCount} panes. Close all of them?",
+                PrimaryButtonText = "Close all",
+                SecondaryButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Secondary,
+                XamlRoot = XamlRoot,
+            };
+            var res = await dlg.ShowAsync();
+            if (res != ContentDialogResult.Primary) return;
+        }
+        _manager.CloseTab(tab);
     }
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
 using Microsoft.UI.Xaml.Controls;
 
@@ -16,12 +18,17 @@ namespace Ghostty.Tabs;
 /// </summary>
 internal static class TabContextMenuBuilder
 {
-    public static MenuFlyout Build(TabManager manager, TabModel tab)
+    public static MenuFlyout Build(TabManager manager, TabModel tab, Func<TabModel, Task> requestClose)
     {
         var flyout = new MenuFlyout();
 
+        // The Close item routes through requestClose so it shows the
+        // multi-pane confirmation dialog when needed. Close Others
+        // and Close Tabs to the Right are explicit user actions on
+        // non-active tabs and skip the prompt — that matches how
+        // VSCode and Windows Terminal behave.
         var close = new MenuFlyoutItem { Text = "Close" };
-        close.Click += (_, _) => manager.CloseTab(tab);
+        close.Click += async (_, _) => await requestClose(tab);
         flyout.Items.Add(close);
 
         var closeOthers = new MenuFlyoutItem { Text = "Close Others" };
