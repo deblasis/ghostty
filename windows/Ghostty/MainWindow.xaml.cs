@@ -75,16 +75,29 @@ public sealed partial class MainWindow : Window
         // and leave the window with a transparent black backdrop. Probe
         // MicaController.IsSupported() and skip the backdrop on unsupported
         // hosts; XAML's default Window background takes over.
-        //
-        // Custom title bar with ExtendsContentIntoTitleBar comes in a
-        // follow-up PR so we can focus on the terminal plumbing here.
         if (MicaController.IsSupported())
             SystemBackdrop = new MicaBackdrop();
+
+        // Extend content into the title bar: remove the system-drawn
+        // title bar chrome and let TabHost's TabView strip render
+        // where the title bar used to be. The caption buttons
+        // (min / max / close) are still drawn by the system on the
+        // right; TabView's TabStripFooter reserves room for them.
+        // Must be set before the TabHost is parented so the content
+        // area is sized without the default title bar row.
+        ExtendsContentIntoTitleBar = true;
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
         _tabHost = new TabHost(_tabManager);
         RootGrid.Children.Add(_tabHost);
+
+        // Declare the drag region AFTER _tabHost is in the visual
+        // tree so DragRegion (the TabStripFooter Grid) is live.
+        // Clicking anywhere in that Grid drags the window; the tabs
+        // themselves are hit-test targets and remain interactive.
+        SetTitleBar(_tabHost.DragRegion as FrameworkElement);
+
         InstallPaneAccelerators();
 
         _tabManager.ActiveTabChanged += (_, _) => HookActiveTabTitle();

@@ -52,7 +52,27 @@
             AddTabButtonClick="OnAddTabButtonClick"
             TabCloseRequested="OnTabCloseRequested"
             SelectionChanged="OnSelectionChanged"
-            TabDragCompleted="OnTabDragCompleted"/>
+            TabDragCompleted="OnTabDragCompleted">
+            <!--
+                TabStripFooter is a right-side spacer that reserves
+                room for the OS caption buttons (min / max / close)
+                when the window extends content into the title bar.
+                MainWindow calls SetTitleBar(CustomDragRegion) so
+                clicks on the empty strip area drag the window.
+
+                Width is hardcoded to 146 DIPs here which matches the
+                standard Windows 11 caption button width at 100%
+                scale. TODO(titlebar): bind to
+                AppWindow.TitleBar.RightInset / RasterizationScale at
+                runtime so the footer tracks DPI and high-contrast
+                variants that resize the caption buttons.
+            -->
+            <controls:TabView.TabStripFooter>
+                <Grid x:Name="CustomDragRegion"
+                      MinWidth="146"
+                      Background="Transparent"/>
+            </controls:TabView.TabStripFooter>
+        </controls:TabView>
 
         <Grid x:Name="PaneHostContainer"
               Grid.Row="1"

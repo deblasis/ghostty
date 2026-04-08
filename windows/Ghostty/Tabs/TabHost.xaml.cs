@@ -23,6 +23,14 @@ internal sealed partial class TabHost : UserControl
     private readonly Dictionary<TabModel, TabViewItem> _itemByModel = new();
     private bool _suppressSelectionEvent;
 
+    /// <summary>
+    /// The Grid that sits in the TabView's TabStripFooter and
+    /// reserves room for the OS caption buttons. <see cref="MainWindow"/>
+    /// passes this to <c>Window.SetTitleBar</c> so clicks on the
+    /// empty strip area drag the window.
+    /// </summary>
+    public UIElement DragRegion => CustomDragRegion;
+
     public TabHost(TabManager manager)
     {
         InitializeComponent();
