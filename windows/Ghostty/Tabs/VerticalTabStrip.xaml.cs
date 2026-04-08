@@ -97,6 +97,13 @@ internal sealed partial class VerticalTabStrip : UserControl
         if (!expanded)
         {
             // Collapsed 40x40: centered icon, no title, no close button.
+            // Foreground is set explicitly: FontIcon inside a
+            // ListViewItem inherits from TextControlForeground by
+            // default, and that brush can resolve to nothing visible
+            // against the Mica / dark strip background in this
+            // deeply-nested content path. Pinning the brush to the
+            // canonical dark-theme primary text resource keeps the
+            // glyph visible without hardcoding a raw color.
             row.Width = 40;
             row.Height = 40;
             row.Content = new FontIcon
@@ -104,6 +111,7 @@ internal sealed partial class VerticalTabStrip : UserControl
                 FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
                 Glyph = "\uE756", // CommandPrompt
                 FontSize = 16,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -118,11 +126,13 @@ internal sealed partial class VerticalTabStrip : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
 
+        var fgBrush = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
         var icon = new FontIcon
         {
             FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
             Glyph = "\uE756",
             FontSize = 14,
+            Foreground = fgBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -132,6 +142,7 @@ internal sealed partial class VerticalTabStrip : UserControl
         var title = new TextBlock
         {
             Text = tab.EffectiveTitle,
+            Foreground = fgBrush,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Margin = new Thickness(4, 0, 4, 0),
