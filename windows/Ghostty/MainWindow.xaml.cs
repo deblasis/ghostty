@@ -2,10 +2,14 @@ using System;
 using System.Runtime.InteropServices;
 using Ghostty.Controls;
 using Ghostty.Hosting;
+using Ghostty.Input;
 using Ghostty.Panes;
 using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.System;
 using WinRT.Interop;
 
 namespace Ghostty;
@@ -15,6 +19,16 @@ public sealed partial class MainWindow : Window
     private readonly GhosttyHost _host;
     private readonly PaneHost _paneHost;
     private LeafPane? _activeLeaf;
+
+    // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
+    // fires accelerator Invoked twice for a single key event when the
+    // accelerator is registered on a parent of the focused element,
+    // even with args.Handled = true and ScopeOwner explicitly set.
+    // Until we track down the root cause, ignore identical actions
+    // within a tight time window.
+    private PaneAction? _lastAcceleratorAction;
+    private DateTime _lastAcceleratorTime = DateTime.MinValue;
+    private static readonly TimeSpan AcceleratorDedupWindow = TimeSpan.FromMilliseconds(150);
 
     // Win32 interop for the window class background brush. WinUI 3 hosts
     // the XAML island inside a Win32 HWND whose WNDCLASS hbrBackground
@@ -57,11 +71,19 @@ public sealed partial class MainWindow : Window
 
         _paneHost = new PaneHost(_host, terminalFactory: () => new TerminalControl());
         RootGrid.Children.Add(_paneHost);
+        InstallPaneAccelerators();
 
         _paneHost.LeafFocused += OnLeafFocused;
         _paneHost.LastLeafClosed += (_, _) => Close();
 
-        Closed += (_, _) => _host.Dispose();
+        Closed += (_, _) =>
+        {
+            // Surface lifetime is decoupled from Loaded/Unloaded
+            // (see TerminalControl.DisposeSurface), so we have to
+            // free all leaves explicitly before tearing down the host.
+            _paneHost.DisposeAllLeaves();
+            _host.Dispose();
+        };
     }
 
     /// <summary>
@@ -82,5 +104,72 @@ public sealed partial class MainWindow : Window
     private void OnActiveLeafTitleChanged(object? sender, string title)
     {
         Title = title;
+    }
+
+    /// <summary>
+    /// Install one <see cref="KeyboardAccelerator"/> per binding from
+    /// <see cref="KeyBindings.Default"/>. Each accelerator dispatches
+    /// through <see cref="PaneActionRouter.Invoke"/>, so adding a new
+    /// pane chord is one line in <see cref="KeyBindings.Default"/> and
+    /// one case in <see cref="PaneActionRouter.Invoke"/>.
+    ///
+    /// Why KeyboardAccelerators rather than KeyDown / PreviewKeyDown:
+    /// WinUI 3 routed key events ALL bubble (despite the "Preview"
+    /// naming inherited from WPF, PreviewKeyDown does not tunnel). The
+    /// focused TerminalControl receives KeyDown first, and would
+    /// forward the chord to libghostty if we did nothing. Accelerators
+    /// fire AFTER routed key events but BEFORE the framework gives up,
+    /// AND only when the focused element has not marked the event
+    /// handled - so TerminalControl actively short-circuits known
+    /// chords (it asks the same KeyBindings registry) to let the
+    /// accelerator fire.
+    ///
+    /// Bindings live in <see cref="KeyBindings.Default"/>; a future PR
+    /// will replace that with a config-driven loader and nothing here
+    /// has to change.
+    /// </summary>
+    private void InstallPaneAccelerators()
+    {
+        foreach (var binding in KeyBindings.Default.All)
+        {
+            var accel = new KeyboardAccelerator
+            {
+                Modifiers = binding.Modifiers,
+                Key = binding.Key,
+                // Pin the accelerator scope to _paneHost. Without this,
+                // WinUI 3 dispatches the same accelerator twice for
+                // a single key event (once from the focused element's
+                // search up the tree, once from the host search down),
+                // and Split runs twice per Ctrl+Shift+D.
+                ScopeOwner = _paneHost,
+            };
+            accel.Invoked += (_, args) =>
+            {
+                args.Handled = true;
+                // WinUI 3 fires Invoked twice per key event for an
+                // accelerator on a parent of the focused element, even
+                // with args.Handled = true and ScopeOwner set. Until
+                // we find the root cause, drop the second dispatch
+                // within a tight time window.
+                var now = DateTime.UtcNow;
+                if (_lastAcceleratorAction == binding.Action
+                    && now - _lastAcceleratorTime < AcceleratorDedupWindow)
+                {
+                    return;
+                }
+                _lastAcceleratorAction = binding.Action;
+                _lastAcceleratorTime = now;
+                PaneActionRouter.Invoke(binding.Action, _paneHost);
+            };
+            _paneHost.KeyboardAccelerators.Add(accel);
+        }
+
+        // Suppress the auto-generated "Ctrl+Shift+D" tooltip that
+        // KeyboardAccelerators normally show on hover. PaneHost fills
+        // the window content area, so the tooltip would float over the
+        // terminal grid for any chord we register. Set once on the
+        // host since the placement mode is per-element, not
+        // per-accelerator.
+        _paneHost.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
     }
 }

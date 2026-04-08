@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
 
 namespace Ghostty.Panes;
@@ -39,6 +40,34 @@ internal sealed class PaneHost : UserControl
 {
     private readonly GhosttyHost _host;
     private readonly Func<TerminalControl> _terminalFactory;
+
+    // Pane highlight system, rendered as an overlay Canvas above the
+    // split tree. Two layers of chrome:
+    //
+    //   - _activeBorderRect: a 1.5px accent-colored border tracking
+    //     the active leaf's bounds. Positioned via TransformToVisual.
+    //   - _dimRects: one semi-transparent dark rectangle per INACTIVE
+    //     leaf, positioned over each inactive leaf's bounds. Gives
+    //     the visual effect of the active pane being "brighter" than
+    //     its siblings without touching the terminal contents.
+    //
+    // Doing highlights as an overlay (instead of per-leaf Borders
+    // inside the split tree) avoids splitter occlusion: a splitter in
+    // a parent Grid is not a sibling of a leaf's chrome and cannot
+    // be defeated with Canvas.ZIndex. The overlay sits above
+    // everything and is tracked via TransformToVisual on each layout.
+    private readonly Canvas _highlightOverlay;
+    private readonly Rectangle _activeBorderRect;
+    private readonly Dictionary<LeafPane, Rectangle> _dimRects = new();
+    private FrameworkElement _treeRoot = null!; // assigned in ctor before use
+
+    private static readonly Brush ActiveBorderBrush =
+        new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
+    // Subtle dark film over inactive panes. ~22% black matches the
+    // weight of VSCode's inactive editor group tint and is visible
+    // against #0C0C0C terminal bg without washing out text.
+    private static readonly Brush InactiveDimBrush =
+        new SolidColorBrush(Windows.UI.Color.FromArgb(56, 0, 0, 0));
 
     private PaneNode _root;
     private LeafPane _activeLeaf;
@@ -74,12 +103,43 @@ internal sealed class PaneHost : UserControl
         _host = host;
         _terminalFactory = terminalFactory;
 
+        _activeBorderRect = new Rectangle
+        {
+            Stroke = ActiveBorderBrush,
+            StrokeThickness = 1.5,
+            Fill = null,
+            IsHitTestVisible = false,
+        };
+        _highlightOverlay = new Canvas
+        {
+            IsHitTestVisible = false,
+        };
+        _highlightOverlay.Children.Add(_activeBorderRect);
+        // Force the overlay above any sibling in the host Grid so
+        // the chrome never gets composited under the terminal.
+        Canvas.SetZIndex(_highlightOverlay, 999);
+
         // Initial single leaf.
         var firstTerminal = CreateTerminal();
         _activeLeaf = new LeafPane(firstTerminal);
         _root = _activeLeaf;
 
-        Content = BuildVisual(_root);
+        // Two-layer host Grid: the actual split tree below, the
+        // highlight overlay above. The overlay Canvas does not
+        // capture pointer events (IsHitTestVisible=false), so the
+        // tree below receives all input normally.
+        var hostGrid = new Grid();
+        _treeRoot = BuildVisual(_root);
+        hostGrid.Children.Add(_treeRoot);
+        hostGrid.Children.Add(_highlightOverlay);
+        Content = hostGrid;
+
+        // Reposition the highlight whenever layout settles. Cheap;
+        // single TransformToVisual + four set-property calls. Covers
+        // window resize, splitter drag, and the post-Split layout
+        // pass that finally exposes new-leaf bounds.
+        LayoutUpdated += (_, _) => UpdateHighlightPosition();
+
         // Defer the first LeafFocused so subscribers (MainWindow) can
         // wire up before the event fires.
         Loaded += (_, _) => LeafFocused?.Invoke(this, _activeLeaf);
@@ -93,14 +153,77 @@ internal sealed class PaneHost : UserControl
     /// </summary>
     public void Split(PaneOrientation orientation)
     {
+        var oldActive = _activeLeaf;
         var newTerminal = CreateTerminal();
         var newLeaf = new LeafPane(newTerminal);
-        _root = PaneTree.Split(_root, _activeLeaf, newLeaf, orientation);
+        _root = PaneTree.Split(_root, oldActive, newLeaf, orientation);
         _activeLeaf = newLeaf;
-        Rebuild();
-        // Focus moves on the next layout pass; the control is not in
-        // the tree yet at this exact instant.
-        DispatcherQueue.TryEnqueue(() => newTerminal.Focus(FocusState.Programmatic));
+
+        // INCREMENTAL rebuild: do NOT rebuild the entire tree from
+        // scratch. A full rebuild detaches every existing leaf from
+        // its current Grid and re-attaches it to a freshly built
+        // Grid in the same call stack, which trips a "child still
+        // has a parent" COMException in WinUI 3 once the tree gets
+        // more than two levels deep.
+        //
+        // Instead, find the leaf's current Grid parent, remove just
+        // that one leaf from its slot, build a small sub-Grid for
+        // the new SplitPane (which contains oldActive + newLeaf),
+        // and put the sub-Grid in the slot the old leaf occupied.
+        // Every other leaf in the window stays in its place,
+        // completely untouched.
+        //
+        // Special case: if oldActive WAS the root (single-pane window
+        // before this split), there is no Grid parent. Fall back to
+        // a full rebuild via the existing path - the single-pane to
+        // two-pane case has no nested tree and works fine that way.
+        var splitNode = (SplitPane)_root;
+        // _root is the new SplitPane only if oldActive was the root.
+        // Otherwise we need to find the new SplitPane that wraps
+        // oldActive (which is now its Child1 by construction in
+        // PaneTree.Split).
+        SplitPane? newSubSplit;
+        if (ReferenceEquals(_root, splitNode) && ReferenceEquals(splitNode.Child1, oldActive))
+        {
+            // oldActive was the root and the new split IS the new root.
+            newSubSplit = splitNode;
+        }
+        else
+        {
+            var found = PaneTree.FindParent(_root, oldActive);
+            newSubSplit = found?.Parent;
+        }
+
+        if (newSubSplit is null || oldActive.Terminal.Parent is not Grid currentParent)
+        {
+            // Root replacement (oldActive was the entire content of
+            // PaneHost), or some unexpected state. Full rebuild handles
+            // both cases correctly because there is no nested visual
+            // tree to confuse WinUI 3's parent tracking.
+            Rebuild();
+        }
+        else
+        {
+            // In-place replacement of the single old-active leaf with
+            // a fresh sub-Grid for the new SplitPane.
+            int col = Grid.GetColumn(oldActive.Terminal);
+            int row = Grid.GetRow(oldActive.Terminal);
+            currentParent.Children.Remove(oldActive.Terminal);
+            var subGrid = (Grid)BuildVisual(newSubSplit);
+            Grid.SetColumn(subGrid, col);
+            Grid.SetRow(subGrid, row);
+            currentParent.Children.Add(subGrid);
+        }
+
+        // Defer the highlight + focus until layout settles. The new
+        // leaf has zero ActualWidth/Height at this exact instant
+        // because the framework has not measured it yet, so a sync
+        // UpdateHighlightPosition would Collapse the overlay rect.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            newTerminal.Focus(FocusState.Programmatic);
+            UpdateHighlightPosition();
+        });
     }
 
     /// <summary>
@@ -115,6 +238,20 @@ internal sealed class PaneHost : UserControl
     }
 
     /// <summary>
+    /// Tear down every leaf's libghostty surface. Called by
+    /// <see cref="MainWindow"/> when the window is closing, since
+    /// surface lifetime is decoupled from <c>Unloaded</c> events and
+    /// the framework's natural teardown does not free them.
+    /// </summary>
+    public void DisposeAllLeaves()
+    {
+        foreach (var leaf in PaneTree.Leaves(_root))
+        {
+            leaf.Terminal.DisposeSurface();
+        }
+    }
+
+    /// <summary>
     /// Close a specific leaf. Used both by the keybinding (which closes
     /// <see cref="ActiveLeaf"/>) and by <see cref="TerminalControl.CloseRequested"/>
     /// from libghostty's close-surface callback.
@@ -124,12 +261,16 @@ internal sealed class PaneHost : UserControl
         // Detach the terminal from focus tracking BEFORE we drop it.
         leaf.Terminal.GotFocus -= OnTerminalGotFocus;
 
+        // Tear down the libghostty surface for the leaf being removed.
+        // The surface lifetime is decoupled from OnLoaded/OnUnloaded
+        // (see TerminalControl.DisposeSurface comment), so we have to
+        // do it explicitly here.
+        leaf.Terminal.DisposeSurface();
+
         var newRoot = PaneTree.Close(_root, leaf);
         if (newRoot is null)
         {
-            // Last leaf - tell MainWindow to close the window. The
-            // terminal's OnUnloaded will free its surface as soon as
-            // the window goes away.
+            // Last leaf - tell MainWindow to close the window.
             LastLeafClosed?.Invoke(this, EventArgs.Empty);
             return;
         }
@@ -141,6 +282,7 @@ internal sealed class PaneHost : UserControl
         var nextActive = PaneTree.FirstLeaf(newRoot);
         _activeLeaf = nextActive;
         Rebuild();
+        UpdateHighlightPosition();
         DispatcherQueue.TryEnqueue(() => nextActive.Terminal.Focus(FocusState.Programmatic));
     }
 
@@ -232,7 +374,97 @@ internal sealed class PaneHost : UserControl
         if (leaf is null) return;
         if (ReferenceEquals(leaf, _activeLeaf)) return;
         _activeLeaf = leaf;
+        UpdateHighlightPosition();
         LeafFocused?.Invoke(this, _activeLeaf);
+    }
+
+    /// <summary>
+    /// Reposition the highlight rectangle over the active leaf's
+    /// rendered bounds. Called from <see cref="LayoutUpdated"/> and
+    /// after structural changes (Split / Close). If the active leaf
+    /// has not laid out yet (zero size), the rect is hidden until the
+    /// next LayoutUpdated tick.
+    /// </summary>
+    /// <summary>
+    /// Reposition the active-border rect over the active leaf, and
+    /// reposition each inactive-dim rect over its corresponding leaf.
+    /// Rects with zero bounds are Collapsed (hidden); laid-out ones
+    /// are made Visible.
+    /// </summary>
+    private void UpdateHighlightPosition()
+    {
+        // Active border.
+        PositionOverlayOverLeaf(_activeBorderRect, _activeLeaf, insetForStroke: true);
+
+        // Dim rects: walk every current leaf. Active leaf's dim rect
+        // (if any) is hidden; every other leaf gets its dim rect
+        // positioned over its bounds. Leaves that no longer exist
+        // in the tree get their dim rects pruned.
+        var currentLeaves = PaneTree.Leaves(_root).ToHashSet();
+
+        // Prune stale entries (leaves that were closed).
+        var stale = _dimRects.Keys.Where(k => !currentLeaves.Contains(k)).ToList();
+        foreach (var leaf in stale)
+        {
+            _highlightOverlay.Children.Remove(_dimRects[leaf]);
+            _dimRects.Remove(leaf);
+        }
+
+        // Ensure every inactive leaf has a dim rect and position it.
+        foreach (var leaf in currentLeaves)
+        {
+            if (ReferenceEquals(leaf, _activeLeaf))
+            {
+                if (_dimRects.TryGetValue(leaf, out var active))
+                    active.Visibility = Visibility.Collapsed;
+                continue;
+            }
+
+            if (!_dimRects.TryGetValue(leaf, out var dim))
+            {
+                dim = new Rectangle
+                {
+                    Fill = InactiveDimBrush,
+                    IsHitTestVisible = false,
+                };
+                _dimRects[leaf] = dim;
+                // Insert BEFORE the active-border rect so the border
+                // still draws on top of its neighbor's dim film.
+                _highlightOverlay.Children.Insert(0, dim);
+            }
+
+            PositionOverlayOverLeaf(dim, leaf, insetForStroke: false);
+        }
+    }
+
+    private void PositionOverlayOverLeaf(Rectangle rect, LeafPane leaf, bool insetForStroke)
+    {
+        var ctl = leaf.Terminal;
+        if (ctl.ActualWidth <= 0 || ctl.ActualHeight <= 0)
+        {
+            rect.Visibility = Visibility.Collapsed;
+            return;
+        }
+        Rect bounds;
+        try
+        {
+            var transform = ctl.TransformToVisual(this);
+            bounds = transform.TransformBounds(new Rect(0, 0, ctl.ActualWidth, ctl.ActualHeight));
+        }
+        catch
+        {
+            rect.Visibility = Visibility.Collapsed;
+            return;
+        }
+        // For the stroked active border, inset by half the stroke
+        // thickness so the 1.5px stroke draws entirely INSIDE the
+        // leaf bounds. For dim fills, use the full rect.
+        var inset = insetForStroke ? 0.75 : 0.0;
+        Canvas.SetLeft(rect, bounds.X + inset);
+        Canvas.SetTop(rect, bounds.Y + inset);
+        rect.Width = Math.Max(0, bounds.Width - inset * 2);
+        rect.Height = Math.Max(0, bounds.Height - inset * 2);
+        rect.Visibility = Visibility.Visible;
     }
 
     private void OnTerminalCloseRequested(object? sender, EventArgs e)
@@ -245,7 +477,15 @@ internal sealed class PaneHost : UserControl
 
     private void Rebuild()
     {
-        Content = BuildVisual(_root);
+        // Swap the tree visual inside the existing host Grid so the
+        // overlay Canvas (the second child) stays on top across
+        // rebuilds. Only used for the root-replacement case in
+        // Split (and for Close); incremental splits mutate the
+        // visual tree directly without a full rebuild.
+        if (Content is not Grid hostGrid) return;
+        hostGrid.Children.Remove(_treeRoot);
+        _treeRoot = BuildVisual(_root);
+        hostGrid.Children.Insert(0, _treeRoot);
     }
 
     private FrameworkElement BuildVisual(PaneNode node)
@@ -339,9 +579,38 @@ internal sealed class PaneHost : UserControl
 
     private static void DetachFromParent(FrameworkElement child)
     {
-        if (child.Parent is Panel parent)
+        // A UIElement can only have one parent. Before reparenting a
+        // stable TerminalControl into a freshly built Grid, we have to
+        // explicitly remove it from wherever it currently lives. Three
+        // parent shapes show up in this app:
+        //
+        //   1. Initial state: PaneHost.Content holds the leaf's
+        //      Terminal directly (UserControl is a ContentControl, so
+        //      its Content slot is the parent).
+        //   2. After any split: the leaf's Terminal lives in a Grid's
+        //      Children collection.
+        //   3. Hypothetical Border wrapper: never used today, listed
+        //      for completeness in case we wrap leaves later.
+        switch (child.Parent)
         {
-            parent.Children.Remove(child);
+            case Panel panel:
+                panel.Children.Remove(child);
+                break;
+            // UserControl is the case that matters in practice: PaneHost
+            // is a UserControl and its Content slot directly holds the
+            // first leaf's TerminalControl until the first split. In
+            // WinUI 3 UserControl derives from Control (not from
+            // ContentControl as in WPF), so the ContentControl branch
+            // below would silently miss this case.
+            case UserControl userControl when ReferenceEquals(userControl.Content, child):
+                userControl.Content = null;
+                break;
+            case ContentControl contentControl when ReferenceEquals(contentControl.Content, child):
+                contentControl.Content = null;
+                break;
+            case Border border when ReferenceEquals(border.Child, child):
+                border.Child = null;
+                break;
         }
     }
 
