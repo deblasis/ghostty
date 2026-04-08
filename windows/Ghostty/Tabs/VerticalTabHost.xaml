@@ -34,6 +34,13 @@
 
             <ContentPresenter x:Name="StripHost" Grid.Column="0"/>
 
+            <!-- Canvas host for the drag handle, positioned on the
+                 right edge of the strip column so it falls just
+                 inside the boundary with the content column. -->
+            <Canvas x:Name="HandleHost"
+                    Grid.Column="0"
+                    HorizontalAlignment="Right"/>
+
             <Grid x:Name="PaneHostContainer"
                   Grid.Column="1"
                   HorizontalAlignment="Stretch"

@@ -24,6 +24,7 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
     private readonly TabManager _manager;
     private readonly VerticalTabStrip _strip;
     private readonly GridLengthProxy _columnProxy;
+    private readonly ColumnDragHandle _dragHandle;
 
     // TODO(config): vertical-tabs-width (int px, default 220)
     private const double ExpandedWidth = 220;
@@ -44,6 +45,28 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         _strip = new VerticalTabStrip(manager);
         _strip.CloseRequestedFromRow += async tab => await RequestCloseTabAsync(tab);
         StripHost.Content = _strip;
+
+        // Drag handle for live resize in pinned-expanded mode.
+        // Hidden by default; TogglePinned shows it when entering
+        // the pinned state and hides it on collapse.
+        _dragHandle = new ColumnDragHandle(
+            onWidthChanged: w =>
+            {
+                // Live drag: set column width and proxy backing in
+                // lockstep so the next tween starts from the right
+                // value.
+                StripColumn.Width = new GridLength(w);
+                _columnProxy.Width = w;
+            },
+            readCurrentWidth: () => StripColumn.Width.Value)
+        {
+            Visibility = Visibility.Collapsed,
+            Height = double.NaN, // stretch via Canvas parent sizing
+        };
+        HandleHost.Children.Add(_dragHandle);
+        // Bind the handle's height to the HandleHost size so it
+        // spans the whole strip vertically.
+        HandleHost.SizeChanged += (_, e) => _dragHandle.Height = e.NewSize.Height;
 
         foreach (var t in _manager.Tabs) AddPane(t);
         SwapActivePane();
@@ -68,6 +91,7 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         _pinnedExpanded = !_pinnedExpanded;
         _strip.IsExpanded = _pinnedExpanded;
         AnimateColumnWidth(_pinnedExpanded ? ExpandedWidth : 40);
+        _dragHandle.Visibility = _pinnedExpanded ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void AnimateColumnWidth(double target)
