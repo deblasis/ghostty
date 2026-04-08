@@ -39,10 +39,21 @@ internal sealed partial class TabHost : UserControl
 
     private void AddItem(TabModel tab)
     {
+        // TabViewItemContentPresenter does NOT auto-stretch an
+        // imperatively-assigned UserControl: without explicit
+        // HorizontalAlignment/VerticalAlignment Stretch the content
+        // is measured with its DesiredSize and the terminal collapses
+        // to a single cell tall. PaneHost from #163 inherits the
+        // default alignment which is Stretch on paper but does not
+        // propagate through the TabViewItem content path.
+        var paneHost = (PaneHost)tab.PaneHost;
+        paneHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+        paneHost.VerticalAlignment = VerticalAlignment.Stretch;
+
         var item = new TabViewItem
         {
             Header = tab.EffectiveTitle,
-            Content = (PaneHost)tab.PaneHost,
+            Content = paneHost,
             ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
             DataContext = tab,
         };
