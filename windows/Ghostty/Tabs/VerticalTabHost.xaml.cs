@@ -7,7 +7,6 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media.Animation;
 
 namespace Ghostty.Tabs;
 
@@ -27,7 +26,6 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
     private readonly TabManager _manager;
     private readonly GhosttyHost? _host;
     private readonly VerticalTabStrip _strip;
-    private readonly GridLengthProxy _columnProxy;
     private readonly ColumnDragHandle _dragHandle;
 
     // TODO(config): vertical-tabs-width (int px, default 220)
@@ -54,9 +52,6 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         _manager = manager;
         _host = host;
 
-        _columnProxy = new GridLengthProxy(StripColumn);
-        _columnProxy.Width = StripColumn.Width.Value;
-
         _strip = new VerticalTabStrip(manager);
         _strip.CloseRequestedFromRow += async tab => await RequestCloseTabAsync(tab);
         StripHost.Content = _strip;
@@ -65,14 +60,7 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         // Hidden by default; TogglePinned shows it when entering
         // the pinned state and hides it on collapse.
         _dragHandle = new ColumnDragHandle(
-            onWidthChanged: w =>
-            {
-                // Live drag: set column width and proxy backing in
-                // lockstep so the next tween starts from the right
-                // value.
-                StripColumn.Width = new GridLength(w);
-                _columnProxy.Width = w;
-            },
+            onWidthChanged: w => StripColumn.Width = new GridLength(w),
             readCurrentWidth: () => StripColumn.Width.Value)
         {
             Visibility = Visibility.Collapsed,
@@ -125,28 +113,45 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
 
     private void AnimateColumnWidth(double target)
     {
-        var anim = new DoubleAnimation
-        {
-            To = target,
-            Duration = new Duration(TimeSpan.FromMilliseconds(150)),
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
-        };
-        Storyboard.SetTarget(anim, _columnProxy);
-        Storyboard.SetTargetProperty(anim, "Width");
+        // WinUI 3's Storyboard + GridLengthProxy combination does
+        // not resolve: Storyboard.TargetProperty cannot find 'Width'
+        // on a plain DependencyObject held as a field. The target
+        // resolver in WinUI 3 expects a named XAML element or a
+        // member of a well-known framework type.
+        //
+        // Drive the tween manually with a DispatcherQueueTimer at
+        // ~60 fps instead. Quadratic ease-out matches what the
+        // Storyboard version would have produced. Simpler and no
+        // resolver magic.
+        var start = StripColumn.Width.Value;
+        var startTime = DateTime.UtcNow;
+        var duration = TimeSpan.FromMilliseconds(150);
 
-        var sb = new Storyboard();
-        sb.Children.Add(anim);
-        sb.Completed += (_, _) =>
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(16);
+        timer.IsRepeating = true;
+        timer.Tick += (t, _) =>
         {
-            // Reflow the terminal once. The libghostty resize call
-            // is driven by TerminalControl.OnSizeChanged which fires
-            // from the panel's LayoutUpdated. Forcing a layout pass
-            // here ensures that fires exactly once for the final
-            // dimensions rather than 10x during the tween.
-            PaneHostContainer.InvalidateMeasure();
-            PaneHostContainer.UpdateLayout();
+            var elapsedMs = (DateTime.UtcNow - startTime).TotalMilliseconds;
+            var progress = Math.Min(1.0, elapsedMs / duration.TotalMilliseconds);
+            // Ease-out quadratic: 1 - (1 - p)^2
+            var eased = 1 - (1 - progress) * (1 - progress);
+            var current = start + (target - start) * eased;
+            StripColumn.Width = new GridLength(current);
+
+            if (progress >= 1.0)
+            {
+                t.Stop();
+                // Reflow the terminal once at the final size
+                // rather than on every tick. libghostty's resize
+                // is driven by the panel's LayoutUpdated chain,
+                // so forcing a layout pass here makes that fire
+                // exactly once with the settled dimensions.
+                PaneHostContainer.InvalidateMeasure();
+                PaneHostContainer.UpdateLayout();
+            }
         };
-        sb.Begin();
+        timer.Start();
     }
 
     private void AddPane(TabModel tab)

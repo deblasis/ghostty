@@ -54,7 +54,7 @@
         <Canvas x:Name="AccentOverlay" Grid.Row="1" IsHitTestVisible="False">
             <Rectangle x:Name="AccentBar"
                        Width="3"
-                       Fill="{ThemeResource SystemAccentColorBrush}"
+                       Fill="{ThemeResource AccentFillColorDefaultBrush}"
                        IsHitTestVisible="False"/>
         </Canvas>
     </Grid>
