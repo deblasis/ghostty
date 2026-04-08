@@ -17,11 +17,13 @@ namespace Ghostty.Tabs;
 /// Vertical tabs are out of scope for this PR — they come in plan 2
 /// as a sibling user control sharing this same TabManager.
 /// </summary>
-internal sealed partial class TabHost : UserControl
+internal sealed partial class TabHost : UserControl, ITabHost
 {
     private readonly TabManager _manager;
     private readonly Dictionary<TabModel, TabViewItem> _itemByModel = new();
     private bool _suppressSelectionEvent;
+
+    public FrameworkElement HostElement => this;
 
     /// <summary>
     /// The Grid that sits in the TabView's TabStripFooter and

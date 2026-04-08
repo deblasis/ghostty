@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly GhosttyHost _host;
     private readonly PaneHostFactory _factory;
     private readonly TabManager _tabManager;
-    private readonly TabHost _tabHost;
+    private readonly ITabHost _tabHost;
     private LeafPane? _activeLeaf;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
@@ -89,8 +89,8 @@ public sealed partial class MainWindow : Window
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
-        _tabHost = new TabHost(_tabManager);
-        RootGrid.Children.Add(_tabHost);
+        _tabHost = CreateTabHost(_tabManager);
+        RootGrid.Children.Add(_tabHost.HostElement);
 
         // Declare the drag region AFTER _tabHost is in the visual
         // tree so DragRegion (the TabStripFooter Grid) is live.
@@ -115,6 +115,18 @@ public sealed partial class MainWindow : Window
             foreach (var t in _tabManager.Tabs) t.PaneHost.DisposeAllLeaves();
             _host.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Pick which <see cref="ITabHost"/> implementation to use.
+    /// Horizontal (<see cref="TabHost"/>) is the only option today;
+    /// the vertical layout is added in a later commit of this plan
+    /// and will branch here behind a stubbed <c>vertical-tabs</c>
+    /// config flag.
+    /// </summary>
+    private static ITabHost CreateTabHost(TabManager manager)
+    {
+        return new TabHost(manager);
     }
 
     /// <summary>
@@ -193,7 +205,7 @@ public sealed partial class MainWindow : Window
                 // single key event (once from the focused element's
                 // search up the tree, once from the host's search
                 // down), and Split runs twice per Ctrl+Shift+D.
-                ScopeOwner = _tabHost,
+                ScopeOwner = _tabHost.HostElement,
             };
             accel.Invoked += (_, args) =>
             {
@@ -210,11 +222,11 @@ public sealed partial class MainWindow : Window
                 _acceleratorFiredThisKeyDown = captured.Action;
                 PaneActionRouter.Invoke(captured.Action, _tabManager);
             };
-            _tabHost.KeyboardAccelerators.Add(accel);
+            _tabHost.HostElement.KeyboardAccelerators.Add(accel);
         }
 
-        _tabHost.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
-        _tabHost.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+        _tabHost.HostElement.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
+        _tabHost.HostElement.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
 
         // Listen for keyboard-driven full-tab close. Route through
         // TabHost.RequestCloseTabAsync so the confirmation dialog
