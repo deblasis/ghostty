@@ -54,6 +54,15 @@ internal sealed partial class TabHost : UserControl
         // The TabView item is a header-only placeholder. Content is
         // null on purpose; the actual terminal lives in
         // PaneHostContainer above.
+        //
+        // Header is a plain string rendered by TabView's default
+        // header template. A custom HeaderTemplate with a progress
+        // bar was considered but required a binding shape that does
+        // not work cleanly with TabModel.EffectiveTitle (computed
+        // property, no INPC). The progress indicator is stub
+        // infrastructure until plan 4 wires OSC 9;4 anyway, so
+        // dropping the template costs nothing here and plan 4 can
+        // reintroduce it with a binding-safe shape.
         var item = new TabViewItem
         {
             Header = tab.EffectiveTitle,
@@ -61,7 +70,6 @@ internal sealed partial class TabHost : UserControl
             ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
             DataContext = tab,
         };
-        item.HeaderTemplate = BuildHeaderTemplate();
         tab.PropertyChanged += (_, _) => RefreshHeader(item, tab);
         _itemByModel[tab] = item;
         TabViewControl.TabItems.Add(item);
@@ -194,23 +202,4 @@ internal sealed partial class TabHost : UserControl
         }
     }
 
-    private static DataTemplate BuildHeaderTemplate()
-    {
-        // Inline template: title text over a 2px progress bar bound
-        // to TabModel.Progress. The bar is invisible when Kind == None.
-        const string xaml =
-            "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"" +
-            "              xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
-            "    <StackPanel Orientation=\"Vertical\" Spacing=\"2\">" +
-            "        <TextBlock Text=\"{Binding EffectiveTitle}\" />" +
-            "        <ProgressBar" +
-            "            Height=\"2\"" +
-            "            Minimum=\"0\" Maximum=\"100\"" +
-            "            Value=\"{Binding Progress.Percent}\"" +
-            "            Visibility=\"{Binding Progress.State," +
-            "                         Converter={StaticResource ProgressVisibilityConverter}}\"/>" +
-            "    </StackPanel>" +
-            "</DataTemplate>";
-        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
-    }
 }
