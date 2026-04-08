@@ -1,10 +1,13 @@
 using System;
 using System.Runtime.InteropServices;
 using Ghostty.Controls;
+using Ghostty.Core.Panes;
+using Ghostty.Core.Tabs;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Panes;
-using Ghostty.Core.Panes;
+using Ghostty.Tabs;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -18,7 +21,9 @@ namespace Ghostty;
 public sealed partial class MainWindow : Window
 {
     private readonly GhosttyHost _host;
-    private readonly PaneHost _paneHost;
+    private readonly PaneHostFactory _factory;
+    private readonly TabManager _tabManager;
+    private readonly TabHost _tabHost;
     private LeafPane? _activeLeaf;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
@@ -76,41 +81,67 @@ public sealed partial class MainWindow : Window
         if (MicaController.IsSupported())
             SystemBackdrop = new MicaBackdrop();
 
-        _paneHost = new PaneHost(_host, terminalFactory: () => new TerminalControl());
-        RootGrid.Children.Add(_paneHost);
+        _factory = new PaneHostFactory(_host);
+        _tabManager = new TabManager(() => _factory.Create());
+        _tabHost = new TabHost(_tabManager);
+        RootGrid.Children.Add(_tabHost);
         InstallPaneAccelerators();
 
-        _paneHost.LeafFocused += OnLeafFocused;
-        _paneHost.LastLeafClosed += (_, _) => Close();
+        _tabManager.ActiveTabChanged += (_, _) => HookActiveTabTitle();
+        _tabManager.WindowTitleChanged += (_, _) => Title = _tabManager.ActiveTab.EffectiveTitle;
+        HookActiveTabTitle();
+
+        _tabManager.LastTabClosed += (_, _) => Close();
 
         Closed += (_, _) =>
         {
             // Surface lifetime is decoupled from Loaded/Unloaded
             // (see TerminalControl.DisposeSurface), so we have to
-            // free all leaves explicitly before tearing down the host.
-            _paneHost.DisposeAllLeaves();
+            // free every leaf in every tab explicitly before tearing
+            // down the libghostty host.
+            foreach (var t in _tabManager.Tabs) t.PaneHost.DisposeAllLeaves();
             _host.Dispose();
         };
     }
 
     /// <summary>
-    /// Re-route the window title when the active pane changes. We
-    /// unsubscribe the previous active leaf's TitleChanged so a
-    /// background pane setting its title via OSC does not affect the
-    /// window chrome.
+    /// Subscribe the active tab's active leaf to live title-change
+    /// updates and write the title into <see cref="TabModel.ShellReportedTitle"/>.
+    /// Re-runs every time the active tab changes or the active leaf
+    /// within the active tab changes. The leaf-title hook lives here
+    /// (not in <see cref="TabManager"/>) because it touches WinUI
+    /// types that Ghostty.Core cannot reach.
     /// </summary>
-    private void OnLeafFocused(object? sender, LeafPane leaf)
+    private void HookActiveTabTitle()
     {
         if (_activeLeaf is { } previous)
-            previous.Terminal().TitleChanged -= OnActiveLeafTitleChanged;
+            previous.Terminal().TitleChanged -= OnLiveTitleChanged;
+
+        var tab = _tabManager.ActiveTab;
+        var leaf = tab.PaneHost.ActiveLeaf;
         _activeLeaf = leaf;
-        leaf.Terminal().TitleChanged += OnActiveLeafTitleChanged;
-        Title = leaf.Terminal().CurrentTitle ?? "Ghostty";
+        leaf.Terminal().TitleChanged += OnLiveTitleChanged;
+        tab.ShellReportedTitle = leaf.Terminal().CurrentTitle;
+        Title = tab.EffectiveTitle;
+
+        tab.PaneHost.LeafFocused -= OnActiveTabLeafFocused;
+        tab.PaneHost.LeafFocused += OnActiveTabLeafFocused;
     }
 
-    private void OnActiveLeafTitleChanged(object? sender, string title)
+    private void OnActiveTabLeafFocused(object? sender, LeafPane leaf)
     {
-        Title = title;
+        if (_activeLeaf is { } previous)
+            previous.Terminal().TitleChanged -= OnLiveTitleChanged;
+        _activeLeaf = leaf;
+        leaf.Terminal().TitleChanged += OnLiveTitleChanged;
+        _tabManager.ActiveTab.ShellReportedTitle = leaf.Terminal().CurrentTitle;
+    }
+
+    private void OnLiveTitleChanged(object? sender, string title)
+    {
+        // TabManager raises WindowTitleChanged in response, which
+        // sets Title via the constructor's subscription.
+        _tabManager.ActiveTab.ShellReportedTitle = title;
     }
 
     /// <summary>
@@ -139,46 +170,75 @@ public sealed partial class MainWindow : Window
     {
         foreach (var binding in KeyBindings.Default.All)
         {
+            var captured = binding;
             var accel = new KeyboardAccelerator
             {
-                Modifiers = binding.Modifiers,
-                Key = binding.Key,
-                // Pin the accelerator scope to _paneHost. Without this,
-                // WinUI 3 dispatches the same accelerator twice for
-                // a single key event (once from the focused element's
-                // search up the tree, once from the host search down),
-                // and Split runs twice per Ctrl+Shift+D.
-                ScopeOwner = _paneHost,
+                Modifiers = captured.Modifiers,
+                Key = captured.Key,
+                // Pin the accelerator scope to _tabHost. Without this,
+                // WinUI 3 dispatches the same accelerator twice for a
+                // single key event (once from the focused element's
+                // search up the tree, once from the host's search
+                // down), and Split runs twice per Ctrl+Shift+D.
+                ScopeOwner = _tabHost,
             };
             accel.Invoked += (_, args) =>
             {
                 args.Handled = true;
                 // WinUI 3 fires Invoked twice per key event for an
-                // accelerator on a parent of the focused element, even
-                // with args.Handled = true and ScopeOwner set. Swallow
-                // the second dispatch inside the same physical keypress
-                // by remembering which action just fired; KeyUp on the
-                // host clears the flag, so the next KeyDown dispatches
-                // normally. See https://github.com/deblasis/ghostty/issues/165.
-                if (_acceleratorFiredThisKeyDown == binding.Action) return;
-                _acceleratorFiredThisKeyDown = binding.Action;
-                PaneActionRouter.Invoke(binding.Action, _paneHost);
+                // accelerator on a parent of the focused element even
+                // with Handled set and ScopeOwner pinned. Swallow the
+                // second dispatch inside the same physical keypress
+                // by remembering which action just fired; KeyUp on
+                // the host clears the flag so the next KeyDown
+                // dispatches normally.
+                // See https://github.com/deblasis/ghostty/issues/165.
+                if (_acceleratorFiredThisKeyDown == captured.Action) return;
+                _acceleratorFiredThisKeyDown = captured.Action;
+                PaneActionRouter.Invoke(captured.Action, _tabManager);
             };
-            _paneHost.KeyboardAccelerators.Add(accel);
+            _tabHost.KeyboardAccelerators.Add(accel);
         }
 
-        // Reset the per-keydown dedup flag on KeyUp so a user's rapid
-        // second Ctrl+Shift+D is not eaten as a framework dupe. Handled
-        // on the host (not the focused terminal) because KeyUp routes
-        // up the tree and the host is always on the path.
-        _paneHost.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
+        _tabHost.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
+        _tabHost.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
 
-        // Suppress the auto-generated "Ctrl+Shift+D" tooltip that
-        // KeyboardAccelerators normally show on hover. PaneHost fills
-        // the window content area, so the tooltip would float over the
-        // terminal grid for any chord we register. Set once on the
-        // host since the placement mode is per-element, not
-        // per-accelerator.
-        _paneHost.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+        // Listen for keyboard-driven full-tab close so we can show
+        // the confirmation dialog from a context with an XamlRoot.
+        // PaneActionRouter raises this event instead of calling
+        // CloseTab directly because it has no way to reach a XamlRoot.
+        PaneActionRouter.TabCloseRequestedFromKeyboard += async (_, mgr) =>
+        {
+            if (!ReferenceEquals(mgr, _tabManager)) return;
+            await ConfirmAndCloseActiveTabAsync();
+        };
+    }
+
+    /// <summary>
+    /// Show the multi-pane confirmation dialog (if configured) and
+    /// close the active tab.
+    /// </summary>
+    private async System.Threading.Tasks.Task ConfirmAndCloseActiveTabAsync()
+    {
+        // TODO(config): confirm-close-multi-pane (bool, default true)
+        const bool confirmCloseMultiPane = true;
+
+        var tab = _tabManager.ActiveTab;
+        var paneCount = tab.PaneHost.PaneCount;
+        if (confirmCloseMultiPane && paneCount > 1)
+        {
+            var dlg = new ContentDialog
+            {
+                Title = "Close tab?",
+                Content = $"This tab has {paneCount} panes. Close all of them?",
+                PrimaryButtonText = "Close all",
+                SecondaryButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Secondary,
+                XamlRoot = _tabHost.XamlRoot,
+            };
+            var res = await dlg.ShowAsync();
+            if (res != ContentDialogResult.Primary) return;
+        }
+        _tabManager.CloseTab(tab);
     }
 }
