@@ -2,5 +2,9 @@
 <Application
     x:Class="Ghostty.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tabs="using:Ghostty.Tabs">
+    <Application.Resources>
+        <tabs:ProgressVisibilityConverter x:Key="ProgressVisibilityConverter"/>
+    </Application.Resources>
 </Application>

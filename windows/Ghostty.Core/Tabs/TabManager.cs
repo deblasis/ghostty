@@ -35,6 +35,14 @@ internal sealed class TabManager
     public IReadOnlyList<TabModel> Tabs => _tabs;
     public TabModel ActiveTab => _activeTab;
 
+    /// <summary>
+    /// Index of <paramref name="tab"/> in <see cref="Tabs"/>, or -1
+    /// if not present. Provided here because <see cref="IReadOnlyList{T}"/>
+    /// has no IndexOf and the underlying ObservableCollection's
+    /// IndexOf is not exposed through the read-only surface.
+    /// </summary>
+    public int IndexOf(TabModel tab) => _tabs.IndexOf(tab);
+
     public event EventHandler<TabModel>? TabAdded;
     public event EventHandler<TabModel>? TabRemoved;
     public event EventHandler<(TabModel tab, int from, int to)>? TabMoved;
