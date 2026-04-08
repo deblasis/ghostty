@@ -37,7 +37,7 @@ namespace Ghostty.Panes;
 ///   maintain <see cref="ActiveLeaf"/>. <see cref="LeafFocused"/> fires
 ///   when ActiveLeaf changes so MainWindow can re-route the title.
 /// </summary>
-internal sealed class PaneHost : UserControl
+internal sealed class PaneHost : UserControl, IPaneHost
 {
     private readonly GhosttyHost _host;
     private readonly Func<TerminalControl> _terminalFactory;
@@ -98,6 +98,26 @@ internal sealed class PaneHost : UserControl
     /// nulling this.
     /// </summary>
     public LeafPane ActiveLeaf => _activeLeaf;
+
+    /// <summary>
+    /// Number of leaves in the tree. Implemented via a tree walk; the
+    /// trees are tiny (typically &lt;10 leaves) so this is cheap.
+    /// </summary>
+    public int PaneCount
+    {
+        get
+        {
+            int count = 0;
+            CountLeaves(_root, ref count);
+            return count;
+        }
+    }
+
+    private static void CountLeaves(PaneNode node, ref int count)
+    {
+        if (node is LeafPane) { count++; return; }
+        if (node is SplitPane sp) { CountLeaves(sp.Child1, ref count); CountLeaves(sp.Child2, ref count); }
+    }
 
     /// <param name="host">Per-window libghostty host. Passed to every
     /// <see cref="TerminalControl"/> created by this PaneHost.</param>
