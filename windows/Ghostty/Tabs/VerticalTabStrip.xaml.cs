@@ -82,6 +82,11 @@ internal sealed partial class VerticalTabStrip : UserControl
             DataContext = tab,
         };
         ApplyRowTemplate(row, tab, _isExpanded);
+        // Per-row Tapped handler bypasses ListView.ItemClick, which
+        // does not fire reliably when items are added imperatively
+        // as raw ListViewItem containers (ItemsControl semantics
+        // expect data models, not pre-built containers).
+        row.Tapped += (_, _) => _manager.Activate(tab);
         _itemByModel[tab] = row;
         TabList.Items.Add(row);
 
@@ -96,21 +101,22 @@ internal sealed partial class VerticalTabStrip : UserControl
     {
         if (!expanded)
         {
-            // Collapsed 40x40: centered icon, no title, no close button.
-            // Foreground is set explicitly: FontIcon inside a
-            // ListViewItem inherits from TextControlForeground by
-            // default, and that brush can resolve to nothing visible
-            // against the Mica / dark strip background in this
-            // deeply-nested content path. Pinning the brush to the
-            // canonical dark-theme primary text resource keeps the
-            // glyph visible without hardcoding a raw color.
+            // Collapsed 40x40: centered glyph, no title, no close button.
+            //
+            // Using a plain TextBlock with a capital letter rather
+            // than FontIcon + SymbolThemeFontFamily because the
+            // specific shell glyph in Segoe Fluent Icons / MDL2
+            // varies across Windows versions and the chosen code
+            // point may not exist in the resolved font. A letter
+            // placeholder is unambiguous until plan 3 wires real
+            // per-profile icons.
             row.Width = 40;
             row.Height = 40;
-            row.Content = new FontIcon
+            row.Content = new TextBlock
             {
-                FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-                Glyph = "\uE756", // CommandPrompt
+                Text = "T",
                 FontSize = 16,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -127,11 +133,11 @@ internal sealed partial class VerticalTabStrip : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
 
         var fgBrush = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-        var icon = new FontIcon
+        var icon = new TextBlock
         {
-            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-            Glyph = "\uE756",
+            Text = "T",
             FontSize = 14,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = fgBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -223,9 +229,4 @@ internal sealed partial class VerticalTabStrip : UserControl
     private void OnNewTabClick(object sender, RoutedEventArgs e) =>
         NewTabRequested?.Invoke(this, EventArgs.Empty);
 
-    private void OnTabRowClicked(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is ListViewItem row && row.DataContext is TabModel tab)
-            _manager.Activate(tab);
-    }
 }

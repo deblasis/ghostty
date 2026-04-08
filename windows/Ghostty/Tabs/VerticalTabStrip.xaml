@@ -27,9 +27,7 @@
 
         <ListView x:Name="TabList"
                   Grid.Row="1"
-                  SelectionMode="None"
-                  IsItemClickEnabled="True"
-                  ItemClick="OnTabRowClicked">
+                  SelectionMode="None">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="Padding" Value="0"/>
