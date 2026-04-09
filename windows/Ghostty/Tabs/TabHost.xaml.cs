@@ -6,6 +6,8 @@ using Ghostty.Core.Tabs;
 using Ghostty.Panes;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 
 namespace Ghostty.Tabs;
 
@@ -97,6 +99,14 @@ internal sealed partial class TabHost : UserControl, ITabHost
                 headerBar.IsIndeterminate = p.State == TabProgressState.Kind.Indeterminate;
                 if (p.State != TabProgressState.Kind.Indeterminate)
                     headerBar.Value = p.Percent;
+                // Mirror the taskbar indicator's coloring so the inline
+                // bar and the taskbar agree on Paused/Error.
+                headerBar.Foreground = p.State switch
+                {
+                    TabProgressState.Kind.Error  => new SolidColorBrush(Colors.Red),
+                    TabProgressState.Kind.Paused => new SolidColorBrush(Colors.Goldenrod),
+                    _ => (Brush)Application.Current.Resources["SystemAccentColorBrush"],
+                };
             }
         };
         tab.PropertyChanged += handler;

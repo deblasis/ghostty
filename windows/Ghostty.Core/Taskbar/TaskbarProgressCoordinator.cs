@@ -26,7 +26,7 @@ namespace Ghostty.Core.Taskbar;
 /// <c>DispatcherQueueTimer</c> to drive <see cref="Tick"/> on a
 /// 2-second cadence.
 /// </summary>
-internal sealed class TaskbarProgressCoordinator
+internal sealed class TaskbarProgressCoordinator : IDisposable
 {
     private const double SlotDurationMs = 2000.0;
 
@@ -34,19 +34,30 @@ internal sealed class TaskbarProgressCoordinator
     private readonly ITaskbarProgressSink _sink;
     private readonly Func<DateTime> _nowProvider;
     private readonly List<TabModel> _active = new();
+    private readonly EventHandler<TabModel> _onTabAdded;
+    private readonly EventHandler<TabModel> _onTabRemoved;
     private int _currentIndex = -1;
     private DateTime _slotStart;
     private bool _paused;
+    private bool _disposed;
 
     public TaskbarProgressCoordinator(TabManager manager, ITaskbarProgressSink sink, Func<DateTime> nowProvider)
     {
+        ArgumentNullException.ThrowIfNull(manager);
+        ArgumentNullException.ThrowIfNull(sink);
+        ArgumentNullException.ThrowIfNull(nowProvider);
+
         _manager = manager;
         _sink = sink;
         _nowProvider = nowProvider;
+        _slotStart = nowProvider();
+
+        _onTabAdded = (_, t) => Subscribe(t);
+        _onTabRemoved = (_, t) => { Unsubscribe(t); ForceRemove(t); };
 
         foreach (var t in _manager.Tabs) Subscribe(t);
-        _manager.TabAdded += (_, t) => Subscribe(t);
-        _manager.TabRemoved += (_, t) => { Unsubscribe(t); HandleProgressChange(t); };
+        _manager.TabAdded += _onTabAdded;
+        _manager.TabRemoved += _onTabRemoved;
     }
 
     public void Pause() => _paused = true;
@@ -74,6 +85,16 @@ internal sealed class TaskbarProgressCoordinator
         _sink.Write(_active[_currentIndex].Progress);
     }
 
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _manager.TabAdded -= _onTabAdded;
+        _manager.TabRemoved -= _onTabRemoved;
+        foreach (var t in _manager.Tabs) Unsubscribe(t);
+        _active.Clear();
+    }
+
     private void Subscribe(TabModel tab) => tab.PropertyChanged += OnTabPropertyChanged;
 
     private void Unsubscribe(TabModel tab) => tab.PropertyChanged -= OnTabPropertyChanged;
@@ -82,6 +103,39 @@ internal sealed class TaskbarProgressCoordinator
     {
         if (e.PropertyName != nameof(TabModel.Progress)) return;
         if (sender is TabModel t) HandleProgressChange(t);
+    }
+
+    /// <summary>
+    /// Called when a tab is removed from the manager. If the tab was
+    /// currently in the active list we force a "no progress" transition
+    /// so the state machine drops it cleanly — we can't trust
+    /// <see cref="TabModel.Progress"/> here because the closing tab may
+    /// still be mid-report.
+    /// </summary>
+    private void ForceRemove(TabModel tab)
+    {
+        if (!_active.Contains(tab)) return;
+        var wasCurrent = _active[_currentIndex] == tab;
+        _active.Remove(tab);
+
+        if (_active.Count == 0)
+        {
+            _currentIndex = -1;
+            _sink.Write(TabProgressState.None);
+            return;
+        }
+
+        if (_currentIndex >= _active.Count) _currentIndex = 0;
+
+        if (_active.Count == 1)
+        {
+            _currentIndex = 0;
+            _sink.Write(_active[0].Progress);
+            return;
+        }
+
+        if (wasCurrent)
+            _sink.Write(_active[_currentIndex].Progress);
     }
 
     private void HandleProgressChange(TabModel tab)
@@ -111,31 +165,7 @@ internal sealed class TaskbarProgressCoordinator
 
         if (!hasProgress && inList)
         {
-            var wasCurrent = _active[_currentIndex] == tab;
-            _active.Remove(tab);
-
-            if (_active.Count == 0)
-            {
-                _currentIndex = -1;
-                _sink.Write(TabProgressState.None);
-                return;
-            }
-
-            // Fix up _currentIndex so it still points at a valid slot.
-            if (_currentIndex >= _active.Count) _currentIndex = 0;
-
-            if (_active.Count == 1)
-            {
-                // Cycling -> Single. Emit the remaining tab's state.
-                _currentIndex = 0;
-                _sink.Write(_active[0].Progress);
-                return;
-            }
-
-            // Still Cycling with 2+ left. Only emit if the current
-            // slot was the one that dropped out.
-            if (wasCurrent)
-                _sink.Write(_active[_currentIndex].Progress);
+            ForceRemove(tab);
             return;
         }
 

@@ -208,9 +208,12 @@ internal sealed class GhosttyHost : IDisposable
                 // inside ghostty_action_s. Layout:
                 //   int32 state  @ +8
                 //   int8  prog   @ +12  (-1 sentinel when no percent)
-                var state = (GhosttyProgressState)Marshal.ReadInt32(actionPtr, 8);
-                var rawPct = (sbyte)Marshal.ReadByte(actionPtr, 12);
-                int pct = rawPct < 0 ? 0 : rawPct;
+                // Decode at the union offset via a pinned struct rather
+                // than manual offset math; keeps us honest if the upstream
+                // field order ever shifts.
+                var report = Marshal.PtrToStructure<GhosttyActionProgressReport>(actionPtr + 8);
+                var state = (GhosttyProgressState)report.State;
+                int pct = report.Progress < 0 ? 0 : report.Progress;
                 var tabState = state switch
                 {
                     GhosttyProgressState.Remove        => Ghostty.Core.Tabs.TabProgressState.None,
