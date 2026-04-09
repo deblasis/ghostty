@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
+using Ghostty.Dialogs;
 using Ghostty.Input;
 using Ghostty.Settings;
 using Microsoft.UI.Xaml.Controls;
@@ -20,7 +21,12 @@ namespace Ghostty.Tabs;
 /// </summary>
 internal static class TabContextMenuBuilder
 {
-    public static MenuFlyout Build(TabManager manager, TabModel tab, Func<TabModel, Task> requestClose)
+    public static MenuFlyout Build(
+        TabManager manager,
+        TabModel tab,
+        Func<TabModel, Task> requestClose,
+        PaneActionRouter router,
+        DialogTracker dialogs)
     {
         var flyout = new MenuFlyout();
 
@@ -53,8 +59,7 @@ internal static class TabContextMenuBuilder
         {
             Text = settings.VerticalTabs ? "Switch to horizontal tabs" : "Switch to vertical tabs",
         };
-        switchLayout.Click += (_, _) =>
-            PaneActionRouter.RequestToggleTabLayout(manager);
+        switchLayout.Click += (_, _) => router.RequestToggleTabLayout();
         flyout.Items.Add(switchLayout);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
@@ -65,9 +70,12 @@ internal static class TabContextMenuBuilder
             var target = flyout.Target;
             if (target?.XamlRoot is null) return;
             var dlg = new RenameTabDialog(tab.UserOverrideTitle) { XamlRoot = target.XamlRoot };
-            var res = await dlg.ShowAsync();
-            if (res == ContentDialogResult.Primary)
-                tab.UserOverrideTitle = string.IsNullOrWhiteSpace(dlg.Result) ? null : dlg.Result;
+            using (dialogs.Track(dlg))
+            {
+                var res = await dlg.ShowAsync();
+                if (res == ContentDialogResult.Primary)
+                    tab.UserOverrideTitle = string.IsNullOrWhiteSpace(dlg.Result) ? null : dlg.Result;
+            }
         };
         flyout.Items.Add(rename);
 

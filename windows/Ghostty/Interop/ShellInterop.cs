@@ -35,17 +35,17 @@ internal static class ShellInterop
 
     // CLSIDs -----------------------------------------------------
 
-    public static Guid CLSID_DestinationList = new("77f10cf0-3db5-4966-b520-b7c54fd35ed6");
-    public static Guid CLSID_EnumerableObjectCollection = new("2d3468c1-36a7-43b6-ac24-d3f02fd9607a");
-    public static Guid CLSID_ShellLink = new("00021401-0000-0000-c000-000000000046");
+    public static readonly Guid CLSID_DestinationList = new("77f10cf0-3db5-4966-b520-b7c54fd35ed6");
+    public static readonly Guid CLSID_EnumerableObjectCollection = new("2d3468c1-36a7-43b6-ac24-d3f02fd9607a");
+    public static readonly Guid CLSID_ShellLink = new("00021401-0000-0000-c000-000000000046");
 
     // Interface IIDs ---------------------------------------------
 
-    public static Guid IID_ICustomDestinationList = new("6332debf-87b5-4670-90c0-5e57b408a49e");
-    public static Guid IID_IObjectCollection = new("5632b1a4-e38a-400a-928a-d4cd63230295");
-    public static Guid IID_IObjectArray = new("92ca9dcd-5622-4bba-a805-5e9f541bd8c9");
-    public static Guid IID_IShellLinkW = new("000214f9-0000-0000-c000-000000000046");
-    public static Guid IID_IPropertyStore = new("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
+    public static readonly Guid IID_ICustomDestinationList = new("6332debf-87b5-4670-90c0-5e57b408a49e");
+    public static readonly Guid IID_IObjectCollection = new("5632b1a4-e38a-400a-928a-d4cd63230295");
+    public static readonly Guid IID_IObjectArray = new("92ca9dcd-5622-4bba-a805-5e9f541bd8c9");
+    public static readonly Guid IID_IShellLinkW = new("000214f9-0000-0000-c000-000000000046");
+    public static readonly Guid IID_IPropertyStore = new("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
 
     // ICustomDestinationList ------------------------------------
 

@@ -10,8 +10,8 @@ namespace Ghostty.Interop;
 /// </summary>
 internal static class TaskbarInterop
 {
-    public static Guid CLSID_TaskbarList = new("56fdf344-fd6d-11d0-958a-006097c9a090");
-    public static Guid IID_ITaskbarList3 = new("ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf");
+    public static readonly Guid CLSID_TaskbarList = new("56fdf344-fd6d-11d0-958a-006097c9a090");
+    public static readonly Guid IID_ITaskbarList3 = new("ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf");
 
     [ComImport]
     [Guid("ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf")]

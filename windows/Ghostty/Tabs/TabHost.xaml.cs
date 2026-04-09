@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
+using Ghostty.Dialogs;
 using Ghostty.Input;
 using Ghostty.Panes;
 using Microsoft.UI.Xaml;
@@ -21,6 +22,8 @@ namespace Ghostty.Tabs;
 internal sealed partial class TabHost : UserControl, ITabHost
 {
     private readonly TabManager _manager;
+    private readonly PaneActionRouter _router;
+    private readonly DialogTracker _dialogs;
     private readonly Dictionary<TabModel, TabViewItem> _itemByModel = new();
     private bool _suppressSelectionEvent;
 
@@ -34,10 +37,12 @@ internal sealed partial class TabHost : UserControl, ITabHost
     /// </summary>
     public UIElement DragRegion => CustomDragRegion;
 
-    public TabHost(TabManager manager)
+    public TabHost(TabManager manager, PaneActionRouter router, DialogTracker dialogs)
     {
         InitializeComponent();
         _manager = manager;
+        _router = router;
+        _dialogs = dialogs;
 
         foreach (var t in _manager.Tabs) AddItem(t);
         SelectActive();
@@ -80,7 +85,7 @@ internal sealed partial class TabHost : UserControl, ITabHost
         {
             Header = headerPanel,
             Content = null,
-            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
+            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync, _router, _dialogs),
             DataContext = tab,
         };
         tab.PropertyChanged += (_, e) =>
@@ -146,7 +151,7 @@ internal sealed partial class TabHost : UserControl, ITabHost
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
 
     private void OnSwitchLayoutClick(object sender, RoutedEventArgs e)
-        => PaneActionRouter.RequestToggleTabLayout(_manager);
+        => _router.RequestToggleTabLayout();
 
     private async void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
@@ -184,8 +189,11 @@ internal sealed partial class TabHost : UserControl, ITabHost
                 DefaultButton = ContentDialogButton.Secondary,
                 XamlRoot = XamlRoot,
             };
-            var res = await dlg.ShowAsync();
-            if (res != ContentDialogResult.Primary) return;
+            using (_dialogs.Track(dlg))
+            {
+                var res = await dlg.ShowAsync();
+                if (res != ContentDialogResult.Primary) return;
+            }
         }
         _manager.CloseTab(tab);
     }

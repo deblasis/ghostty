@@ -17,12 +17,47 @@ namespace Ghostty.Input;
 /// full-tab close is needed, the router raises
 /// <see cref="TabCloseRequestedFromKeyboard"/> so MainWindow can show
 /// the multi-pane confirmation dialog from a context with an XamlRoot.
+///
+/// Instance-scoped: one <see cref="PaneActionRouter"/> per
+/// <see cref="TabManager"/>, owned by <c>MainWindow</c>. The earlier
+/// version exposed static events which kept MainWindow rooted past
+/// close and would leak once the shell supported multiple windows.
 /// </summary>
-internal static class PaneActionRouter
+internal sealed class PaneActionRouter
 {
-    public static void Invoke(PaneAction action, TabManager tabs)
+    private readonly TabManager _tabs;
+
+    public PaneActionRouter(TabManager tabs)
     {
-        var pane = tabs.ActiveTab.PaneHost;
+        _tabs = tabs;
+    }
+
+    public TabManager Tabs => _tabs;
+
+    /// <summary>
+    /// Raised when the Ctrl+Shift+Space chord fires. MainWindow
+    /// listens and calls <c>VerticalTabHost.TogglePinnedFromKeyboard</c>
+    /// if the current <see cref="Tabs.ITabHost"/> is a VerticalTabHost.
+    /// </summary>
+    public event EventHandler? ToggleVerticalTabsPinnedRequested;
+
+    /// <summary>
+    /// Raised when the Ctrl+Shift+Alt+V chord — or the title-bar
+    /// icon, or the context-menu item — fires. MainWindow listens
+    /// and runs its animated layout switch.
+    /// </summary>
+    public event EventHandler? ToggleTabLayoutRequested;
+
+    /// <summary>
+    /// Raised when the keyboard close chord targets a full-tab close.
+    /// MainWindow listens and shows the confirmation dialog (if needed)
+    /// before calling <see cref="TabManager.CloseTab"/>.
+    /// </summary>
+    public event EventHandler? TabCloseRequestedFromKeyboard;
+
+    public void Invoke(PaneAction action)
+    {
+        var pane = _tabs.ActiveTab.PaneHost;
         var concrete = (PaneHost)pane;
         switch (action)
         {
@@ -36,44 +71,36 @@ internal static class PaneActionRouter
             case PaneAction.FocusDown:       concrete.FocusDirection(FocusDirection.Down); break;
 
             // Tabs
-            case PaneAction.NewTab: tabs.NewTab(); break;
-            case PaneAction.CloseActiveProgressive: HandleProgressiveClose(tabs); break;
-            case PaneAction.NextTab: tabs.Next(); break;
-            case PaneAction.PrevTab: tabs.Prev(); break;
-            case PaneAction.JumpTab1: tabs.JumpTo(0); break;
-            case PaneAction.JumpTab2: tabs.JumpTo(1); break;
-            case PaneAction.JumpTab3: tabs.JumpTo(2); break;
-            case PaneAction.JumpTab4: tabs.JumpTo(3); break;
-            case PaneAction.JumpTab5: tabs.JumpTo(4); break;
-            case PaneAction.JumpTab6: tabs.JumpTo(5); break;
-            case PaneAction.JumpTab7: tabs.JumpTo(6); break;
-            case PaneAction.JumpTab8: tabs.JumpTo(7); break;
-            case PaneAction.JumpTabLast: tabs.JumpToLast(); break;
+            case PaneAction.NewTab: _tabs.NewTab(); break;
+            case PaneAction.CloseActiveProgressive: HandleProgressiveClose(); break;
+            case PaneAction.NextTab: _tabs.Next(); break;
+            case PaneAction.PrevTab: _tabs.Prev(); break;
+            case PaneAction.JumpTab1: _tabs.JumpTo(0); break;
+            case PaneAction.JumpTab2: _tabs.JumpTo(1); break;
+            case PaneAction.JumpTab3: _tabs.JumpTo(2); break;
+            case PaneAction.JumpTab4: _tabs.JumpTo(3); break;
+            case PaneAction.JumpTab5: _tabs.JumpTo(4); break;
+            case PaneAction.JumpTab6: _tabs.JumpTo(5); break;
+            case PaneAction.JumpTab7: _tabs.JumpTo(6); break;
+            case PaneAction.JumpTab8: _tabs.JumpTo(7); break;
+            case PaneAction.JumpTabLast: _tabs.JumpToLast(); break;
             case PaneAction.MoveTabRight:
             {
-                var i = tabs.IndexOf(tabs.ActiveTab);
-                if (i >= 0 && i < tabs.Tabs.Count - 1) tabs.Move(i, i + 1);
+                var i = _tabs.IndexOf(_tabs.ActiveTab);
+                if (i >= 0 && i < _tabs.Tabs.Count - 1) _tabs.Move(i, i + 1);
                 break;
             }
             case PaneAction.MoveTabLeft:
             {
-                var i = tabs.IndexOf(tabs.ActiveTab);
-                if (i > 0) tabs.Move(i, i - 1);
+                var i = _tabs.IndexOf(_tabs.ActiveTab);
+                if (i > 0) _tabs.Move(i, i - 1);
                 break;
             }
             case PaneAction.ToggleVerticalTabsPinned:
-                // Route to the ITabHost via an event so the router
-                // stays free of direct ITabHost dependencies.
-                // MainWindow listens and calls TogglePinnedFromKeyboard
-                // on the VerticalTabHost if that's the active layout;
-                // horizontal layout ignores it.
-                ToggleVerticalTabsPinnedFromKeyboard?.Invoke(null, tabs);
+                ToggleVerticalTabsPinnedRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case PaneAction.ToggleTabLayout:
-                // Runtime switch between horizontal and vertical tabs.
-                // MainWindow listens and calls ToggleTabLayout which
-                // animates the transition and persists the choice.
-                ToggleTabLayoutFromKeyboard?.Invoke(null, tabs);
+                ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
@@ -81,47 +108,24 @@ internal static class PaneActionRouter
     }
 
     /// <summary>
-    /// Raised when the Ctrl+Shift+Space chord fires. MainWindow
-    /// listens and calls <c>VerticalTabHost.TogglePinnedFromKeyboard</c>
-    /// if the current <see cref="ITabHost"/> is a VerticalTabHost.
-    /// </summary>
-    public static event EventHandler<TabManager>? ToggleVerticalTabsPinnedFromKeyboard;
-
-    /// <summary>
-    /// Raised when the Ctrl+Shift+Alt+V chord fires. MainWindow
-    /// listens and calls its own ToggleTabLayout which flips the
-    /// active tab host between horizontal and vertical with an
-    /// animated transition.
-    /// </summary>
-    public static event EventHandler<TabManager>? ToggleTabLayoutFromKeyboard;
-
-    /// <summary>
     /// Public dispatch entry used by non-keyboard triggers (context
     /// menu, title-bar button). Reuses the same event path so
     /// MainWindow has a single handler for every toggle source.
     /// </summary>
-    public static void RequestToggleTabLayout(TabManager tabs)
-        => ToggleTabLayoutFromKeyboard?.Invoke(null, tabs);
+    public void RequestToggleTabLayout()
+        => ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
 
-    private static void HandleProgressiveClose(TabManager tabs)
+    private void HandleProgressiveClose()
     {
         // If the active tab has more than one pane, close one and stop.
         // Otherwise the entire tab is being closed; emit the request
         // event so MainWindow can show the confirmation dialog
         // (TabManager has no XamlRoot).
-        if (tabs.ActiveTab.PaneHost.PaneCount > 1)
+        if (_tabs.ActiveTab.PaneHost.PaneCount > 1)
         {
-            tabs.ActiveTab.PaneHost.CloseActive();
+            _tabs.ActiveTab.PaneHost.CloseActive();
             return;
         }
-        TabCloseRequestedFromKeyboard?.Invoke(null, tabs);
+        TabCloseRequestedFromKeyboard?.Invoke(this, EventArgs.Empty);
     }
-
-    /// <summary>
-    /// Raised when the keyboard close chord targets a full-tab close.
-    /// MainWindow listens and shows the confirmation dialog (if needed)
-    /// before calling <see cref="TabManager.CloseTab"/>. The event lives
-    /// here so the router stays free of WinUI dialog dependencies.
-    /// </summary>
-    public static event EventHandler<TabManager>? TabCloseRequestedFromKeyboard;
 }

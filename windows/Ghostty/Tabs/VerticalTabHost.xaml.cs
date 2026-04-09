@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
+using Ghostty.Dialogs;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Panes;
@@ -26,6 +27,8 @@ namespace Ghostty.Tabs;
 internal sealed partial class VerticalTabHost : UserControl, ITabHost
 {
     private readonly TabManager _manager;
+    private readonly PaneActionRouter _router;
+    private readonly DialogTracker _dialogs;
     private readonly GhosttyHost? _host;
     private readonly VerticalTabStrip _strip;
     private readonly ColumnDragHandle _dragHandle;
@@ -58,10 +61,12 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
     /// </summary>
     public event EventHandler<double>? StripWidthChangeRequested;
 
-    public VerticalTabHost(TabManager manager, GhosttyHost? host = null)
+    public VerticalTabHost(TabManager manager, PaneActionRouter router, DialogTracker dialogs, GhosttyHost? host = null)
     {
         InitializeComponent();
         _manager = manager;
+        _router = router;
+        _dialogs = dialogs;
         _host = host;
 
         _strip = new VerticalTabStrip(manager);
@@ -117,7 +122,7 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
     internal void TogglePinnedFromKeyboard() => TogglePinned();
 
     private void OnSwitchLayoutClick(object sender, RoutedEventArgs e)
-        => PaneActionRouter.RequestToggleTabLayout(_manager);
+        => _router.RequestToggleTabLayout();
 
     private void TogglePinned()
     {
@@ -156,17 +161,26 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         if (_pinnedExpanded) return;
         if (IsUserCurrentlyTyping()) return;
 
-        _hoverEnterTimer ??= DispatcherQueue.CreateTimer();
+        EnsureHoverEnterTimer();
+        _hoverEnterTimer!.Start();
+    }
+
+    private void EnsureHoverEnterTimer()
+    {
+        if (_hoverEnterTimer is not null) return;
+        _hoverEnterTimer = DispatcherQueue.CreateTimer();
         _hoverEnterTimer.Interval = TimeSpan.FromMilliseconds(HoverEnterDelayMs);
         _hoverEnterTimer.IsRepeating = false;
+        // Subscribe once: Start/Stop controls firing, not subscription
+        // state. Re-subscribing on every PointerEntered would stack
+        // handlers because the previous subscription is only removed
+        // in OnHoverEnterTick, which never runs on a Stopped timer.
         _hoverEnterTimer.Tick += OnHoverEnterTick;
-        _hoverEnterTimer.Start();
     }
 
     private void OnHoverEnterTick(DispatcherQueueTimer sender, object args)
     {
         sender.Stop();
-        sender.Tick -= OnHoverEnterTick;
         if (_state != VerticalTabStripState.Collapsed) return;
         BeginHoverExpand();
     }
@@ -176,17 +190,23 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
         _hoverEnterTimer?.Stop();
         if (_state != VerticalTabStripState.HoverExpanded) return;
 
-        _hoverLeaveTimer ??= DispatcherQueue.CreateTimer();
+        EnsureHoverLeaveTimer();
+        _hoverLeaveTimer!.Start();
+    }
+
+    private void EnsureHoverLeaveTimer()
+    {
+        if (_hoverLeaveTimer is not null) return;
+        _hoverLeaveTimer = DispatcherQueue.CreateTimer();
         _hoverLeaveTimer.Interval = TimeSpan.FromMilliseconds(HoverLeaveDelayMs);
         _hoverLeaveTimer.IsRepeating = false;
+        // Subscribe once; see EnsureHoverEnterTimer for the rationale.
         _hoverLeaveTimer.Tick += OnHoverLeaveTick;
-        _hoverLeaveTimer.Start();
     }
 
     private void OnHoverLeaveTick(DispatcherQueueTimer sender, object args)
     {
         sender.Stop();
-        sender.Tick -= OnHoverLeaveTick;
         if (_state != VerticalTabStripState.HoverExpanded) return;
         BeginHoverCollapse();
     }
@@ -241,8 +261,11 @@ internal sealed partial class VerticalTabHost : UserControl, ITabHost
                 DefaultButton = ContentDialogButton.Secondary,
                 XamlRoot = XamlRoot,
             };
-            var res = await dlg.ShowAsync();
-            if (res != ContentDialogResult.Primary) return;
+            using (_dialogs.Track(dlg))
+            {
+                var res = await dlg.ShowAsync();
+                if (res != ContentDialogResult.Primary) return;
+            }
         }
         _manager.CloseTab(tab);
     }

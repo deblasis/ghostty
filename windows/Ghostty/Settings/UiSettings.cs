@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Ghostty.Settings;
 
@@ -10,6 +12,12 @@ namespace Ghostty.Settings;
 /// yet. One JSON file at
 /// <c>%APPDATA%\Ghostty\ui-settings.json</c>, loaded once at
 /// startup and written on every change.
+///
+/// Serialization goes through <see cref="UiSettingsContext"/> (a
+/// source-generated <see cref="JsonSerializerContext"/>) so this
+/// stays trim/AOT-safe if/when <c>PublishAot</c> is turned on.
+/// Reflection-based STJ would root type metadata and silently
+/// drop properties under the trimmer (PowerToys #42644).
 ///
 /// TODO(config): fold this into the real config layer when it lands
 /// on Windows. Until then this is the only piece of per-user UI
@@ -38,12 +46,15 @@ internal sealed class UiSettings
             var path = FilePath;
             if (!File.Exists(path)) return new UiSettings();
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<UiSettings>(json) ?? new UiSettings();
+            return JsonSerializer.Deserialize(json, UiSettingsContext.Default.UiSettings)
+                ?? new UiSettings();
         }
-        catch
+        catch (Exception ex)
         {
             // A malformed or inaccessible settings file must never
-            // block startup. Fall back to defaults silently.
+            // block startup. Fall back to defaults and trace the
+            // reason for post-mortem.
+            Debug.WriteLine($"UiSettings load failed, using defaults: {ex.Message}");
             return new UiSettings();
         }
     }
@@ -52,12 +63,19 @@ internal sealed class UiSettings
     {
         try
         {
-            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(this, UiSettingsContext.Default.UiSettings);
             File.WriteAllText(FilePath, json);
         }
-        catch
+        catch (Exception ex)
         {
             // Same policy as Load: never throw from a settings write.
+            Debug.WriteLine($"UiSettings save failed: {ex.Message}");
         }
     }
+}
+
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(UiSettings))]
+internal partial class UiSettingsContext : JsonSerializerContext
+{
 }
