@@ -145,12 +145,22 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
     }
     errdefer _ = command_queue.?.Release();
 
+    // Fence must be created with SHARED flag when we will later call
+    // CreateSharedHandle on it (shared-texture mode). The flag is
+    // noise for the HWND/SwapChainPanel paths but would prevent the
+    // debug layer from warning about attempting to share an unshared
+    // fence, and CreateFence itself does not care either way.
+    const fence_flags: d3d12.D3D12_FENCE_FLAGS = switch (surface) {
+        .shared_texture => .SHARED,
+        else => .NONE,
+    };
+
     // -- Fence --
     var fence: ?*d3d12.ID3D12Fence = null;
     {
         const hr = dev.CreateFence(
             0,
-            .NONE,
+            fence_flags,
             &d3d12.ID3D12Fence.IID,
             @ptrCast(&fence),
         );
