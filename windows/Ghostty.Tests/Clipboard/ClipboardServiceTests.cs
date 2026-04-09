@@ -170,4 +170,64 @@ public sealed class ClipboardServiceTests
 
         Assert.Equal(0, backend.WriteCallCount);
     }
+
+    // Write path with confirmation
+
+    [Fact]
+    public async Task HandleWriteAsync_ConfirmTrue_AsksConfirmer_PreviewIsTextPlain()
+    {
+        var (svc, _, confirmer) = Make();
+        confirmer.EnqueueResponse(true);
+        var payloads = new[]
+        {
+            new ClipboardPayload(ClipboardMime.TextPlain, "preview text"),
+            new ClipboardPayload(ClipboardMime.TextHtml, "<b>preview text</b>"),
+        };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: true);
+
+        var call = Assert.Single(confirmer.Calls);
+        Assert.Equal("preview text", call.Preview);
+        Assert.Equal(ClipboardConfirmRequest.Osc52Write, call.Request);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_ConfirmTrue_UserAccepts_WritesPayload()
+    {
+        var (svc, backend, confirmer) = Make();
+        confirmer.EnqueueResponse(true);
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextPlain, "ok") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: true);
+
+        Assert.Equal(1, backend.WriteCallCount);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_ConfirmTrue_UserDeclines_DoesNotWrite()
+    {
+        var (svc, backend, confirmer) = Make();
+        confirmer.EnqueueResponse(false);
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextPlain, "nope") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: true);
+
+        Assert.Equal(0, backend.WriteCallCount);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_ConfirmTrue_NoTextPlainEntry_DoesNotWrite()
+    {
+        // Without a text/plain payload there is nothing to show in the
+        // confirmation preview, so the safe default is to drop the
+        // write rather than show an empty dialog or HTML-only dialog.
+        var (svc, backend, confirmer) = Make();
+        confirmer.EnqueueResponse(true);
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextHtml, "<b>html only</b>") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: true);
+
+        Assert.Equal(0, backend.WriteCallCount);
+        Assert.Empty(confirmer.Calls);
+    }
 }

@@ -57,9 +57,6 @@ public sealed class ClipboardService
         if (payloads.Count == 0)
             return;
 
-        // Defence in depth: filter to MIMEs the backend knows about.
-        // Backend will skip unknowns too, but filtering here lets us
-        // detect "all unknown" and avoid clearing the clipboard.
         var supported = payloads
             .Where(p => WindowsClipboardFormatMap.FromMime(p.Mime) is not null)
             .ToList();
@@ -67,7 +64,24 @@ public sealed class ClipboardService
         if (supported.Count == 0)
             return;
 
-        // confirm == true is handled in Task 8.
+        if (confirm)
+        {
+            // Need a text/plain entry to show as the dialog preview.
+            // No preview means we drop the write rather than render an
+            // empty or HTML-only dialog.
+            var textPlain = supported.FirstOrDefault(p => p.Mime == ClipboardMime.TextPlain);
+            if (textPlain == default)
+                return;
+
+            // libghostty's setClipboard with confirm=true is OSC 52 write
+            // (the only path that asks for confirmation on writes).
+            var accepted = await _confirmer.ConfirmAsync(
+                textPlain.Data,
+                ClipboardConfirmRequest.Osc52Write);
+            if (!accepted)
+                return;
+        }
+
         await _backend.WriteAsync(supported);
     }
 }
