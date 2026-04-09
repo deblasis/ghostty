@@ -1142,21 +1142,24 @@ GHOSTTY_API void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t)
 // cross-device synchronization issues. Returns NULL on non-DX12 builds or if
 // the renderer device is not yet initialized.
 GHOSTTY_API void* ghostty_surface_get_d3d12_device(ghostty_surface_t);
+
 // Snapshot of the shared-texture state for a surface. All fields are
 // filled in atomically by a single ghostty_surface_shared_texture()
 // call so consumers never observe a torn read.
+//
+// Ownership: ghostty retains both NT HANDLEs in this struct for the
+// surface lifetime -- do NOT CloseHandle either of them. The
+// ID3D12Resource and ID3D12Fence returned by OpenSharedHandle on the
+// consumer's device ARE owned by the consumer; Release() them when
+// done, and re-open the resource whenever `version` changes.
 typedef struct {
   // NT HANDLE from CreateSharedHandle on the underlying ID3D12Resource.
   // Consumers open via ID3D12Device::OpenSharedHandle on their own
-  // device (cross-device) or on ghostty's device (same-device). Ghostty
-  // retains ownership of the handle -- do NOT CloseHandle. Re-open a
-  // new ID3D12Resource whenever `version` changes and release the old
-  // one.
+  // device (cross-device) or on ghostty's device (same-device).
   void* resource_handle;
 
   // NT HANDLE from CreateSharedHandle on ghostty's ID3D12Fence. Stable
-  // for the surface lifetime (does not change on resize). Ghostty
-  // retains ownership -- do NOT CloseHandle.
+  // for the surface lifetime (does not change on resize).
   void* fence_handle;
 
   // Fence value ghostty will signal after completing the most recently
@@ -1183,6 +1186,7 @@ typedef struct {
 GHOSTTY_API bool ghostty_surface_shared_texture(
     ghostty_surface_t,
     ghostty_surface_shared_texture_s* out);
+
 GHOSTTY_API ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_color_scheme(ghostty_surface_t,
                                                      ghostty_color_scheme_e);
