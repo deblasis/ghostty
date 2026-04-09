@@ -16,26 +16,29 @@ namespace Ghostty.Tests.Interop;
 // then update the constants in Ghostty.Core/Interop/GhosttyActions.cs.
 public class GhosttyActionsLayoutTests
 {
+    // Parameters are typed as `int` (not the enum) so the public test
+    // method doesn't leak the now-internal enum type across its public
+    // signature — xUnit requires test classes to be public.
     [Theory]
-    [InlineData(GhosttyActionTag.Scrollbar, 26)]
-    [InlineData(GhosttyActionTag.SetTitle, 32)]
-    [InlineData(GhosttyActionTag.CloseWindow, 49)]
-    [InlineData(GhosttyActionTag.RingBell, 50)]
-    [InlineData(GhosttyActionTag.ProgressReport, 56)]
-    public void ActionTag_Ordinal_Matches_Upstream(GhosttyActionTag tag, int expected)
+    [InlineData((int)GhosttyActionTag.Scrollbar, 26)]
+    [InlineData((int)GhosttyActionTag.SetTitle, 32)]
+    [InlineData((int)GhosttyActionTag.CloseWindow, 49)]
+    [InlineData((int)GhosttyActionTag.RingBell, 50)]
+    [InlineData((int)GhosttyActionTag.ProgressReport, 56)]
+    public void ActionTag_Ordinal_Matches_Upstream(int tag, int expected)
     {
-        Assert.Equal(expected, (int)tag);
+        Assert.Equal(expected, tag);
     }
 
     [Theory]
-    [InlineData(GhosttyProgressState.Remove, 0)]
-    [InlineData(GhosttyProgressState.Set, 1)]
-    [InlineData(GhosttyProgressState.Error, 2)]
-    [InlineData(GhosttyProgressState.Indeterminate, 3)]
-    [InlineData(GhosttyProgressState.Pause, 4)]
-    public void ProgressState_Ordinal_Matches_Upstream(GhosttyProgressState state, int expected)
+    [InlineData((int)GhosttyProgressState.Remove, 0)]
+    [InlineData((int)GhosttyProgressState.Set, 1)]
+    [InlineData((int)GhosttyProgressState.Error, 2)]
+    [InlineData((int)GhosttyProgressState.Indeterminate, 3)]
+    [InlineData((int)GhosttyProgressState.Pause, 4)]
+    public void ProgressState_Ordinal_Matches_Upstream(int state, int expected)
     {
-        Assert.Equal(expected, (int)state);
+        Assert.Equal(expected, state);
     }
 
     [Fact]
@@ -54,6 +57,15 @@ public class GhosttyActionsLayoutTests
         Assert.Equal(0,  (int)Marshal.OffsetOf<GhosttyActionScrollbar>(nameof(GhosttyActionScrollbar.Total)));
         Assert.Equal(8,  (int)Marshal.OffsetOf<GhosttyActionScrollbar>(nameof(GhosttyActionScrollbar.Offset)));
         Assert.Equal(16, (int)Marshal.OffsetOf<GhosttyActionScrollbar>(nameof(GhosttyActionScrollbar.Len)));
+    }
+
+    [Fact]
+    public void ProgressReportStruct_Size_Is_8_Bytes()
+    {
+        // { int32 state; sbyte progress; } + 3 bytes of trailing
+        // alignment padding on x64 -> 8. Pinning total size catches
+        // a future field reorder that only shuffles trailing padding.
+        Assert.Equal(8, Marshal.SizeOf<GhosttyActionProgressReport>());
     }
 
     [Fact]

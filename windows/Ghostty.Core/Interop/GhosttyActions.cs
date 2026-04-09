@@ -6,18 +6,18 @@ namespace Ghostty.Core.Interop;
 // Windows apprt. They live in Ghostty.Core (pure net9.0, no WinAppSDK)
 // so unit tests can assert ordinal values and struct sizes without
 // dragging PRI/MRT into the test project. Ghostty/Interop/NativeMethods.cs
-// re-exports these via `using Ghostty.Core.Interop;`.
+// imports these via `using Ghostty.Core.Interop;` so existing call sites
+// in GhosttyHost compile unchanged.
 //
-// Synced against include/ghostty.h. To verify after a rebase:
-//   grep -n GHOSTTY_ACTION_ include/ghostty.h | grep -nE 'SCROLLBAR|SET_TITLE|CLOSE_WINDOW|RING_BELL|PROGRESS_REPORT'
-// and confirm the ordinal positions still match the values below.
-// GhosttyActionsLayoutTests in Ghostty.Tests pins these at build time.
+// GhosttyActionsLayoutTests in Ghostty.Tests pins the ordinals and
+// struct layouts at build time; that test file also carries the grep
+// command for re-verifying against include/ghostty.h after a rebase.
 
 // Subset of ghostty_action_tag_e that the Windows apprt dispatches on.
 // Indices are pinned explicitly so an upstream reorder cannot silently
 // misroute a tag to the wrong handler — any unlisted tag falls through
 // to "return false" in GhosttyHost.OnAction.
-public enum GhosttyActionTag
+internal enum GhosttyActionTag
 {
     Scrollbar = 26,
     SetTitle = 32,
@@ -32,7 +32,7 @@ public enum GhosttyActionTag
 // is the top visible row, `len` is the visible row count. The bar is
 // "at rest" / unnecessary when total <= len.
 [StructLayout(LayoutKind.Sequential)]
-public struct GhosttyActionScrollbar
+internal struct GhosttyActionScrollbar
 {
     public ulong Total;
     public ulong Offset;
@@ -40,7 +40,7 @@ public struct GhosttyActionScrollbar
 }
 
 // ghostty_action_progress_report_state_e.
-public enum GhosttyProgressState
+internal enum GhosttyProgressState
 {
     Remove = 0,
     Set = 1,
@@ -52,7 +52,7 @@ public enum GhosttyProgressState
 // ghostty_action_progress_report_s:
 //   { int32 state; int8 progress; /* -1 if none, else 0..100 */ }
 [StructLayout(LayoutKind.Sequential)]
-public struct GhosttyActionProgressReport
+internal struct GhosttyActionProgressReport
 {
     public int State;
     public sbyte Progress;

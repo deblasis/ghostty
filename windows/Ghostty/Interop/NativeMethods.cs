@@ -222,12 +222,12 @@ internal struct GhosttyTarget
 // GhosttyActionTag, GhosttyActionScrollbar, GhosttyProgressState, and
 // GhosttyActionProgressReport now live in Ghostty.Core.Interop so
 // Ghostty.Tests (pure net9.0, no WinAppSDK) can pin their ordinals and
-// struct sizes. They are re-exported here via the `using
-// Ghostty.Core.Interop;` at the top of this file.
+// struct sizes. Call sites in GhosttyHost see them unchanged via the
+// `using Ghostty.Core.Interop;` at the top of this file.
 //
-// Synced against include/ghostty.h. See GhosttyActions.cs for the
-// verification grep and GhosttyActionsLayoutTests for the build-time
-// assertions.
+// See GhosttyActionsLayoutTests in Ghostty.Tests for the build-time
+// assertions and the grep command for re-verifying against
+// include/ghostty.h after a libghostty rebase.
 
 // ghostty_action_set_title_s { const char* title; }
 // We only read .title; the struct is declared so the offset is explicit.
