@@ -66,4 +66,108 @@ public sealed class ClipboardServiceTests
 
         Assert.Null(result);
     }
+
+    // Write path (no confirmation)
+
+    [Fact]
+    public async Task HandleWriteAsync_TextPlainOnly_WritesPlainText()
+    {
+        var (svc, backend, _) = Make();
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextPlain, "hello") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: false);
+
+        Assert.NotNull(backend.LastWrite);
+        var written = Assert.Single(backend.LastWrite!);
+        Assert.Equal(ClipboardMime.TextPlain, written.Mime);
+        Assert.Equal("hello", written.Data);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_TextHtmlOnly_WritesHtml()
+    {
+        var (svc, backend, _) = Make();
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextHtml, "<b>hi</b>") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: false);
+
+        Assert.NotNull(backend.LastWrite);
+        var written = Assert.Single(backend.LastWrite!);
+        Assert.Equal(ClipboardMime.TextHtml, written.Mime);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_TextPlainAndHtml_WritesBothInOneCall()
+    {
+        // The mixed-format case: libghostty's `mixed` copy format sends
+        // both text/plain and text/html in a single write. We must
+        // forward both atomically (one backend call), so a Notepad
+        // paste gets text and a Word paste gets HTML.
+        var (svc, backend, _) = Make();
+        var payloads = new[]
+        {
+            new ClipboardPayload(ClipboardMime.TextPlain, "hello"),
+            new ClipboardPayload(ClipboardMime.TextHtml, "<b>hello</b>"),
+        };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: false);
+
+        Assert.Equal(1, backend.WriteCallCount);
+        Assert.NotNull(backend.LastWrite);
+        Assert.Equal(2, backend.LastWrite!.Count);
+        Assert.Contains(backend.LastWrite, p => p.Mime == ClipboardMime.TextPlain && p.Data == "hello");
+        Assert.Contains(backend.LastWrite, p => p.Mime == ClipboardMime.TextHtml && p.Data == "<b>hello</b>");
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_UnknownMime_SkippedSilently()
+    {
+        var (svc, backend, _) = Make();
+        var payloads = new[]
+        {
+            new ClipboardPayload(ClipboardMime.TextPlain, "kept"),
+            new ClipboardPayload("application/x-something", "dropped"),
+        };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: false);
+
+        Assert.NotNull(backend.LastWrite);
+        var written = Assert.Single(backend.LastWrite!);
+        Assert.Equal(ClipboardMime.TextPlain, written.Mime);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_AllUnknownMimes_DoesNotCallBackend()
+    {
+        // Crucially: do NOT clear the clipboard by sending an empty
+        // package. Stay quiet.
+        var (svc, backend, _) = Make();
+        var payloads = new[] { new ClipboardPayload("image/png", "binary blob") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, payloads, confirm: false);
+
+        Assert.Equal(0, backend.WriteCallCount);
+        Assert.Null(backend.LastWrite);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_EmptyPayloadList_DoesNotCallBackend()
+    {
+        var (svc, backend, _) = Make();
+
+        await svc.HandleWriteAsync(ClipboardKind.Standard, Array.Empty<ClipboardPayload>(), confirm: false);
+
+        Assert.Equal(0, backend.WriteCallCount);
+    }
+
+    [Fact]
+    public async Task HandleWriteAsync_Selection_DoesNotCallBackend()
+    {
+        var (svc, backend, _) = Make();
+        var payloads = new[] { new ClipboardPayload(ClipboardMime.TextPlain, "hello") };
+
+        await svc.HandleWriteAsync(ClipboardKind.Selection, payloads, confirm: false);
+
+        Assert.Equal(0, backend.WriteCallCount);
+    }
 }

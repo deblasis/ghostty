@@ -46,4 +46,28 @@ public sealed class ClipboardService
             return null;
         }
     }
+
+    public async ValueTask HandleWriteAsync(
+        ClipboardKind kind,
+        IReadOnlyList<ClipboardPayload> payloads,
+        bool confirm)
+    {
+        if (kind == ClipboardKind.Selection)
+            return;
+        if (payloads.Count == 0)
+            return;
+
+        // Defence in depth: filter to MIMEs the backend knows about.
+        // Backend will skip unknowns too, but filtering here lets us
+        // detect "all unknown" and avoid clearing the clipboard.
+        var supported = payloads
+            .Where(p => WindowsClipboardFormatMap.FromMime(p.Mime) is not null)
+            .ToList();
+
+        if (supported.Count == 0)
+            return;
+
+        // confirm == true is handled in Task 8.
+        await _backend.WriteAsync(supported);
+    }
 }
