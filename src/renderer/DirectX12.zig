@@ -184,12 +184,10 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
     else if (w.swap_chain_panel) |panel|
         // panel is an opaque COM-compatible pointer from apprt; alignment is guaranteed.
         .{ .swap_chain_panel = @ptrCast(@alignCast(panel)) }
-    else if (w.shared_texture_out) |out_ptr|
-        // out_ptr is an opaque pointer from apprt; alignment is guaranteed.
+    else if (w.shared_texture.enabled)
         .{ .shared_texture = .{
-            .handle_out = @ptrCast(@alignCast(out_ptr)),
-            .width = w.texture_width,
-            .height = w.texture_height,
+            .width = w.shared_texture.width,
+            .height = w.shared_texture.height,
         } }
     else
         return error.NoWindowsSurface;

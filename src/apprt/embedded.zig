@@ -362,12 +362,17 @@ pub const Platform = union(PlatformTag) {
         hwnd: ?std.os.windows.HANDLE,
         /// ISwapChainPanelNative pointer for composition swap chain, or null.
         swap_chain_panel: ?*anyopaque = null,
-        /// OUT pointer for shared texture DXGI handle, or null.
-        shared_texture_out: ?*anyopaque = null,
-        /// Width of the shared texture in pixels. Required when shared_texture_out is set.
-        texture_width: u32 = 0,
-        /// Height of the shared texture in pixels. Required when shared_texture_out is set.
-        texture_height: u32 = 0,
+        /// Shared-texture surface configuration. Only honoured when
+        /// both `hwnd` and `swap_chain_panel` are null and
+        /// `shared_texture.enabled` is true. Mirrors the nested
+        /// `shared_texture` struct in ghostty_platform_windows_s.
+        shared_texture: SharedTexture = .{},
+
+        pub const SharedTexture = struct {
+            enabled: bool = false,
+            width: u32 = 0,
+            height: u32 = 0,
+        };
     } else void;
 
     // The C ABI compatible version of this union. The tag is expected
@@ -384,9 +389,15 @@ pub const Platform = union(PlatformTag) {
         windows: extern struct {
             hwnd: ?*anyopaque,
             swap_chain_panel: ?*anyopaque,
-            shared_texture_out: ?*anyopaque,
-            texture_width: u32,
-            texture_height: u32,
+            // Mirrors the anonymous `shared_texture` sub-struct in
+            // ghostty_platform_windows_s. The C side declares this as
+            // an anonymous nested struct; we flatten it into an inline
+            // extern struct here to preserve the same layout.
+            shared_texture: extern struct {
+                enabled: bool,
+                width: u32,
+                height: u32,
+            },
         },
     };
 
@@ -411,9 +422,11 @@ pub const Platform = union(PlatformTag) {
             .windows => if (Windows != void) .{ .windows = .{
                 .hwnd = c_platform.windows.hwnd,
                 .swap_chain_panel = c_platform.windows.swap_chain_panel,
-                .shared_texture_out = c_platform.windows.shared_texture_out,
-                .texture_width = c_platform.windows.texture_width,
-                .texture_height = c_platform.windows.texture_height,
+                .shared_texture = .{
+                    .enabled = c_platform.windows.shared_texture.enabled,
+                    .width = c_platform.windows.shared_texture.width,
+                    .height = c_platform.windows.shared_texture.height,
+                },
             } } else error.UnsupportedPlatform,
         };
     }
