@@ -680,16 +680,15 @@ pub inline fn beginFrame(
     _ = self;
     const api: *DirectX12 = &renderer.api;
     if (api.device_lost) return error.DeviceLost;
-    // SharedTexture surfaces have no swap chain; they need a separate
-    // submission path that is not yet implemented.
-    const sc3 = api.swap_chain3 orelse return error.NoSwapChain;
     const dev_ptr = &(api.dev orelse return error.NoDevice);
 
     // If the apprt asked for a new surface size since the last frame,
     // resize the swap chain now -- on the renderer thread, before any
     // command list work. setTargetSize only records the desired size;
     // it cannot touch GPU state because it runs on the apprt thread.
-    {
+    // Shared-texture mode has a fixed-size resource; ResizeBuffers does
+    // not apply.
+    if (api.swap_chain3 != null) {
         const want = unpackSize(api.desired_size.load(.monotonic));
         if (want.width != 0 and want.height != 0 and
             (want.width != api.applied_width or want.height != api.applied_height))
@@ -701,8 +700,38 @@ pub inline fn beginFrame(
         }
     }
 
-    // Which back buffer does the swap chain want us to render to?
-    const frame_idx = sc3.GetCurrentBackBufferIndex();
+    // Determine which frame slot and render target to use.
+    // Swap-chain mode rotates through back_buffers[]; shared-texture mode
+    // has a single render target and always uses slot 0.
+    const frame_idx: u32 = blk: {
+        if (api.swap_chain3) |sc3| {
+            const index = sc3.GetCurrentBackBufferIndex();
+            api.pending_frame_index = index;
+            break :blk index;
+        }
+        // Shared-texture mode: no back-buffer rotation, index is always 0.
+        // pending_frame_index was already 0 at init; keep it.
+        break :blk 0;
+    };
+
+    const rtv_handle: d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = blk: {
+        if (api.swap_chain3 != null) {
+            break :blk api.rtv_handles[frame_idx];
+        }
+        // Shared-texture mode uses the single RTV created in init().
+        break :blk api.shared_rtv orelse return error.NoRenderTarget;
+    };
+
+    const render_target: ?*d3d12.ID3D12Resource = blk: {
+        if (api.swap_chain3 != null) {
+            break :blk api.back_buffers[frame_idx];
+        }
+        // Shared-texture mode: render into the shared ID3D12Resource.
+        // The resource lives permanently in D3D12_RESOURCE_STATE_COMMON
+        // (ALLOW_SIMULTANEOUS_ACCESS), so no PRESENT->RENDER_TARGET
+        // barrier is needed -- COMMON implicitly promotes for RT writes.
+        break :blk dev_ptr.shared_texture.?.resource;
+    };
 
     // Extract the frame for this slot and wait for its previous GPU work.
     var frame = api.gpu_frames[frame_idx] orelse return error.FrameNotReady;
@@ -713,9 +742,9 @@ pub inline fn beginFrame(
         _ = d3d12.WaitForSingleObject(dev_ptr.fence_event, d3d12.INFINITE);
     }
 
-    // Point the target at this back buffer.
-    target.resource = api.back_buffers[frame_idx];
-    target.rtv_handle = api.rtv_handles[frame_idx];
+    // Point the target at the chosen render target resource and RTV.
+    target.resource = render_target;
+    target.rtv_handle = rtv_handle;
 
     // Reset and open the command list for recording.
     try frame.reset();
