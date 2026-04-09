@@ -84,7 +84,7 @@ internal sealed class GhosttyHost : IDisposable
         var clipboardBackend = new WinUiClipboardBackend(_dispatcher);
         var clipboardConfirmer = new DialogClipboardConfirmer(
             _dispatcher,
-            xamlRootProvider: ResolveActiveXamlRoot);
+            xamlRootProvider: ResolveXamlRootForSurface);
         var clipboardService = new ClipboardService(clipboardBackend, clipboardConfirmer);
         _clipboardBridge = new ClipboardBridge(
             _dispatcher,
@@ -322,18 +322,25 @@ internal sealed class GhosttyHost : IDisposable
         return surface != IntPtr.Zero && _surfaces.ContainsKey(surface);
     }
 
-    private XamlRoot? ResolveActiveXamlRoot()
+    private XamlRoot? ResolveXamlRootForSurface(IntPtr surface)
     {
-        // GhosttyHost has no direct reference to a Window. The least-coupling
-        // approach that does not require threading extra state through the
-        // construction chain: grab any live TerminalControl from the surfaces
-        // registry and return its XamlRoot. All controls in a single window
-        // share the same XamlRoot, so "any" is equivalent to "the right one".
+        // Look up the TerminalControl that owns this specific surface so
+        // the confirmation dialog lands on the originating window. In a
+        // multi-window host, falling back to any live XamlRoot would put
+        // an OSC 52 dialog from a background window on top of the
+        // foreground one.
         //
-        // If no surface is live yet (race during startup) or the dictionary
-        // was cleared during shutdown, XamlRoot will be null and
-        // DialogClipboardConfirmer auto-denies the request -- the safe
-        // fallback for a security-relevant dialog.
+        // If the surface is not (or no longer) registered, fall back to
+        // any live control so a request during a focus-change race still
+        // gets a dialog rather than silently auto-denying. If nothing is
+        // live, return null and let DialogClipboardConfirmer auto-deny --
+        // the safe fallback for a security-relevant dialog.
+        if (surface != IntPtr.Zero && _surfaces.TryGetValue(surface, out var owner))
+        {
+            var ownerRoot = owner.XamlRoot;
+            if (ownerRoot is not null) return ownerRoot;
+        }
+
         foreach (var ctrl in _surfaces.Values)
         {
             var root = ctrl.XamlRoot;

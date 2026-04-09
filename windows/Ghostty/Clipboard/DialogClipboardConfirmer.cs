@@ -24,16 +24,16 @@ internal sealed class DialogClipboardConfirmer : IClipboardConfirmer
     private static readonly TimeSpan ConcurrentDialogWaitTimeout = TimeSpan.FromSeconds(30);
 
     private readonly DispatcherQueue _dispatcher;
-    private readonly Func<XamlRoot?> _xamlRootProvider;
+    private readonly Func<IntPtr, XamlRoot?> _xamlRootProvider;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public DialogClipboardConfirmer(DispatcherQueue dispatcher, Func<XamlRoot?> xamlRootProvider)
+    public DialogClipboardConfirmer(DispatcherQueue dispatcher, Func<IntPtr, XamlRoot?> xamlRootProvider)
     {
         _dispatcher = dispatcher;
         _xamlRootProvider = xamlRootProvider;
     }
 
-    public async ValueTask<bool> ConfirmAsync(string preview, ClipboardConfirmRequest request)
+    public async ValueTask<bool> ConfirmAsync(string preview, ClipboardConfirmRequest request, IntPtr originSurface)
     {
         // Serialize concurrent dialogs. Auto-deny if the previous
         // dialog hangs around for too long.
@@ -48,7 +48,7 @@ internal sealed class DialogClipboardConfirmer : IClipboardConfirmer
             {
                 try
                 {
-                    var xamlRoot = _xamlRootProvider();
+                    var xamlRoot = _xamlRootProvider(originSurface);
                     if (xamlRoot is null)
                     {
                         tcs.TrySetResult(false);
@@ -75,7 +75,7 @@ internal sealed class DialogClipboardConfirmer : IClipboardConfirmer
                                     Content = new TextBlock
                                     {
                                         Text = preview,
-                                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas, monospace"),
+                                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas, Courier New"),
                                         FontSize = 12,
                                         IsTextSelectionEnabled = true,
                                         TextWrapping = TextWrapping.Wrap,

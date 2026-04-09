@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 
 namespace Ghostty.Core.Clipboard;
@@ -15,5 +16,13 @@ public interface IClipboardConfirmer
     /// true if the user accepts. Implementations must default to Cancel
     /// (return false) for safety and must be safe to call concurrently.
     /// </summary>
-    ValueTask<bool> ConfirmAsync(string preview, ClipboardConfirmRequest request);
+    /// <param name="originSurface">
+    /// Opaque handle identifying the surface (and therefore the window)
+    /// that triggered the request. WinUI uses this to resolve the correct
+    /// XamlRoot so the dialog appears on the originating window instead
+    /// of whichever window happens to be first in the surfaces registry.
+    /// Pass <see cref="IntPtr.Zero"/> when no origin is available; the
+    /// implementation may then fall back to any active root.
+    /// </param>
+    ValueTask<bool> ConfirmAsync(string preview, ClipboardConfirmRequest request, IntPtr originSurface);
 }

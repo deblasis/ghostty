@@ -53,6 +53,41 @@ internal sealed class WinUiClipboardBackend : IClipboardBackend
 
     public ValueTask WriteAsync(IReadOnlyList<ClipboardPayload> payloads)
     {
+        try
+        {
+            WinClipboard.SetContent(BuildPackage(payloads));
+        }
+        catch (COMException ex)
+        {
+            Debug.WriteLine($"[clipboard] write failed: 0x{ex.HResult:X8}");
+
+            // CO_E_NOTINITIALIZED is a known WinUI 3 startup race: the
+            // clipboard broker is not ready yet. Retry once on the next
+            // dispatcher tick. Other HResults (notably CLIPBRD_E_CANT_OPEN
+            // when another process holds the clipboard) are logged and
+            // dropped -- there is no useful retry strategy.
+            //
+            // DataPackage is a single-use transfer object: once handed to
+            // SetContent the runtime takes ownership, so the retry must
+            // build a fresh package instead of reusing the one that threw.
+            if (ex.HResult == CO_E_NOTINITIALIZED)
+            {
+                _dispatcher.TryEnqueue(() =>
+                {
+                    try { WinClipboard.SetContent(BuildPackage(payloads)); }
+                    catch (COMException retryEx)
+                    {
+                        Debug.WriteLine($"[clipboard] write retry failed: 0x{retryEx.HResult:X8}");
+                    }
+                });
+            }
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private static DataPackage BuildPackage(IReadOnlyList<ClipboardPayload> payloads)
+    {
         var package = new DataPackage();
         foreach (var payload in payloads)
         {
@@ -72,33 +107,6 @@ internal sealed class WinUiClipboardBackend : IClipboardBackend
                     break;
             }
         }
-
-        try
-        {
-            WinClipboard.SetContent(package);
-        }
-        catch (COMException ex)
-        {
-            Debug.WriteLine($"[clipboard] write failed: 0x{ex.HResult:X8}");
-
-            // CO_E_NOTINITIALIZED is a known WinUI 3 startup race: the
-            // clipboard broker is not ready yet. Retry once on the next
-            // dispatcher tick. Other HResults (notably CLIPBRD_E_CANT_OPEN
-            // when another process holds the clipboard) are logged and
-            // dropped -- there is no useful retry strategy.
-            if (ex.HResult == CO_E_NOTINITIALIZED)
-            {
-                _dispatcher.TryEnqueue(() =>
-                {
-                    try { WinClipboard.SetContent(package); }
-                    catch (COMException retryEx)
-                    {
-                        Debug.WriteLine($"[clipboard] write retry failed: 0x{retryEx.HResult:X8}");
-                    }
-                });
-            }
-        }
-
-        return ValueTask.CompletedTask;
+        return package;
     }
 }

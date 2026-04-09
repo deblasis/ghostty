@@ -118,7 +118,7 @@ internal sealed class ClipboardBridge
             bool confirmed = false;
             try
             {
-                confirmed = await _service.HandleConfirmAsync(text, managedRequest);
+                confirmed = await _service.HandleConfirmAsync(text, managedRequest, surface);
             }
             catch (Exception ex)
             {
@@ -145,7 +145,8 @@ internal sealed class ClipboardBridge
 
     public void HandleWrite(IntPtr userdata, GhosttyClipboard kind, IntPtr content, UIntPtr count, bool confirm)
     {
-        if (_resolveSurface(userdata) == IntPtr.Zero)
+        var surface = _resolveSurface(userdata);
+        if (surface == IntPtr.Zero)
             return;
 
         var managedKind = (ClipboardKind)kind;
@@ -154,7 +155,7 @@ internal sealed class ClipboardBridge
 
         // Walk the array WHILE STILL ON THE CALLER'S THREAD. The native
         // memory may be freed once the callback returns.
-        var payloads = ClipboardContentMarshaller.Read(content, (nuint)(ulong)count);
+        var payloads = ClipboardContentMarshaller.Read(content, (nuint)count);
         if (payloads.Count == 0)
             return;
 
@@ -162,7 +163,7 @@ internal sealed class ClipboardBridge
         {
             try
             {
-                await _service.HandleWriteAsync(managedKind, payloads, confirm);
+                await _service.HandleWriteAsync(managedKind, payloads, confirm, surface);
             }
             catch (Exception ex)
             {

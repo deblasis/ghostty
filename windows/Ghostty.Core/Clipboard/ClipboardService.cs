@@ -41,11 +41,12 @@ public sealed class ClipboardService
         {
             return await _backend.ReadTextAsync();
         }
-        catch
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
-            // Clipboard read can throw when another process holds the
-            // clipboard open. Surfacing null lets the keybind fall
-            // through to the terminal, matching macOS.
+            // Interface boundary: any IClipboardBackend can throw. Translate
+            // to null so the paste keybind falls through to the terminal,
+            // matching macOS. Fatal runtime conditions are still allowed to
+            // propagate so we do not mask real crashes.
             return null;
         }
     }
@@ -53,7 +54,8 @@ public sealed class ClipboardService
     public async ValueTask HandleWriteAsync(
         ClipboardKind kind,
         IReadOnlyList<ClipboardPayload> payloads,
-        bool confirm)
+        bool confirm,
+        IntPtr originSurface = default)
     {
         if (kind == ClipboardKind.Selection)
             return;
@@ -79,15 +81,15 @@ public sealed class ClipboardService
             // Need a text/plain entry to show as the dialog preview.
             // No preview means we drop the write rather than render an
             // empty or HTML-only dialog.
-            var textPlain = supported.FirstOrDefault(p => p.Mime == ClipboardMime.TextPlain);
-            if (textPlain == default)
+            if (supported.FirstOrDefault(p => p.Mime == ClipboardMime.TextPlain) is not { Mime: not null } textPlain)
                 return;
 
             // libghostty's setClipboard with confirm=true is OSC 52 write
             // (the only path that asks for confirmation on writes).
             var accepted = await _confirmer.ConfirmAsync(
                 textPlain.Data,
-                ClipboardConfirmRequest.Osc52Write);
+                ClipboardConfirmRequest.Osc52Write,
+                originSurface);
             if (!accepted)
                 return;
         }
@@ -95,12 +97,12 @@ public sealed class ClipboardService
         await _backend.WriteAsync(supported);
     }
 
-    public ValueTask<bool> HandleConfirmAsync(string text, ClipboardConfirmRequest request)
+    public ValueTask<bool> HandleConfirmAsync(string text, ClipboardConfirmRequest request, IntPtr originSurface = default)
     {
         // Pass-through to the platform confirmer. Kept as a service
         // method (rather than calling the confirmer directly from the
         // bridge) so the routing rules for what gets confirmed and how
         // live in one testable place if they grow more complex later.
-        return _confirmer.ConfirmAsync(text, request);
+        return _confirmer.ConfirmAsync(text, request, originSurface);
     }
 }

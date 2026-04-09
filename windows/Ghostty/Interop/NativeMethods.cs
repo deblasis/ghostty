@@ -280,7 +280,7 @@ internal struct GhosttyRuntimeConfig
     public IntPtr CloseSurfaceCb;
 }
 
-internal static class NativeMethods
+internal static partial class NativeMethods
 {
     // Name only, no extension or path. .NET's native loader handles the
     // platform-specific suffix and searches the app base directory first,
@@ -404,13 +404,16 @@ internal static class NativeMethods
     // Called once per read/confirm request to return clipboard text to libghostty
     // and release its internal request state. Must be called exactly once even on
     // error paths -- skipping it leaks state inside libghostty.
-    // TODO(aot): migrate this and the rest of NativeMethods to
-    // [LibraryImport] partial class for NativeAOT compatibility.
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl,
-        EntryPoint = "ghostty_surface_complete_clipboard_request")]
-    internal static extern void SurfaceCompleteClipboardRequest(
+    //
+    // Source-generated via [LibraryImport] so this entry point is AOT-friendly
+    // and produces no IL stub. The rest of the file still uses [DllImport]; the
+    // standing migration TODO covers those.
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_complete_clipboard_request",
+        StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial void SurfaceCompleteClipboardRequest(
         IntPtr surface,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string text,
+        string text,
         IntPtr state,
         [MarshalAs(UnmanagedType.I1)] bool confirmed);
 
