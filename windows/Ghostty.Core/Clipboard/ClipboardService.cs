@@ -84,4 +84,13 @@ public sealed class ClipboardService
 
         await _backend.WriteAsync(supported);
     }
+
+    public ValueTask<bool> HandleConfirmAsync(string text, ClipboardConfirmRequest request)
+    {
+        // Pass-through to the platform confirmer. Kept as a service
+        // method (rather than calling the confirmer directly from the
+        // bridge) so the routing rules for what gets confirmed and how
+        // live in one testable place if they grow more complex later.
+        return _confirmer.ConfirmAsync(text, request);
+    }
 }

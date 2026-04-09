@@ -230,4 +230,56 @@ public sealed class ClipboardServiceTests
         Assert.Equal(0, backend.WriteCallCount);
         Assert.Empty(confirmer.Calls);
     }
+
+    // Confirm path (libghostty -> dialog -> response)
+
+    [Fact]
+    public async Task HandleConfirmAsync_Paste_AsksConfirmerWithPasteRequest()
+    {
+        var (svc, _, confirmer) = Make();
+        confirmer.EnqueueResponse(true);
+
+        await svc.HandleConfirmAsync("dangerous text", ClipboardConfirmRequest.Paste);
+
+        var call = Assert.Single(confirmer.Calls);
+        Assert.Equal("dangerous text", call.Preview);
+        Assert.Equal(ClipboardConfirmRequest.Paste, call.Request);
+    }
+
+    [Fact]
+    public async Task HandleConfirmAsync_Osc52Read_AsksConfirmerWithOsc52ReadRequest()
+    {
+        var (svc, _, confirmer) = Make();
+        confirmer.EnqueueResponse(false);
+
+        await svc.HandleConfirmAsync("clipboard contents", ClipboardConfirmRequest.Osc52Read);
+
+        var call = Assert.Single(confirmer.Calls);
+        Assert.Equal(ClipboardConfirmRequest.Osc52Read, call.Request);
+    }
+
+    [Fact]
+    public async Task HandleConfirmAsync_Osc52Write_AsksConfirmerWithOsc52WriteRequest()
+    {
+        var (svc, _, confirmer) = Make();
+        confirmer.EnqueueResponse(true);
+
+        await svc.HandleConfirmAsync("incoming text", ClipboardConfirmRequest.Osc52Write);
+
+        var call = Assert.Single(confirmer.Calls);
+        Assert.Equal(ClipboardConfirmRequest.Osc52Write, call.Request);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HandleConfirmAsync_ReturnsConfirmerDecision(bool decision)
+    {
+        var (svc, _, confirmer) = Make();
+        confirmer.EnqueueResponse(decision);
+
+        var result = await svc.HandleConfirmAsync("text", ClipboardConfirmRequest.Paste);
+
+        Assert.Equal(decision, result);
+    }
 }
