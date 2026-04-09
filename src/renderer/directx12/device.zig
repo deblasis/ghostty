@@ -287,6 +287,13 @@ pub fn deinit(self: *Device) void {
     if (self.dcomp_device) |d| _ = d.Release();
     if (self.swap_chain) |sc| _ = sc.Release();
 
+    if (self.shared_texture) |st| {
+        _ = d3d12.CloseHandle(st.fence_handle);
+        _ = d3d12.CloseHandle(st.resource_handle);
+        _ = st.resource.Release();
+        self.shared_texture = null;
+    }
+
     _ = self.device.Release();
 
     self.* = undefined;
