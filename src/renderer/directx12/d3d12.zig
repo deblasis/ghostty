@@ -18,8 +18,10 @@ const LPCWSTR = [*:0]const u16;
 pub const D3D_FEATURE_LEVEL_12_0: u32 = 0xc000;
 pub const D3D_FEATURE_LEVEL_12_1: u32 = 0xc100;
 
-/// Windows access right used by CreateSharedHandle. Equivalent to the
-/// Win32 GENERIC_ALL access mask from winnt.h.
+// --- Win32 access rights ---
+
+/// Equivalent to the Win32 GENERIC_ALL access mask from winnt.h. Used
+/// as the `Access` parameter to CreateSharedHandle.
 pub const GENERIC_ALL: u32 = 0x10000000;
 
 // --- Enums ---
@@ -110,7 +112,6 @@ pub const D3D12_HEAP_FLAGS = enum(u32) {
     SHARED_CROSS_ADAPTER = 0x20,
     DENY_RT_DS_TEXTURES = 0x40,
     DENY_NON_RT_DS_TEXTURES = 0x80,
-    ALLOW_ALL_BUFFERS_AND_TEXTURES = 0,
     _,
 };
 
@@ -1426,14 +1427,7 @@ pub const ID3D12Device = extern struct {
         // slot 30
         CreateReservedResource: Reserved,
         // slot 31
-        CreateSharedHandle: *const fn (
-            *ID3D12Device,
-            pObject: *IUnknown,
-            pAttributes: ?*const anyopaque, // SECURITY_ATTRIBUTES*
-            Access: u32,
-            Name: ?[*:0]const u16,
-            pHandle: *HANDLE,
-        ) callconv(.winapi) HRESULT,
+        CreateSharedHandle: *const fn (*ID3D12Device, *IUnknown, ?*const anyopaque, u32, ?[*:0]const u16, *HANDLE) callconv(.winapi) HRESULT,
         // slot 32
         OpenSharedHandle: Reserved,
         // slot 33
