@@ -9,18 +9,22 @@ namespace Ghostty.Input;
 /// Dispatches a <see cref="PaneAction"/> against a target
 /// <see cref="TabManager"/>. Pane actions are routed to the active
 /// tab's <see cref="IPaneHost"/>; tab actions are routed to the
-/// manager directly. Single switch lives here so that adding a new
+/// manager directly. Single switch lives here so adding a new
 /// action is one place to edit.
 ///
-/// CloseActiveProgressive is special: when a pane-only close suffices
-/// it goes directly to <see cref="IPaneHost.CloseActive"/>; when a
-/// full-tab close is needed, the router raises
-/// <see cref="TabCloseRequestedFromKeyboard"/> so MainWindow can show
-/// the multi-pane confirmation dialog from a context with an XamlRoot.
+/// Escape hooks (full-tab close confirmation and vertical-tabs
+/// pinned toggle) are passed in as delegates per invocation rather
+/// than raised through static events. Static events would root
+/// every MainWindow closure forever — a real leak once multi-window
+/// lands. Per-call delegates keep the router stateless.
 /// </summary>
 internal static class PaneActionRouter
 {
-    public static void Invoke(PaneAction action, TabManager tabs)
+    public static void Invoke(
+        PaneAction action,
+        TabManager tabs,
+        Action<TabManager>? onTabCloseRequested = null,
+        Action<TabManager>? onToggleVerticalTabsPinned = null)
     {
         var pane = tabs.ActiveTab.PaneHost;
         var concrete = (PaneHost)pane;
@@ -37,7 +41,7 @@ internal static class PaneActionRouter
 
             // Tabs
             case PaneAction.NewTab: tabs.NewTab(); break;
-            case PaneAction.CloseActiveProgressive: HandleProgressiveClose(tabs); break;
+            case PaneAction.CloseActiveProgressive: HandleProgressiveClose(tabs, onTabCloseRequested); break;
             case PaneAction.NextTab: tabs.Next(); break;
             case PaneAction.PrevTab: tabs.Prev(); break;
             case PaneAction.JumpTab1: tabs.JumpTo(0); break;
@@ -62,44 +66,23 @@ internal static class PaneActionRouter
                 break;
             }
             case PaneAction.ToggleVerticalTabsPinned:
-                // Route to the ITabHost via an event so the router
-                // stays free of direct ITabHost dependencies.
-                // MainWindow listens and calls TogglePinnedFromKeyboard
-                // on the VerticalTabHost if that's the active layout;
-                // horizontal layout ignores it.
-                ToggleVerticalTabsPinnedFromKeyboard?.Invoke(null, tabs);
+                onToggleVerticalTabsPinned?.Invoke(tabs);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
     }
 
-    /// <summary>
-    /// Raised when the Ctrl+Shift+Space chord fires. MainWindow
-    /// listens and calls <c>VerticalTabHost.TogglePinnedFromKeyboard</c>
-    /// if the current <see cref="ITabHost"/> is a VerticalTabHost.
-    /// </summary>
-    public static event EventHandler<TabManager>? ToggleVerticalTabsPinnedFromKeyboard;
-
-    private static void HandleProgressiveClose(TabManager tabs)
+    private static void HandleProgressiveClose(TabManager tabs, Action<TabManager>? onTabCloseRequested)
     {
         // If the active tab has more than one pane, close one and stop.
-        // Otherwise the entire tab is being closed; emit the request
-        // event so MainWindow can show the confirmation dialog
-        // (TabManager has no XamlRoot).
+        // Otherwise the entire tab is being closed; let the caller show
+        // the confirmation dialog (TabManager has no XamlRoot).
         if (tabs.ActiveTab.PaneHost.PaneCount > 1)
         {
             tabs.ActiveTab.PaneHost.CloseActive();
             return;
         }
-        TabCloseRequestedFromKeyboard?.Invoke(null, tabs);
+        onTabCloseRequested?.Invoke(tabs);
     }
-
-    /// <summary>
-    /// Raised when the keyboard close chord targets a full-tab close.
-    /// MainWindow listens and shows the confirmation dialog (if needed)
-    /// before calling <see cref="TabManager.CloseTab"/>. The event lives
-    /// here so the router stays free of WinUI dialog dependencies.
-    /// </summary>
-    public static event EventHandler<TabManager>? TabCloseRequestedFromKeyboard;
 }

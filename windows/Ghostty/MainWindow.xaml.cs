@@ -223,33 +223,52 @@ public sealed partial class MainWindow : Window
                 // See https://github.com/deblasis/ghostty/issues/165.
                 if (_acceleratorFiredThisKeyDown == captured.Action) return;
                 _acceleratorFiredThisKeyDown = captured.Action;
-                PaneActionRouter.Invoke(captured.Action, _tabManager);
+                PaneActionRouter.Invoke(
+                    captured.Action,
+                    _tabManager,
+                    onTabCloseRequested: OnTabCloseRequestedFromKeyboard,
+                    onToggleVerticalTabsPinned: OnToggleVerticalTabsPinnedFromKeyboard);
             };
             _tabHost.HostElement.KeyboardAccelerators.Add(accel);
         }
 
         _tabHost.HostElement.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
         _tabHost.HostElement.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+    }
 
-        // Listen for keyboard-driven full-tab close. Route through
-        // TabHost.RequestCloseTabAsync so the confirmation dialog
-        // is the same code path as the per-tab X button and the
-        // context-menu Close item — single source of truth for
-        // close confirmation lives in TabHost, which has XamlRoot.
-        PaneActionRouter.TabCloseRequestedFromKeyboard += async (_, mgr) =>
+    // Route a keyboard-driven full-tab close through the shared
+    // RequestCloseTabAsync path so the confirmation dialog is the
+    // same code path as the per-tab X button and the context-menu
+    // Close item.
+    //
+    // async void is unavoidable here: this is invoked from a
+    // synchronous Action<TabManager> boundary inside the router. An
+    // unhandled exception from an async void method tears down the
+    // whole process, so we log and surface — but we do NOT swallow
+    // silently: Debug.Fail in debug builds makes bugs noisy, and the
+    // release path still logs to the debug stream for post-mortem.
+    private async void OnTabCloseRequestedFromKeyboard(TabManager mgr)
+    {
+        try
         {
             if (!ReferenceEquals(mgr, _tabManager)) return;
             await _tabHost.RequestCloseTabAsync(_tabManager.ActiveTab);
-        };
-
-        // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
-        // when the layout is horizontal (TabHost) — the chord is
-        // registered globally but only VerticalTabHost responds.
-        PaneActionRouter.ToggleVerticalTabsPinnedFromKeyboard += (_, mgr) =>
+        }
+        catch (Exception ex)
         {
-            if (!ReferenceEquals(mgr, _tabManager)) return;
-            if (_tabHost is VerticalTabHost vth)
-                vth.TogglePinnedFromKeyboard();
-        };
+            System.Diagnostics.Debug.WriteLine(
+                $"[MainWindow] OnTabCloseRequestedFromKeyboard failed: {ex}");
+            System.Diagnostics.Debug.Fail("Tab close from keyboard threw", ex.ToString());
+        }
+    }
+
+    // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
+    // when the layout is horizontal (TabHost) — the chord is
+    // registered globally but only VerticalTabHost responds.
+    private void OnToggleVerticalTabsPinnedFromKeyboard(TabManager mgr)
+    {
+        if (!ReferenceEquals(mgr, _tabManager)) return;
+        if (_tabHost is VerticalTabHost vth)
+            vth.TogglePinnedFromKeyboard();
     }
 }
