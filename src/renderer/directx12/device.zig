@@ -248,6 +248,17 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
             );
         },
     }
+    // If anything between here and the final `return` ever gains a
+    // fallible step, this errdefer tears down the shared texture state
+    // instead of leaking the resource and both NT handles. Today it is
+    // defensive -- nothing after this point can fail -- but the cost
+    // is nil and the alternative is a latent leak waiting for the next
+    // edit.
+    errdefer if (result_shared_texture) |st| {
+        _ = d3d12.CloseHandle(st.fence_handle);
+        _ = d3d12.CloseHandle(st.resource_handle);
+        _ = st.resource.Release();
+    };
 
     return .{
         .device = dev,
@@ -449,7 +460,7 @@ fn createSharedTextureState(
     const desc = d3d12.D3D12_RESOURCE_DESC{
         .Dimension = .TEXTURE2D,
         .Alignment = 0,
-        .Width = w,
+        .Width = @as(u64, w),
         .Height = h,
         .DepthOrArraySize = 1,
         .MipLevels = 1,
@@ -504,10 +515,15 @@ fn createSharedTextureState(
         );
         if (FAILED(hr)) {
             log.err("CreateSharedHandle (fence) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            // resource_handle and res are cleaned up by their
+            // respective errdefers above. fence_handle is never set
+            // because CreateSharedHandle failed.
             return error.SharedHandleCreationFailed;
         }
     }
-    errdefer _ = d3d12.CloseHandle(fence_handle);
+    // NOTE: no errdefer on fence_handle. Nothing between this point
+    // and the return can fail, so the errdefer would be dead code.
+    // If future edits add a fallible step here, add an errdefer too.
 
     return .{
         .resource = res,
