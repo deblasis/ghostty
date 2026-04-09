@@ -309,7 +309,7 @@ internal sealed class GhosttyHost : IDisposable
             if (handle.IsAllocated && handle.Target is TerminalControl ctrl)
                 return ctrl.SurfaceHandle;
         }
-        catch { }
+        catch (InvalidOperationException) { }
         return IntPtr.Zero;
     }
 

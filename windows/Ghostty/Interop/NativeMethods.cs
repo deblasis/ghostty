@@ -404,6 +404,8 @@ internal static class NativeMethods
     // Called once per read/confirm request to return clipboard text to libghostty
     // and release its internal request state. Must be called exactly once even on
     // error paths -- skipping it leaks state inside libghostty.
+    // TODO(aot): migrate this and the rest of NativeMethods to
+    // [LibraryImport] partial class for NativeAOT compatibility.
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl,
         EntryPoint = "ghostty_surface_complete_clipboard_request")]
     internal static extern void SurfaceCompleteClipboardRequest(

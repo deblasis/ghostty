@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -25,6 +26,8 @@ public sealed class ClipboardService
 
     public ClipboardService(IClipboardBackend backend, IClipboardConfirmer confirmer)
     {
+        ArgumentNullException.ThrowIfNull(backend);
+        ArgumentNullException.ThrowIfNull(confirmer);
         _backend = backend;
         _confirmer = confirmer;
     }
@@ -63,6 +66,13 @@ public sealed class ClipboardService
 
         if (supported.Count == 0)
             return;
+
+        // Mirrors the macOS apprt assertion. libghostty's contract is at
+        // most one text/plain entry per write; the confirmation preview
+        // and the WinUI DataPackage both assume this.
+        Debug.Assert(
+            supported.Count(p => p.Mime == ClipboardMime.TextPlain) <= 1,
+            "clipboard payloads should have at most one text/plain entry");
 
         if (confirm)
         {

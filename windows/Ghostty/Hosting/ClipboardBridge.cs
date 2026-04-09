@@ -19,7 +19,20 @@ namespace Ghostty.Hosting;
 /// Surface liveness is checked via the supplied IsSurfaceAlive callback
 /// before completing requests, in case the TerminalControl was disposed
 /// between the dispatch and the continuation.
+///
+/// Lifetime story: the IsSurfaceAlive check before
+/// SurfaceCompleteClipboardRequest is intentional. When a surface is
+/// destroyed by libghostty, libghostty also frees any pending clipboard
+/// request state for that surface. If the surface dies mid-flight we
+/// skip the completion call rather than calling it on a freed handle
+/// (use-after-free). The same reasoning applies to the dispatcher
+/// shutdown path: if TryEnqueue succeeds but the queue drops the
+/// callback during shutdown, the surface itself is being destroyed
+/// shortly after, and libghostty cleans up the request state via the
+/// surface destroy path.
 /// </summary>
+// TODO(logging): replace Debug.WriteLine with ILogger<T> once the
+// Windows port has structured logging infrastructure.
 internal sealed class ClipboardBridge
 {
     private readonly DispatcherQueue _dispatcher;

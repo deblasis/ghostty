@@ -42,7 +42,7 @@ public static class ClipboardContentMarshaller
 
         for (nuint i = 0; i < count; i++)
         {
-            var entryAddr = IntPtr.Add(content, (int)(i * (nuint)StructSize));
+            var entryAddr = IntPtr.Add(content, checked((int)(i * (nuint)StructSize)));
             var mimePtr = Marshal.ReadIntPtr(entryAddr, 0);
             var dataPtr = Marshal.ReadIntPtr(entryAddr, IntPtr.Size);
 

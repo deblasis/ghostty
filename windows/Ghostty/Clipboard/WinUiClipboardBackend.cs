@@ -10,6 +10,11 @@ using WinClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 
 namespace Ghostty.Clipboard;
 
+// TODO(logging): replace Debug.WriteLine with ILogger<T> once the
+// Windows port has structured logging infrastructure. Debug.WriteLine
+// disappears in Release builds, so production failures here are
+// currently invisible.
+
 /// <summary>
 /// Production IClipboardBackend backed by Windows.ApplicationModel.
 /// DataTransfer.Clipboard. Must be called from the UI thread; the
@@ -72,17 +77,26 @@ internal sealed class WinUiClipboardBackend : IClipboardBackend
         {
             WinClipboard.SetContent(package);
         }
-        catch (COMException ex) when (ex.HResult == CO_E_NOTINITIALIZED)
+        catch (COMException ex)
         {
-            // Window not ready yet. Retry once on the next dispatcher tick.
-            _dispatcher.TryEnqueue(() =>
+            Debug.WriteLine($"[clipboard] write failed: 0x{ex.HResult:X8}");
+
+            // CO_E_NOTINITIALIZED is a known WinUI 3 startup race: the
+            // clipboard broker is not ready yet. Retry once on the next
+            // dispatcher tick. Other HResults (notably CLIPBRD_E_CANT_OPEN
+            // when another process holds the clipboard) are logged and
+            // dropped -- there is no useful retry strategy.
+            if (ex.HResult == CO_E_NOTINITIALIZED)
             {
-                try { WinClipboard.SetContent(package); }
-                catch (COMException retryEx)
+                _dispatcher.TryEnqueue(() =>
                 {
-                    Debug.WriteLine($"[clipboard] write retry failed: 0x{retryEx.HResult:X8}");
-                }
-            });
+                    try { WinClipboard.SetContent(package); }
+                    catch (COMException retryEx)
+                    {
+                        Debug.WriteLine($"[clipboard] write retry failed: 0x{retryEx.HResult:X8}");
+                    }
+                });
+            }
         }
 
         return ValueTask.CompletedTask;
