@@ -85,6 +85,50 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Set the explicit AppUserModelID. This MUST happen before
+        // any shell interop call (jump list registration, taskbar
+        // icon operations, toast notifications) — the Shell caches
+        // the process-to-AUMID association on first use and reads
+        // the jump list from a per-AUMID store. Without this, the
+        // jump list silently no-ops on unpackaged exes.
+        const string AppUserModelId = "com.deblasis.ghostty";
+        try
+        {
+            Ghostty.Interop.ShellInterop.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+        }
+        catch (System.Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to set AUMID: {ex.Message}");
+            // Continue anyway; app still functions, just without jump list.
+        }
+
+        // Build the jump list once at startup. Rebuilds happen when
+        // the profile list changes (TODO(config): hook a config event).
+        try
+        {
+            // Environment.ProcessPath points to the apphost .exe, which
+            // is what we want the shell to invoke from the jump list.
+            // Assembly.GetEntryAssembly().Location returns the managed
+            // .dll on single-file apphost layouts, so prefer ProcessPath.
+            var exePath = System.Environment.ProcessPath ?? string.Empty;
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                var facade = new Ghostty.JumpList.CustomDestinationListFacade();
+                var builder = new Ghostty.Core.JumpList.JumpListBuilder(
+                    facade,
+                    // TODO(config): profiles — swap for config-driven list
+                    profilesProvider: () => System.Array.Empty<Ghostty.Core.JumpList.ProfileEntry>(),
+                    exePath: exePath,
+                    appId: AppUserModelId);
+                builder.Build();
+            }
+        }
+        catch (System.Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to build jump list: {ex.Message}");
+            // Jump list is nice-to-have; failure here does not block startup.
+        }
+
         _window = new MainWindow();
         _window.Activate();
     }
