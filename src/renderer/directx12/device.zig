@@ -182,6 +182,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
     var dcomp_device_ptr: ?*dcomp.IDCompositionDevice = null;
     var dcomp_target_ptr: ?*dcomp.IDCompositionTarget = null;
     var dcomp_visual_ptr: ?*dcomp.IDCompositionVisual = null;
+    var result_shared_texture: ?SharedTextureState = null;
 
     switch (surface) {
         .hwnd => |hwnd| {
@@ -235,9 +236,16 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
                 return error.SwapChainPanelBindFailed;
             }
         },
-        .shared_texture => {
-            // SharedTexture: no swap chain, rendering goes to a shared texture.
-            // The shared texture resource will be created by the caller.
+        .shared_texture => |cfg| {
+            // SharedTexture: no swap chain. Create the shared committed
+            // resource + NT handles for the resource and the fence so the
+            // consumer device can OpenSharedHandle on both.
+            result_shared_texture = try createSharedTextureState(
+                dev,
+                fence.?,
+                cfg.width,
+                cfg.height,
+            );
         },
     }
 
@@ -251,6 +259,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
         .dcomp_device = dcomp_device_ptr,
         .dcomp_target = dcomp_target_ptr,
         .dcomp_visual = dcomp_visual_ptr,
+        .shared_texture = result_shared_texture,
     };
 }
 
@@ -403,6 +412,111 @@ fn createDCompVisual(
     }
 
     return visual.?;
+}
+
+/// Create a shared committed ID3D12Resource and NT handles for both
+/// the resource and the given fence. Returns a populated
+/// SharedTextureState ready to be stored on Device.
+///
+/// Format is B8G8R8A8_UNORM to match the renderer's swap-chain path
+/// (no shader or pipeline permutations required). Flags are
+/// ALLOW_RENDER_TARGET (ghostty writes to it) plus
+/// ALLOW_SIMULTANEOUS_ACCESS (consumers can read while ghostty writes
+/// without explicit state transitions). Initial state is COMMON, the
+/// only state ALLOW_SIMULTANEOUS_ACCESS resources are ever allowed to
+/// be in on either device -- the fence is our sole synchronization
+/// primitive.
+///
+/// Width/height are clamped to a minimum of 1 because
+/// CreateCommittedResource rejects zero dimensions.
+fn createSharedTextureState(
+    device: *d3d12.ID3D12Device,
+    fence: *d3d12.ID3D12Fence,
+    width: u32,
+    height: u32,
+) !SharedTextureState {
+    const w: u32 = @max(width, 1);
+    const h: u32 = @max(height, 1);
+
+    const heap_props = d3d12.D3D12_HEAP_PROPERTIES{
+        .Type = .DEFAULT,
+        .CPUPageProperty = 0,
+        .MemoryPoolPreference = 0,
+        .CreationNodeMask = 0,
+        .VisibleNodeMask = 0,
+    };
+
+    const desc = d3d12.D3D12_RESOURCE_DESC{
+        .Dimension = .TEXTURE2D,
+        .Alignment = 0,
+        .Width = w,
+        .Height = h,
+        .DepthOrArraySize = 1,
+        .MipLevels = 1,
+        .Format = .B8G8R8A8_UNORM,
+        .SampleDesc = .{ .Count = 1, .Quality = 0 },
+        .Layout = .UNKNOWN,
+        .Flags = @enumFromInt(
+            @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_RENDER_TARGET) |
+                @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_SIMULTANEOUS_ACCESS),
+        ),
+    };
+
+    var resource: ?*d3d12.ID3D12Resource = null;
+    {
+        const hr = device.CreateCommittedResource(
+            &heap_props,
+            @intFromEnum(d3d12.D3D12_HEAP_FLAGS.SHARED),
+            &desc,
+            .COMMON,
+            null,
+            &d3d12.ID3D12Resource.IID,
+            @ptrCast(&resource),
+        );
+        if (FAILED(hr)) {
+            log.err("CreateCommittedResource (shared) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            return error.SharedResourceCreationFailed;
+        }
+    }
+    const res = resource orelse return error.SharedResourceCreationFailed;
+    errdefer _ = res.Release();
+
+    var resource_handle: std.os.windows.HANDLE = undefined;
+    {
+        const hr = device.CreateSharedHandle(
+            @ptrCast(res),
+            d3d12.GENERIC_ALL,
+            &resource_handle,
+        );
+        if (FAILED(hr)) {
+            log.err("CreateSharedHandle (resource) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            return error.SharedHandleCreationFailed;
+        }
+    }
+    errdefer _ = d3d12.CloseHandle(resource_handle);
+
+    var fence_handle: std.os.windows.HANDLE = undefined;
+    {
+        const hr = device.CreateSharedHandle(
+            @ptrCast(fence),
+            d3d12.GENERIC_ALL,
+            &fence_handle,
+        );
+        if (FAILED(hr)) {
+            log.err("CreateSharedHandle (fence) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+            return error.SharedHandleCreationFailed;
+        }
+    }
+    errdefer _ = d3d12.CloseHandle(fence_handle);
+
+    return .{
+        .resource = res,
+        .resource_handle = resource_handle,
+        .fence_handle = fence_handle,
+        .width = w,
+        .height = h,
+        .version = 1,
+    };
 }
 
 // --- Tests ---
