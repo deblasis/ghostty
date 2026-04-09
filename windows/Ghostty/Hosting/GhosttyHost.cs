@@ -202,6 +202,32 @@ internal sealed class GhosttyHost : IDisposable
                 return true;
             }
 
+            case GhosttyActionTag.ProgressReport:
+            {
+                // ghostty_action_progress_report_s sits at union offset 8
+                // inside ghostty_action_s. Layout:
+                //   int32 state  @ +8
+                //   int8  prog   @ +12  (-1 sentinel when no percent)
+                var state = (GhosttyProgressState)Marshal.ReadInt32(actionPtr, 8);
+                var rawPct = (sbyte)Marshal.ReadByte(actionPtr, 12);
+                int pct = rawPct < 0 ? 0 : rawPct;
+                var tabState = state switch
+                {
+                    GhosttyProgressState.Remove        => Ghostty.Core.Tabs.TabProgressState.None,
+                    GhosttyProgressState.Set           => Ghostty.Core.Tabs.TabProgressState.Normal(pct),
+                    GhosttyProgressState.Error         => Ghostty.Core.Tabs.TabProgressState.Error(pct),
+                    GhosttyProgressState.Indeterminate => Ghostty.Core.Tabs.TabProgressState.Indeterminate,
+                    GhosttyProgressState.Pause         => Ghostty.Core.Tabs.TabProgressState.Paused(pct),
+                    _ => Ghostty.Core.Tabs.TabProgressState.None,
+                };
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (_surfaces.TryGetValue(surfaceHandle, out var c))
+                        c.RaiseProgressChanged(tabState);
+                });
+                return true;
+            }
+
             default:
                 return false;
         }

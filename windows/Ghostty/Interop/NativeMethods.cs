@@ -232,6 +232,30 @@ internal enum GhosttyActionTag
     SetTitle = 32,
     CloseWindow = 49,
     RingBell = 50,
+    ProgressReport = 56,
+}
+
+// ghostty_action_progress_report_state_e ordinal values, matching
+// the enum in include/ghostty.h around line 850. Do not reorder —
+// these are read by value out of the action payload.
+internal enum GhosttyProgressState
+{
+    Remove = 0,
+    Set = 1,
+    Error = 2,
+    Indeterminate = 3,
+    Pause = 4,
+}
+
+// ghostty_action_progress_report_s:
+//   { int32 state; int8 progress; /* -1 if none, else 0..100 */ }
+// Marshalled manually in GhosttyHost since the action union layout
+// places this at a known offset inside the larger action struct.
+[StructLayout(LayoutKind.Sequential)]
+internal struct GhosttyActionProgressReport
+{
+    public int State;
+    public sbyte Progress;
 }
 
 // ghostty_action_set_title_s { const char* title; }
