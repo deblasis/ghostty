@@ -15,7 +15,7 @@ public static class WindowsClipboardFormatMap
 {
     /// <summary>
     /// Map a libghostty MIME string to the Windows format we will write.
-    /// Returns null when the MIME is unknown, null, or empty — callers
+    /// Returns null when the MIME is unknown, null, or empty. Callers
     /// should treat that as "skip this entry".
     /// </summary>
     public static WindowsClipboardFormat? FromMime(string? mime) => mime switch
