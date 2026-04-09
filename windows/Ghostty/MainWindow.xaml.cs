@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using Ghostty.Controls;
 using Ghostty.Core.Panes;
 using Ghostty.Core.Tabs;
+using Ghostty.Core.Taskbar;
+using Ghostty.Taskbar;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Panes;
@@ -23,6 +25,9 @@ public sealed partial class MainWindow : Window
     private readonly GhosttyHost _host;
     private readonly PaneHostFactory _factory;
     private readonly TabManager _tabManager;
+    private TaskbarList3Facade? _taskbarFacade;
+    private TaskbarProgressCoordinator? _taskbarCoordinator;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _taskbarTickTimer;
     private readonly ITabHost _tabHost;
     private LeafPane? _activeLeaf;
 
@@ -105,6 +110,44 @@ public sealed partial class MainWindow : Window
         HookActiveTabTitle();
 
         _tabManager.LastTabClosed += (_, _) => Close();
+
+        // Taskbar progress: wire a TaskbarProgressCoordinator through
+        // a real ITaskbarList3 facade, driven by a 2s DispatcherQueueTimer.
+        // Wrapped in try/catch because a COM failure here must not
+        // block window construction — the taskbar indicator is a
+        // nice-to-have.
+        try
+        {
+            var taskbarHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            _taskbarFacade = new TaskbarList3Facade(taskbarHwnd);
+            _taskbarCoordinator = new TaskbarProgressCoordinator(
+                _tabManager,
+                _taskbarFacade,
+                () => System.DateTime.UtcNow);
+            _taskbarTickTimer = DispatcherQueue.CreateTimer();
+            _taskbarTickTimer.Interval = System.TimeSpan.FromSeconds(2);
+            _taskbarTickTimer.IsRepeating = true;
+            _taskbarTickTimer.Tick += (_, _) => _taskbarCoordinator!.Tick();
+            _taskbarTickTimer.Start();
+
+            // Pause cycling when minimized so the taskbar does not
+            // churn while the window is hidden. AppWindow.Changed
+            // fires on presenter state transitions.
+            this.AppWindow.Changed += (_, _) =>
+            {
+                if (this.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter op)
+                {
+                    if (op.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)
+                        _taskbarCoordinator?.Pause();
+                    else
+                        _taskbarCoordinator?.Resume();
+                }
+            };
+        }
+        catch (System.Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Taskbar progress wiring failed: {ex.Message}");
+        }
 
         Closed += (_, _) =>
         {

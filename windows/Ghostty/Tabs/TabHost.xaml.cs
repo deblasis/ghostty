@@ -51,9 +51,27 @@ internal sealed partial class TabHost : UserControl, ITabHost
         paneHost.Visibility = Visibility.Collapsed;
         PaneHostContainer.Children.Add(paneHost);
 
+        // Header is a StackPanel with a TextBlock for the title and a
+        // 2px ProgressBar stacked below. Both update from TabModel's
+        // INPC notifications — TabModel raises EffectiveTitle on title
+        // changes and Progress on OSC 9;4 state changes.
+        var headerText = new TextBlock { Text = tab.EffectiveTitle };
+        var headerBar = new ProgressBar
+        {
+            Height = 2,
+            Minimum = 0,
+            Maximum = 100,
+            Visibility = Visibility.Collapsed,
+            IsIndeterminate = false,
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+        var headerPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 0 };
+        headerPanel.Children.Add(headerText);
+        headerPanel.Children.Add(headerBar);
+
         var item = new TabViewItem
         {
-            Header = tab.EffectiveTitle,
+            Header = headerPanel,
             Content = null,
             ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync),
             DataContext = tab,
@@ -62,7 +80,25 @@ internal sealed partial class TabHost : UserControl, ITabHost
         // Named handler retained in a dictionary so RemoveItem can
         // unhook it. A lambda captured inline would be unreachable
         // and leak the TabViewItem.
-        PropertyChangedEventHandler handler = (_, _) => RefreshHeader(item, tab);
+        PropertyChangedEventHandler handler = (_, e) =>
+        {
+            if (e.PropertyName == nameof(TabModel.EffectiveTitle) ||
+                e.PropertyName == nameof(TabModel.ShellReportedTitle) ||
+                e.PropertyName == nameof(TabModel.UserOverrideTitle))
+            {
+                headerText.Text = tab.EffectiveTitle;
+            }
+            else if (e.PropertyName == nameof(TabModel.Progress))
+            {
+                var p = tab.Progress;
+                headerBar.Visibility = p.State == TabProgressState.Kind.None
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+                headerBar.IsIndeterminate = p.State == TabProgressState.Kind.Indeterminate;
+                if (p.State != TabProgressState.Kind.Indeterminate)
+                    headerBar.Value = p.Percent;
+            }
+        };
         tab.PropertyChanged += handler;
         _headerHandlers[tab] = handler;
 
@@ -112,11 +148,6 @@ internal sealed partial class TabHost : UserControl, ITabHost
         _suppressSelectionEvent = true;
         TabViewControl.SelectedItem = item;
         _suppressSelectionEvent = false;
-    }
-
-    private void RefreshHeader(TabViewItem item, TabModel tab)
-    {
-        item.Header = tab.EffectiveTitle;
     }
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
