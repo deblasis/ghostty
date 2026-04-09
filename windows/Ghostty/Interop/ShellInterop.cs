@@ -1,37 +1,34 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace Ghostty.Interop;
 
 /// <summary>
-/// ComImport declarations and P/Invoke for the Windows Shell APIs
-/// this project needs. Kept in one file so the ABI surface is easy
-/// to audit.
+/// <c>[GeneratedComInterface]</c> declarations for the Windows
+/// Shell APIs the jump-list code consumes, plus the
+/// <c>SetCurrentProcessExplicitAppUserModelID</c> P/Invoke and
+/// PROPVARIANT helpers needed to set <c>System.Title</c> on a
+/// shell link.
 ///
-/// Interfaces: ICustomDestinationList (jump list), IObjectCollection
-/// (category content), IObjectArray (read-only views), IShellLinkW
-/// (entries), IPropertyStore (link titles), plus the PROPERTYKEY /
-/// PROPVARIANT helpers needed to set System.Title on a shell link.
+/// Migrated from <c>[ComImport]</c> in the
+/// dotnet-windows-reviewer-skill review of PR 170: the legacy
+/// attribute relies on runtime marshalling and silently breaks
+/// under <c>PublishAot</c> (CsWinRT #1927). The
+/// <c>StringMarshalling = Utf16</c> setting matches the original
+/// <c>UnmanagedType.LPWStr</c> behavior so the wire format is
+/// unchanged.
 ///
-/// P/Invoke: SetCurrentProcessExplicitAppUserModelID from shell32.
+/// Activation goes through <see cref="ComCreate.Create"/>, which
+/// uses a shared <c>StrategyBasedComWrappers</c> to translate the
+/// raw IUnknown* into a strongly-typed managed wrapper.
 /// </summary>
-internal static class ShellInterop
+internal static partial class ShellInterop
 {
     // P/Invoke ---------------------------------------------------
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
-    public static extern void SetCurrentProcessExplicitAppUserModelID(
-        [MarshalAs(UnmanagedType.LPWStr)] string AppID);
-
-    [DllImport("ole32.dll", PreserveSig = false)]
-    public static extern void CoCreateInstance(
-        [In] ref Guid rclsid,
-        IntPtr pUnkOuter,
-        uint dwClsContext,
-        [In] ref Guid riid,
-        [MarshalAs(UnmanagedType.Interface)] out object ppv);
-
-    public const uint CLSCTX_INPROC_SERVER = 0x1;
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int SetCurrentProcessExplicitAppUserModelID(string AppID);
 
     // CLSIDs -----------------------------------------------------
 
@@ -49,86 +46,110 @@ internal static class ShellInterop
 
     // ICustomDestinationList ------------------------------------
 
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("6332debf-87b5-4670-90c0-5e57b408a49e")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface ICustomDestinationList
+    public partial interface ICustomDestinationList
     {
         void SetAppID([MarshalAs(UnmanagedType.LPWStr)] string pszAppID);
-        void BeginList(out uint pcMaxSlots, [In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out object ppv);
-        void AppendCategory([MarshalAs(UnmanagedType.LPWStr)] string pszCategory, [MarshalAs(UnmanagedType.Interface)] IObjectArray poa);
+        void BeginList(out uint pcMaxSlots, in Guid riid, out IntPtr ppv);
+        void AppendCategory([MarshalAs(UnmanagedType.LPWStr)] string pszCategory, IObjectArray poa);
         void AppendKnownCategory(int category);
-        void AddUserTasks([MarshalAs(UnmanagedType.Interface)] IObjectArray poa);
+        void AddUserTasks(IObjectArray poa);
         void CommitList();
-        void GetRemovedDestinations([In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out object ppv);
+        void GetRemovedDestinations(in Guid riid, out IntPtr ppv);
         void DeleteList([MarshalAs(UnmanagedType.LPWStr)] string pszAppID);
         void AbortList();
     }
 
+    // IObjectArray -----------------------------------------------
+
+    [GeneratedComInterface]
+    [Guid("92ca9dcd-5622-4bba-a805-5e9f541bd8c9")]
+    public partial interface IObjectArray
+    {
+        void GetCount(out uint pcObjects);
+        void GetAt(uint uiIndex, in Guid riid, out IntPtr ppv);
+    }
+
     // IObjectCollection (extends IObjectArray) -------------------
 
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("5632b1a4-e38a-400a-928a-d4cd63230295")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IObjectCollection
+    public partial interface IObjectCollection
     {
         // IObjectArray methods (this interface inherits from it)
         void GetCount(out uint pcObjects);
-        void GetAt(uint uiIndex, [In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out object ppv);
+        void GetAt(uint uiIndex, in Guid riid, out IntPtr ppv);
         // IObjectCollection additions
-        void AddObject([MarshalAs(UnmanagedType.IUnknown)] object punk);
-        void AddFromArray([MarshalAs(UnmanagedType.Interface)] IObjectArray poaSource);
+        void AddObject(IntPtr punk);
+        void AddFromArray(IObjectArray poaSource);
         void RemoveObjectAt(uint uiIndex);
         void Clear();
     }
 
-    [ComImport]
-    [Guid("92ca9dcd-5622-4bba-a805-5e9f541bd8c9")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IObjectArray
-    {
-        void GetCount(out uint pcObjects);
-        void GetAt(uint uiIndex, [In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out object ppv);
-    }
+    // IShellLinkW ------------------------------------------------
 
-    // IShellLinkW -------------------------------------------------
-
-    [ComImport]
+    /// <summary>
+    /// IShellLinkW vtable. Only the Set* methods we actually need
+    /// are declared with full signatures; the Get* methods take
+    /// <c>StringBuilder</c> output buffers, which source-generated
+    /// COM does not support (SYSLIB1052). They are placeholders so
+    /// the vtable index of every Set* method matches the COM ABI —
+    /// each unused entry is declared as <c>void Reserved_NN()</c>
+    /// and never called from managed code.
+    /// </summary>
+    [GeneratedComInterface]
     [Guid("000214f9-0000-0000-c000-000000000046")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IShellLinkW
+    public partial interface IShellLinkW
     {
-        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cch, IntPtr pfd, uint fFlags);
+        // 0: GetPath — unused, output StringBuilder is unsupported
+        void GetPath_Reserved();
+        // 1: GetIDList
         void GetIDList(out IntPtr ppidl);
+        // 2: SetIDList
         void SetIDList(IntPtr pidl);
-        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cch);
+        // 3: GetDescription — unused
+        void GetDescription_Reserved();
+        // 4
         void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cch);
+        // 5: GetWorkingDirectory — unused
+        void GetWorkingDirectory_Reserved();
+        // 6
         void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
-        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cch);
+        // 7: GetArguments — unused
+        void GetArguments_Reserved();
+        // 8
         void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        // 9
         void GetHotkey(out ushort pwHotkey);
+        // 10
         void SetHotkey(ushort wHotkey);
+        // 11
         void GetShowCmd(out int piShowCmd);
+        // 12
         void SetShowCmd(int iShowCmd);
-        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cch, out int piIcon);
+        // 13: GetIconLocation — unused
+        void GetIconLocation_Reserved();
+        // 14
         void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        // 15
         void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+        // 16
         void Resolve(IntPtr hwnd, uint fFlags);
+        // 17
         void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
     }
 
     // IPropertyStore ---------------------------------------------
 
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IPropertyStore
+    public partial interface IPropertyStore
     {
         void GetCount(out uint cProps);
         void GetAt(uint iProp, out PROPERTYKEY pkey);
-        void GetValue([In] ref PROPERTYKEY key, out PROPVARIANT pv);
-        void SetValue([In] ref PROPERTYKEY key, [In] ref PROPVARIANT pv);
+        void GetValue(in PROPERTYKEY key, out PROPVARIANT pv);
+        void SetValue(in PROPERTYKEY key, in PROPVARIANT pv);
         void Commit();
     }
 
@@ -158,8 +179,8 @@ internal static class ShellInterop
 
     public const ushort VT_LPWSTR = 31;
 
-    [DllImport("ole32.dll")]
-    public static extern int PropVariantClear(ref PROPVARIANT pvar);
+    [LibraryImport("ole32.dll")]
+    public static partial int PropVariantClear(ref PROPVARIANT pvar);
 
     /// <summary>
     /// Helper: populate a shell link's System.Title so the jump list
@@ -168,20 +189,34 @@ internal static class ShellInterop
     /// </summary>
     public static void SetShellLinkTitle(IShellLinkW link, string title)
     {
-        var store = (IPropertyStore)link;
-        var pv = new PROPVARIANT
-        {
-            vt = VT_LPWSTR,
-            pointerValue = Marshal.StringToCoTaskMemUni(title),
-        };
+        // The IShellLinkW COM object also implements IPropertyStore;
+        // cross-interface QI happens through the shared ComWrappers
+        // strategy. Reach the underlying IUnknown via the strategy
+        // wrappers (Marshal.GetIUnknownForObject is runtime-only and
+        // SYSLIB1099 against [GeneratedComInterface] types) and wrap
+        // it once for the IPropertyStore facet.
+        var unknown = ComCreate.GetIUnknown(link);
         try
         {
-            store.SetValue(ref PKEY_Title, ref pv);
-            store.Commit();
+            var store = (IPropertyStore)ComCreate.Wrap(unknown);
+            var pv = new PROPVARIANT
+            {
+                vt = VT_LPWSTR,
+                pointerValue = Marshal.StringToCoTaskMemUni(title),
+            };
+            try
+            {
+                store.SetValue(in PKEY_Title, in pv);
+                store.Commit();
+            }
+            finally
+            {
+                PropVariantClear(ref pv);
+            }
         }
         finally
         {
-            PropVariantClear(ref pv);
+            Marshal.Release(unknown);
         }
     }
 }

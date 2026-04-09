@@ -94,7 +94,8 @@ public partial class App : Application
         const string AppUserModelId = "com.deblasis.ghostty";
         try
         {
-            Ghostty.Interop.ShellInterop.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+            System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(
+                Ghostty.Interop.ShellInterop.SetCurrentProcessExplicitAppUserModelID(AppUserModelId));
         }
         catch (System.Exception ex)
         {

@@ -21,15 +21,9 @@ internal sealed class TaskbarList3Facade : ITaskbarProgressSink
     public TaskbarList3Facade(IntPtr hwnd)
     {
         _hwnd = hwnd;
-        var clsid = TaskbarInterop.CLSID_TaskbarList;
-        var iid = TaskbarInterop.IID_ITaskbarList3;
-        ShellInterop.CoCreateInstance(
-            ref clsid,
-            IntPtr.Zero,
-            ShellInterop.CLSCTX_INPROC_SERVER,
-            ref iid,
-            out var obj);
-        _taskbar = (TaskbarInterop.ITaskbarList3)obj;
+        _taskbar = (TaskbarInterop.ITaskbarList3)ComCreate.Create(
+            TaskbarInterop.CLSID_TaskbarList,
+            TaskbarInterop.IID_ITaskbarList3);
         _taskbar.HrInit();
     }
 
