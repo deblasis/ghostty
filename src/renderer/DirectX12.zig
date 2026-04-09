@@ -112,6 +112,12 @@ back_buffers: [device.Device.frame_count]?*d3d12.ID3D12Resource = .{ null, null,
 rtv_handles: [device.Device.frame_count]d3d12.D3D12_CPU_DESCRIPTOR_HANDLE =
     .{ .{ .ptr = 0 }, .{ .ptr = 0 }, .{ .ptr = 0 } },
 
+/// RTV for the shared-texture resource. Null for HWND and
+/// SwapChainPanel modes (which use the rtv_handles array above).
+/// Shared-texture mode has exactly one render target -- the shared
+/// ID3D12Resource -- so it gets a single RTV in heap slot 0.
+shared_rtv: ?d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = null,
+
 /// Command list from the current beginFrame, executed in drawFrameEnd.
 /// Also temporarily set to the init command list during init() so that
 /// initAtlasTexture can record resource barriers for placeholder textures.
@@ -289,6 +295,15 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
             dev_ptr.device.CreateRenderTargetView(resource, null, rtv_handle);
             result.rtv_handles[i] = rtv_handle;
         }
+    } else if (dev_ptr.shared_texture != null) {
+        // Shared-texture mode: one RTV pointing at the shared resource.
+        // Use RTV heap slot 0 -- we only ever need one slot because
+        // the shared resource is the sole render target and is never
+        // rotated with a back-buffer cycle.
+        const st = &dev_ptr.shared_texture.?;
+        const rtv_handle = result.rtv_heap.?.cpuHandle(0);
+        dev_ptr.device.CreateRenderTargetView(st.resource, null, rtv_handle);
+        result.shared_rtv = rtv_handle;
     }
     errdefer {
         for (&result.back_buffers) |*bb| {
