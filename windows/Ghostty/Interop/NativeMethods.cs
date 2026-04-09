@@ -400,6 +400,18 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.I1)]
     internal static extern bool SurfaceProcessExited(GhosttySurface surface);
 
+    // ghostty_surface_complete_clipboard_request(surface, text, state, confirmed)
+    // Called once per read/confirm request to return clipboard text to libghostty
+    // and release its internal request state. Must be called exactly once even on
+    // error paths -- skipping it leaks state inside libghostty.
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl,
+        EntryPoint = "ghostty_surface_complete_clipboard_request")]
+    internal static extern void SurfaceCompleteClipboardRequest(
+        IntPtr surface,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string text,
+        IntPtr state,
+        [MarshalAs(UnmanagedType.I1)] bool confirmed);
+
     // ---- user32 --------------------------------------------------------
 
     // MessageBeep is thread-safe and minimal-dependency. Used by the
