@@ -2408,10 +2408,11 @@ keybind: Keybinds = .{},
 /// Middle-click paste will always use the selection clipboard. Middle-click
 /// paste is always enabled even if this is `false`.
 ///
-/// The default value is true on Linux and macOS.
+/// The default value is true on Linux, macOS, and Windows.
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
     .linux => .true,
     .macos => .true,
+    .windows => .true,
     else => .false,
 },
 
