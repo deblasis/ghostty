@@ -1834,22 +1834,43 @@ pub const CAPI = struct {
         return @ptrCast(dev.device);
     }
 
-    /// Return the ID3D12Resource* ghostty renders to in shared texture
-    /// mode. Same-process consumers can record a copy from this resource
-    /// on ghostty's command queue. The resource pointer changes on
-    /// resize -- re-read after ghostty_surface_set_size.
-    ///
-    /// NOTE: shared texture mode is not yet implemented on the DX12
-    /// renderer. This accessor currently always returns null; the ABI
-    /// slot is reserved for the upcoming implementation (tracked in
-    /// deblasis/ghostty#176).
-    export fn ghostty_surface_get_d3d12_shared_texture(surface: *Surface) ?*anyopaque {
-        // TODO(deblasis/ghostty#176): wire to the DX12 shared-texture
-        // surface mode in the follow-up PR. Kept as a reserved ABI slot
-        // so .NET consumers can bind the P/Invoke ahead of the
-        // implementation landing.
-        _ = surface;
-        return null;
+    /// Mirrors ghostty_surface_shared_texture_s in include/ghostty.h.
+    const SharedTextureSnapshotC = extern struct {
+        resource_handle: ?*anyopaque,
+        fence_handle: ?*anyopaque,
+        fence_value: u64,
+        width: u32,
+        height: u32,
+        version: u64,
+    };
+
+    /// Fill `out` with an atomic snapshot of the shared-texture state
+    /// for this surface. Returns false if the surface is not in
+    /// shared-texture mode (in which case `out` is untouched).
+    export fn ghostty_surface_shared_texture(
+        surface: *Surface,
+        out: *SharedTextureSnapshotC,
+    ) bool {
+        if (comptime builtin.os.tag != .windows) return false;
+        const api_ptr = &surface.core_surface.renderer.api;
+        if (comptime !@hasField(@TypeOf(api_ptr.*), "dev")) return false;
+        if (api_ptr.dev == null) return false;
+        const dev = &api_ptr.dev.?;
+
+        dev.shared_texture_mutex.lock();
+        defer dev.shared_texture_mutex.unlock();
+
+        const st = dev.shared_texture orelse return false;
+
+        out.* = .{
+            .resource_handle = @ptrCast(st.resource_handle),
+            .fence_handle = @ptrCast(st.fence_handle),
+            .fence_value = dev.fence_value,
+            .width = st.width,
+            .height = st.height,
+            .version = st.version,
+        };
+        return true;
     }
 
     /// Update the size of a surface. This will trigger resize notifications
