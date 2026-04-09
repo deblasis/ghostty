@@ -43,6 +43,35 @@ dcomp_device: ?*dcomp.IDCompositionDevice,
 dcomp_target: ?*dcomp.IDCompositionTarget,
 dcomp_visual: ?*dcomp.IDCompositionVisual,
 
+/// Shared-texture mode state. Null for HWND / SwapChainPanel modes.
+/// Populated by Device.init when the surface variant is shared_texture
+/// and mutated by recreateSharedTexture on resize. Readers must hold
+/// shared_texture_mutex.
+shared_texture: ?SharedTextureState = null,
+
+/// Guards shared_texture and the fence_value counter for atomic reads
+/// by ghostty_surface_shared_texture() on the apprt thread.
+shared_texture_mutex: std.Thread.Mutex = .{},
+
+/// Shared-texture mode state. Populated by Device.init when the
+/// surface variant is .shared_texture, torn down in Device.deinit,
+/// and recreated on resize. Readers must hold `shared_texture_mutex`.
+pub const SharedTextureState = struct {
+    /// The ID3D12Resource ghostty renders into. Owned by Device.
+    resource: *d3d12.ID3D12Resource,
+    /// NT HANDLE from CreateSharedHandle on `resource`. Owned by
+    /// Device. Closed and reborn on resize.
+    resource_handle: std.os.windows.HANDLE,
+    /// NT HANDLE from CreateSharedHandle on the Device's fence. Owned
+    /// by Device. Stable for the surface lifetime.
+    fence_handle: std.os.windows.HANDLE,
+    /// Pixel dimensions of `resource`.
+    width: u32,
+    height: u32,
+    /// Monotonically increasing; bumped by recreateSharedTexture.
+    version: u64,
+};
+
 pub const InitOptions = struct {
     /// Initial back buffer width. Ignored for SharedTexture (uses its own size).
     width: u32 = 800,
