@@ -158,7 +158,6 @@ public sealed partial class MainWindow : Window
         _tabHost = _uiSettings.VerticalTabs ? _verticalTabHost : _horizontalTabHost;
 
         _layout = new LayoutCoordinator(
-            DispatcherQueue,
             StripColumn,
             (FrameworkElement)_horizontalTabHost.HostElement,
             _verticalTabHost,

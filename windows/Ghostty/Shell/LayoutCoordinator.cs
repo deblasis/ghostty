@@ -1,6 +1,5 @@
 using System;
 using Ghostty.Tabs;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -28,7 +27,6 @@ internal sealed class LayoutCoordinator
     public const double VerticalStripCollapsedWidth = 40;
     public const int SwitchDurationMs = 220;
 
-    private readonly DispatcherQueue _dispatcher;
     private readonly ColumnDefinition _stripColumn;
     private readonly FrameworkElement _horizontalHost;
     private readonly VerticalTabHost _verticalTabHost;
@@ -36,16 +34,14 @@ internal sealed class LayoutCoordinator
     private readonly Grid _verticalTitleBar;
 
     private bool _switching;
-    private DispatcherQueueTimer? _activeColumnTween;
+    private Storyboard? _activeColumnSb;
 
     public LayoutCoordinator(
-        DispatcherQueue dispatcher,
         ColumnDefinition stripColumn,
         FrameworkElement horizontalHost,
         VerticalTabHost verticalTabHost,
         Grid verticalTitleBar)
     {
-        _dispatcher = dispatcher;
         _stripColumn = stripColumn;
         _horizontalHost = horizontalHost;
         _verticalTabHost = verticalTabHost;
@@ -98,9 +94,16 @@ internal sealed class LayoutCoordinator
 
     /// <summary>
     /// Cross-fade + slide animation between horizontal and vertical
-    /// layouts. Runs the chrome transforms via a Storyboard
-    /// (compositor-backed) and the strip column width via
-    /// <see cref="TweenStripColumn"/>.
+    /// layouts. Runs the chrome transforms (Opacity, RenderTransform)
+    /// AND the strip column width inside a single
+    /// <see cref="Storyboard"/> so all the animations share one
+    /// timeline and one Completed handler.
+    ///
+    /// The column width is animated through
+    /// <see cref="GridLengthAnimator"/>, a small DependencyObject
+    /// proxy that converts <c>double</c> ticks into
+    /// <see cref="GridLength"/> writes — WinUI 3 has no native
+    /// GridLengthAnimation.
     /// </summary>
     public void Animate(bool verticalTabs)
     {
@@ -128,6 +131,11 @@ internal sealed class LayoutCoordinator
         incomingTx.Y = incomingOffset.Y;
         incoming.Opacity = 0;
 
+        // Cancel any column tween from a previous chevron click so
+        // the storyboard owns the column width for its full duration.
+        _activeColumnSb?.Stop();
+        _activeColumnSb = null;
+
         var sb = new Storyboard();
         sb.Children.Add(MakeDoubleAnim(incoming, "Opacity", 0, 1));
         sb.Children.Add(MakeDoubleAnim(outgoing, "Opacity", outgoing.Opacity, 0));
@@ -140,49 +148,46 @@ internal sealed class LayoutCoordinator
         sb.Children.Add(MakeTransformAnim(outgoing, "X", outgoingTx.X, outgoingOffset.X));
         sb.Children.Add(MakeTransformAnim(outgoing, "Y", outgoingTx.Y, outgoingOffset.Y));
 
+        // Strip column width: bridge GridLength via the proxy.
+        // Snap the inner strip column once at the start — during a
+        // layout switch the chevron pinned-state never changes, so
+        // there is no per-frame onTick callback to drive.
+        _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth);
+        var widthProxy = new GridLengthAnimator(_stripColumn, _stripColumn.Width.Value);
+        sb.Children.Add(MakeDoubleAnim(widthProxy, "Value", _stripColumn.Width.Value, targetColWidth));
+
         sb.Completed += (_, _) =>
         {
             Snap(verticalTabs);
             _switching = false;
         };
         sb.Begin();
-
-        TweenStripColumn(_stripColumn.Width.Value, targetColWidth,
-            onTick: _ => _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth));
     }
 
     /// <summary>
     /// Tween <see cref="ColumnDefinition.Width"/> from its current
-    /// value to <paramref name="to"/>. Cancels any in-flight tween
-    /// so the chevron toggle and the layout switch cannot race on
-    /// the same column.
+    /// value to <paramref name="to"/>. Used by the chevron expand
+    /// path inside <see cref="VerticalTabHost"/>; the runtime layout
+    /// switch above bundles its column tween into the cross-fade
+    /// Storyboard instead.
+    ///
+    /// Cancels any in-flight column tween so the chevron toggle and
+    /// the layout switch cannot race on the same column.
     /// </summary>
     public void TweenStripColumn(double from, double to, Action<double>? onTick = null)
     {
-        _activeColumnTween?.Stop();
+        _activeColumnSb?.Stop();
 
-        var startTime = DateTime.UtcNow;
-        var duration = TimeSpan.FromMilliseconds(SwitchDurationMs);
-        var timer = _dispatcher.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(16);
-        timer.IsRepeating = true;
-        timer.Tick += (t, _) =>
+        var proxy = new GridLengthAnimator(_stripColumn, from) { OnTick = onTick };
+        var sb = new Storyboard();
+        sb.Children.Add(MakeDoubleAnim(proxy, "Value", from, to));
+        sb.Completed += (s, _) =>
         {
-            var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
-            var progress = Math.Min(1.0, elapsed / duration.TotalMilliseconds);
-            var eased = 1 - (1 - progress) * (1 - progress);
-            var value = from + (to - from) * eased;
-            _stripColumn.Width = new GridLength(value);
-            onTick?.Invoke(value);
-            if (progress >= 1.0)
-            {
-                t.Stop();
-                if (ReferenceEquals(_activeColumnTween, t))
-                    _activeColumnTween = null;
-            }
+            if (ReferenceEquals(_activeColumnSb, s))
+                _activeColumnSb = null;
         };
-        _activeColumnTween = timer;
-        timer.Start();
+        _activeColumnSb = sb;
+        sb.Begin();
     }
 
     private static TranslateTransform GetOrCreateTranslate(FrameworkElement fe)
