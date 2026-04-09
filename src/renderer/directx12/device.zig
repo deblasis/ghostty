@@ -314,6 +314,77 @@ pub fn waitForGpu(self: *Device) !void {
     }
 }
 
+/// Recreate the shared texture resource and its NT handle at a new
+/// size. Called by the renderer thread on resize. Blocks on
+/// waitForGpu to let any in-flight frame referencing the old
+/// resource drain, then swaps the state under shared_texture_mutex
+/// so ghostty_surface_shared_texture() readers observe either the
+/// old or new snapshot, never a mix.
+///
+/// The fence handle is preserved across resize -- the fence itself
+/// is stable for the surface lifetime, and re-issuing a shared
+/// handle for it would force every consumer to re-open the fence
+/// every time the window resized. createSharedTextureState
+/// unavoidably produces a fresh fence handle as part of its output;
+/// we close it immediately.
+///
+/// Returns error.NotSharedTextureMode if the surface is not in
+/// shared-texture mode (programmer error -- the renderer should not
+/// call this for HWND or SwapChainPanel surfaces).
+pub fn recreateSharedTexture(self: *Device, width: u32, height: u32) !void {
+    // Drain GPU work referencing the old resource before releasing
+    // anything it might still touch.
+    try self.waitForGpu();
+
+    // Build a fresh state off-lock. createSharedTextureState does
+    // its own errdefer cleanup on failure, so nothing leaks if this
+    // returns an error.
+    var new_state = try createSharedTextureState(
+        self.device,
+        self.fence,
+        width,
+        height,
+    );
+
+    // The fence handle from createSharedTextureState is a brand new
+    // NT handle for the same underlying fence -- we already have a
+    // handle for that fence from the initial Device.init, and we
+    // promised consumers that fence_handle is stable. Discard the
+    // new one.
+    _ = d3d12.CloseHandle(new_state.fence_handle);
+    new_state.fence_handle = undefined;
+
+    self.shared_texture_mutex.lock();
+    defer self.shared_texture_mutex.unlock();
+
+    const old = self.shared_texture orelse {
+        // Caller violated the contract: this method only makes
+        // sense in shared-texture mode. Clean up the new state we
+        // just built before reporting the error.
+        _ = d3d12.CloseHandle(new_state.resource_handle);
+        _ = new_state.resource.Release();
+        return error.NotSharedTextureMode;
+    };
+
+    const next_version = old.version + 1;
+
+    // Swap. Close the old resource handle and release the old
+    // resource only AFTER the new state is fully staged, so any
+    // failure path above leaves the old state intact.
+    _ = d3d12.CloseHandle(old.resource_handle);
+    _ = old.resource.Release();
+
+    self.shared_texture = .{
+        .resource = new_state.resource,
+        .resource_handle = new_state.resource_handle,
+        // Preserved from the old state -- fence handle is stable.
+        .fence_handle = old.fence_handle,
+        .width = new_state.width,
+        .height = new_state.height,
+        .version = next_version,
+    };
+}
+
 // ---- Private helpers ----
 
 fn enableDebugLayer() void {
