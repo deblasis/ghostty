@@ -705,17 +705,14 @@ pub inline fn beginFrame(
     // has a single render target and always uses slot 0.
     const frame_idx: u32 = blk: {
         if (api.swap_chain3) |sc3| {
-            const index = sc3.GetCurrentBackBufferIndex();
-            api.pending_frame_index = index;
-            break :blk index;
+            break :blk sc3.GetCurrentBackBufferIndex();
         }
         // Shared-texture mode: no back-buffer rotation, index is always 0.
-        // pending_frame_index was already 0 at init; keep it.
         break :blk 0;
     };
 
     const rtv_handle: d3d12.D3D12_CPU_DESCRIPTOR_HANDLE = blk: {
-        if (api.swap_chain3 != null) {
+        if (api.swap_chain3) |_| {
             break :blk api.rtv_handles[frame_idx];
         }
         // Shared-texture mode uses the single RTV created in init().
@@ -723,7 +720,7 @@ pub inline fn beginFrame(
     };
 
     const render_target: ?*d3d12.ID3D12Resource = blk: {
-        if (api.swap_chain3 != null) {
+        if (api.swap_chain3) |_| {
             break :blk api.back_buffers[frame_idx];
         }
         // Shared-texture mode: render into the shared ID3D12Resource.
