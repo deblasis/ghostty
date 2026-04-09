@@ -1814,9 +1814,9 @@ pub const CAPI = struct {
     /// finished initializing yet.
     export fn ghostty_surface_get_d3d12_device(surface: *Surface) ?*anyopaque {
         if (comptime builtin.os.tag != .windows) return null;
-        const api = &surface.core_surface.renderer.api;
-        // Only DX12 renderer has a `dev` field holding an ID3D12Device.
-        if (comptime !@hasField(@TypeOf(api.*), "dev")) return null;
+        const api = surface.core_surface.renderer.api;
+        // Only the DX12 renderer has a `dev` field holding an ID3D12Device.
+        if (comptime !@hasField(@TypeOf(api), "dev")) return null;
         const dev = api.dev orelse return null;
         return @ptrCast(dev.device);
     }
@@ -1831,6 +1831,10 @@ pub const CAPI = struct {
     /// slot is reserved for the upcoming implementation (tracked in
     /// deblasis/ghostty#176).
     export fn ghostty_surface_get_d3d12_shared_texture(surface: *Surface) ?*anyopaque {
+        // TODO(deblasis/ghostty#176): wire to the DX12 shared-texture
+        // surface mode in the follow-up PR. Kept as a reserved ABI slot
+        // so .NET consumers can bind the P/Invoke ahead of the
+        // implementation landing.
         _ = surface;
         return null;
     }
