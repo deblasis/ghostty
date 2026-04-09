@@ -8,8 +8,10 @@ using Ghostty.Taskbar;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Panes;
+using Ghostty.Settings;
 using Ghostty.Tabs;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -28,7 +30,25 @@ public sealed partial class MainWindow : Window
     private TaskbarList3Facade? _taskbarFacade;
     private TaskbarProgressCoordinator? _taskbarCoordinator;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _taskbarTickTimer;
-    private readonly ITabHost _tabHost;
+    // Both tab hosts are instantiated at startup so the user can
+    // runtime-switch without ever tearing down any PaneHost or its
+    // SwapChainPanel. _tabHost tracks the currently-active one for
+    // accelerator/title-bar routing; the inactive one sits in the
+    // visual tree with Opacity=0 and IsHitTestVisible=false.
+    private readonly TabHost _horizontalTabHost;
+    private readonly VerticalTabHost _verticalTabHost;
+    private ITabHost _tabHost;
+    private readonly Grid _paneHostContainer;
+    // Title bar strip shown when vertical tabs are active. Hosts the
+    // switch-layout button on the left, the active-tab title centered,
+    // and a 146 DIP right inset for the OS caption buttons. Lives in
+    // RootGrid row 0 at col span 2 so it spans the full window.
+    private Grid _verticalTitleBar = null!;
+    private TextBlock _verticalTitleText = null!;
+    private Grid _verticalTitleDragRegion = null!;
+    private TabModel? _verticalTitleBoundTab;
+    private readonly UiSettings _uiSettings;
+    private bool _switchingLayout;
     private LeafPane? _activeLeaf;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
@@ -94,14 +114,56 @@ public sealed partial class MainWindow : Window
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
-        _tabHost = CreateTabHost(_tabManager);
-        RootGrid.Children.Add(_tabHost.HostElement);
+        _uiSettings = UiSettings.Load();
 
-        // Declare the drag region AFTER _tabHost is in the visual
-        // tree so DragRegion (the TabStripFooter Grid) is live.
-        // Clicking anywhere in that Grid drags the window; the tabs
-        // themselves are hit-test targets and remain interactive.
-        SetTitleBar(_tabHost.DragRegion as FrameworkElement);
+        // Build the dual-chrome layout: both tab hosts coexist in
+        // the same RootGrid, only one is visible at a time. The
+        // shared PaneHostContainer lives in the same grid slot
+        // forever so no SwapChainPanel is ever reparented.
+        BuildLayout(out _paneHostContainer);
+
+        _horizontalTabHost = new TabHost(_tabManager);
+        _verticalTabHost = new VerticalTabHost(_tabManager, _host);
+
+        // Chevron (and keyboard pinned toggle) forwards a new strip
+        // width. MainWindow tweens both the RootGrid outer strip
+        // column and the VerticalTabHost's own internal column in
+        // lockstep so the sidebar actually grows past 40 px.
+        _verticalTabHost.StripWidthChangeRequested += (_, width) =>
+        {
+            var col = RootGrid.ColumnDefinitions[0];
+            TweenColumnWidth(col, col.Width.Value, width, SwitchDurationMs,
+                onTick: v => _verticalTabHost.SetInternalStripWidth(v));
+        };
+
+        RebindVerticalTitle();
+        _tabManager.ActiveTabChanged += (_, _) => RebindVerticalTitle();
+
+        // Place both tab hosts in their RootGrid slots.
+        Grid.SetRow((FrameworkElement)_horizontalTabHost.HostElement, 0);
+        Grid.SetColumn((FrameworkElement)_horizontalTabHost.HostElement, 0);
+        Grid.SetColumnSpan((FrameworkElement)_horizontalTabHost.HostElement, 2);
+        RootGrid.Children.Add(_horizontalTabHost.HostElement);
+
+        Grid.SetRow(_verticalTabHost, 0);
+        Grid.SetColumn(_verticalTabHost, 0);
+        Grid.SetRowSpan(_verticalTabHost, 2);
+        RootGrid.Children.Add(_verticalTabHost);
+
+        // Parent every existing and future PaneHost into the shared
+        // container. This is the single owner for PaneHost lifetime
+        // in the visual tree — both tab hosts read from it without
+        // ever reparenting.
+        foreach (var t in _tabManager.Tabs) AddPaneHost(t);
+        SwapActivePane();
+        _tabManager.TabAdded += (_, t) => { AddPaneHost(t); SwapActivePane(); };
+        _tabManager.TabRemoved += (_, t) => RemovePaneHost(t);
+        _tabManager.ActiveTabChanged += (_, _) => SwapActivePane();
+
+        _tabHost = _uiSettings.VerticalTabs ? _verticalTabHost : _horizontalTabHost;
+        ApplyLayoutMode(_uiSettings.VerticalTabs, animate: false);
+
+        SetTitleBarForCurrentMode();
 
         InstallPaneAccelerators();
 
@@ -113,75 +175,44 @@ public sealed partial class MainWindow : Window
 
         // Taskbar progress: wire a TaskbarProgressCoordinator through
         // a real ITaskbarList3 facade, driven by a 2s DispatcherQueueTimer.
-        //
-        // Narrow try/catch on COMException only: if CoCreateInstance /
-        // HrInit genuinely fails (explorer down, session 0, etc.) the
-        // indicator is a nice-to-have and we keep the window alive.
-        // Any other exception (NRE, OOM, arg errors) is a real bug and
-        // we let it propagate so it is visible in debug and telemetry.
+        // Wrapped in try/catch because a COM failure here must not
+        // block window construction — the taskbar indicator is a
+        // nice-to-have.
         try
         {
-            // Reuse the HWND resolved for the class-brush fix above.
-            var facade = new TaskbarList3Facade(hwnd);
-            var coord = new TaskbarProgressCoordinator(
+            var taskbarHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            _taskbarFacade = new TaskbarList3Facade(taskbarHwnd);
+            _taskbarCoordinator = new TaskbarProgressCoordinator(
                 _tabManager,
-                facade,
-                () => DateTime.UtcNow);
-            var timer = DispatcherQueue.CreateTimer();
-            timer.Interval = TimeSpan.FromSeconds(2);
-            timer.IsRepeating = true;
-            // Capture the coordinator locally rather than dereferencing
-            // the field via `!`, so a partially-torn-down state cannot
-            // NRE here.
-            timer.Tick += (_, _) => coord.Tick();
-            timer.Start();
-
-            _taskbarFacade = facade;
-            _taskbarCoordinator = coord;
-            _taskbarTickTimer = timer;
+                _taskbarFacade,
+                () => System.DateTime.UtcNow);
+            _taskbarTickTimer = DispatcherQueue.CreateTimer();
+            _taskbarTickTimer.Interval = System.TimeSpan.FromSeconds(2);
+            _taskbarTickTimer.IsRepeating = true;
+            _taskbarTickTimer.Tick += (_, _) => _taskbarCoordinator!.Tick();
+            _taskbarTickTimer.Start();
 
             // Pause cycling when minimized so the taskbar does not
             // churn while the window is hidden. AppWindow.Changed
-            // fires on presenter state transitions. Store the handler
-            // so Closed can detach it.
-            _appWindowChanged = (_, _) =>
+            // fires on presenter state transitions.
+            this.AppWindow.Changed += (_, _) =>
             {
                 if (this.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter op)
                 {
                     if (op.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)
-                        coord.Pause();
+                        _taskbarCoordinator?.Pause();
                     else
-                        coord.Resume();
+                        _taskbarCoordinator?.Resume();
                 }
             };
-            this.AppWindow.Changed += _appWindowChanged;
         }
-        catch (COMException ex)
+        catch (System.Exception ex)
         {
-            // Log loudly in debug; in release the taskbar indicator is
-            // simply absent for this window's lifetime.
-            System.Diagnostics.Debug.WriteLine(
-                $"Taskbar progress wiring failed: 0x{ex.HResult:X8} {ex.Message}");
-            System.Diagnostics.Debug.Fail("Taskbar progress wiring failed", ex.ToString());
+            System.Diagnostics.Debug.WriteLine($"Taskbar progress wiring failed: {ex.Message}");
         }
 
         Closed += (_, _) =>
         {
-            // Tear down the taskbar chain before disposing the host.
-            // Order: stop timer, detach window state handler, dispose
-            // coordinator (unhooks TabManager), dispose facade (releases
-            // the ITaskbarList3 RCW).
-            _taskbarTickTimer?.Stop();
-            if (_appWindowChanged is not null)
-            {
-                this.AppWindow.Changed -= _appWindowChanged;
-                _appWindowChanged = null;
-            }
-            _taskbarCoordinator?.Dispose();
-            _taskbarCoordinator = null;
-            _taskbarFacade?.Dispose();
-            _taskbarFacade = null;
-
             // Surface lifetime is decoupled from Loaded/Unloaded
             // (see TerminalControl.DisposeSurface), so we have to
             // free every leaf in every tab explicitly before tearing
@@ -192,18 +223,327 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Pick which <see cref="ITabHost"/> implementation to use based
-    /// on the stubbed <c>vertical-tabs</c> config flag. Horizontal
-    /// (<see cref="TabHost"/>) is the default; vertical
-    /// (<see cref="VerticalTabHost"/>) opts in.
+    /// Rewrite RootGrid into a 2x2 layout that both tab hosts share:
+    ///
+    ///   +------------------+----------------+
+    ///   | v-strip col 0    | title / h-strip|  row 0 (Auto)
+    ///   |  (0 px in        |    row 0 col 1 |
+    ///   |   horizontal)    +----------------+
+    ///   |                  | PaneHost *     |  row 1 (*)
+    ///   +------------------+----------------+
+    ///
+    /// PaneHostContainer is a direct child of RootGrid at row 1,
+    /// col 1 and never moves. This is the safe slot for every
+    /// PaneHost's SwapChainPanel.
     /// </summary>
-    private ITabHost CreateTabHost(TabManager manager)
+    private void BuildLayout(out Grid paneHostContainer)
     {
-        // TODO(config): vertical-tabs (bool, default false)
-        const bool verticalTabs = false;
-        return verticalTabs
-            ? (ITabHost)new VerticalTabHost(manager, _host)
-            : new TabHost(manager);
+        RootGrid.RowDefinitions.Clear();
+        RootGrid.ColumnDefinitions.Clear();
+        RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
+        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Vertical-mode title bar (row 0, full width). Hosts the
+        // switch-layout button, the active-tab title, and the caption
+        // button inset. Visibility toggles with the active layout.
+        BuildVerticalTitleBar();
+        Grid.SetRow(_verticalTitleBar, 0);
+        Grid.SetColumn(_verticalTitleBar, 0);
+        Grid.SetColumnSpan(_verticalTitleBar, 2);
+        RootGrid.Children.Add(_verticalTitleBar);
+
+        paneHostContainer = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        Grid.SetRow(paneHostContainer, 1);
+        Grid.SetColumn(paneHostContainer, 1);
+        RootGrid.Children.Add(paneHostContainer);
+    }
+
+    private void BuildVerticalTitleBar()
+    {
+        _verticalTitleBar = new Grid
+        {
+            Height = 32,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Visibility = Visibility.Collapsed,
+        };
+        _verticalTitleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _verticalTitleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(146) });
+
+        _verticalTitleDragRegion = new Grid
+        {
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        };
+        Grid.SetColumn(_verticalTitleDragRegion, 0);
+
+        var switchButton = new Button
+        {
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            // Sit just to the right of the sidebar column (40 px
+            // wide) so the button does not overlap the chevron that
+            // lives at the top of VerticalTabStrip.
+            Margin = new Thickness(44, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = new FontIcon
+            {
+                FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)
+                    Application.Current.Resources["SymbolThemeFontFamily"],
+                Glyph = "\uE8A9",
+                FontSize = 14,
+            },
+        };
+        ToolTipService.SetToolTip(switchButton, "Switch to horizontal tabs (Ctrl+Shift+Alt+V)");
+        switchButton.Click += (_, _) => PaneActionRouter.RequestToggleTabLayout(_tabManager);
+
+        _verticalTitleText = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 12,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)
+                Application.Current.Resources["TextFillColorPrimaryBrush"],
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            IsHitTestVisible = false,
+        };
+
+        _verticalTitleDragRegion.Children.Add(switchButton);
+        _verticalTitleDragRegion.Children.Add(_verticalTitleText);
+        _verticalTitleBar.Children.Add(_verticalTitleDragRegion);
+    }
+
+    private void RebindVerticalTitle()
+    {
+        if (_verticalTitleBoundTab is not null)
+            _verticalTitleBoundTab.PropertyChanged -= OnVerticalTitlePropertyChanged;
+        _verticalTitleBoundTab = _tabManager.ActiveTab;
+        if (_verticalTitleBoundTab is not null)
+            _verticalTitleBoundTab.PropertyChanged += OnVerticalTitlePropertyChanged;
+        UpdateVerticalTitleText();
+    }
+
+    private void OnVerticalTitlePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TabModel.EffectiveTitle) ||
+            e.PropertyName == nameof(TabModel.ShellReportedTitle) ||
+            e.PropertyName == nameof(TabModel.UserOverrideTitle))
+        {
+            UpdateVerticalTitleText();
+        }
+    }
+
+    private void UpdateVerticalTitleText()
+    {
+        _verticalTitleText.Text = _verticalTitleBoundTab?.EffectiveTitle ?? "Ghostty";
+    }
+
+    private void AddPaneHost(Core.Tabs.TabModel tab)
+    {
+        var paneHost = (PaneHost)tab.PaneHost;
+        paneHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+        paneHost.VerticalAlignment = VerticalAlignment.Stretch;
+        paneHost.Visibility = Visibility.Collapsed;
+        _paneHostContainer.Children.Add(paneHost);
+    }
+
+    private void RemovePaneHost(Core.Tabs.TabModel tab)
+    {
+        var paneHost = (PaneHost)tab.PaneHost;
+        _paneHostContainer.Children.Remove(paneHost);
+    }
+
+    private void SwapActivePane()
+    {
+        var active = (PaneHost)_tabManager.ActiveTab.PaneHost;
+        foreach (UIElement child in _paneHostContainer.Children)
+        {
+            child.Visibility = ReferenceEquals(child, active)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// Toggle between horizontal and vertical tab layouts at runtime.
+    /// Triggered by Ctrl+Shift+Alt+V, the title-bar icon button, and
+    /// the strip context menu. Persists the choice via
+    /// <see cref="UiSettings"/> so it survives the next launch.
+    /// </summary>
+    internal void ToggleTabLayout()
+    {
+        if (_switchingLayout) return;
+        var toVertical = !_uiSettings.VerticalTabs;
+        _uiSettings.VerticalTabs = toVertical;
+        _uiSettings.Save();
+        _tabHost = toVertical ? _verticalTabHost : _horizontalTabHost;
+        ApplyLayoutMode(toVertical, animate: true);
+        SetTitleBarForCurrentMode();
+    }
+
+    private void SetTitleBarForCurrentMode()
+    {
+        // In horizontal mode the drag region is the TabStripFooter
+        // inside TabHost. In vertical mode it is the MainWindow-owned
+        // title bar grid (row 0 full width).
+        if (_tabHost is VerticalTabHost)
+            SetTitleBar(_verticalTitleDragRegion);
+        else
+            SetTitleBar(_horizontalTabHost.DragRegion as FrameworkElement);
+    }
+
+    /// <summary>
+    /// Apply the given layout mode to the RootGrid column widths and
+    /// both tab hosts' visibility. On first call (animate=false) the
+    /// end state is snapped immediately; on toggle (animate=true) the
+    /// outgoing chrome slides away while the incoming chrome slides
+    /// in, and the vertical strip column width tweens in parallel.
+    /// </summary>
+    private const double VerticalStripCollapsedWidth = 40;
+    private const int SwitchDurationMs = 220;
+
+    private void ApplyLayoutMode(bool verticalTabs, bool animate)
+    {
+        var verticalHost = (FrameworkElement)_verticalTabHost;
+        var horizontalHost = (FrameworkElement)_horizontalTabHost.HostElement;
+
+        var stripCol = RootGrid.ColumnDefinitions[0];
+        var targetColWidth = verticalTabs ? VerticalStripCollapsedWidth : 0;
+
+        if (!animate)
+        {
+            stripCol.Width = new GridLength(targetColWidth);
+            _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth);
+            verticalHost.Opacity = verticalTabs ? 1 : 0;
+            verticalHost.Visibility = verticalTabs ? Visibility.Visible : Visibility.Collapsed;
+            verticalHost.IsHitTestVisible = verticalTabs;
+            horizontalHost.Opacity = verticalTabs ? 0 : 1;
+            horizontalHost.Visibility = verticalTabs ? Visibility.Collapsed : Visibility.Visible;
+            horizontalHost.IsHitTestVisible = !verticalTabs;
+            _verticalTitleBar.Visibility = verticalTabs ? Visibility.Visible : Visibility.Collapsed;
+            _verticalTitleBar.Opacity = verticalTabs ? 1 : 0;
+            return;
+        }
+
+        _switchingLayout = true;
+        _verticalTitleBar.Visibility = Visibility.Visible;
+        verticalHost.Visibility = Visibility.Visible;
+        horizontalHost.Visibility = Visibility.Visible;
+
+        // Incoming chrome is prepped at Opacity 0 with a translate
+        // offset, then animates to Opacity 1 / offset 0.
+        var incoming = verticalTabs ? verticalHost : horizontalHost;
+        var outgoing = verticalTabs ? horizontalHost : verticalHost;
+        var incomingOffset = verticalTabs ? new Windows.Foundation.Point(-VerticalStripCollapsedWidth, 0) : new Windows.Foundation.Point(0, -32);
+        var outgoingOffset = verticalTabs ? new Windows.Foundation.Point(0, -32) : new Windows.Foundation.Point(-VerticalStripCollapsedWidth, 0);
+
+        incoming.IsHitTestVisible = true;
+        var incomingTx = GetOrCreateTranslate(incoming);
+        incomingTx.X = incomingOffset.X;
+        incomingTx.Y = incomingOffset.Y;
+        incoming.Opacity = 0;
+        incoming.Visibility = Visibility.Visible;
+
+        var sb = new Storyboard();
+
+        // Cross-fade.
+        sb.Children.Add(MakeDoubleAnim(incoming, "Opacity", 0, 1));
+        sb.Children.Add(MakeDoubleAnim(outgoing, "Opacity", outgoing.Opacity, 0));
+        // The vertical title bar fades with the vertical chrome.
+        sb.Children.Add(MakeDoubleAnim(_verticalTitleBar, "Opacity",
+            verticalTabs ? 0 : 1, verticalTabs ? 1 : 0));
+
+        // Slide.
+        sb.Children.Add(MakeTransformAnim(incoming, "X", incomingTx.X, 0));
+        sb.Children.Add(MakeTransformAnim(incoming, "Y", incomingTx.Y, 0));
+        var outgoingTx = GetOrCreateTranslate(outgoing);
+        sb.Children.Add(MakeTransformAnim(outgoing, "X", outgoingTx.X, outgoingOffset.X));
+        sb.Children.Add(MakeTransformAnim(outgoing, "Y", outgoingTx.Y, outgoingOffset.Y));
+
+        sb.Completed += (_, _) =>
+        {
+            outgoing.IsHitTestVisible = false;
+            outgoing.Opacity = 0;
+            outgoing.Visibility = Visibility.Collapsed;
+            // Reset outgoing back to origin so a subsequent switch
+            // animates from a known position instead of stacking.
+            outgoingTx.X = 0;
+            outgoingTx.Y = 0;
+            _verticalTitleBar.Visibility = verticalTabs ? Visibility.Visible : Visibility.Collapsed;
+            _switchingLayout = false;
+        };
+        sb.Begin();
+
+        // Column width tween runs in parallel via DispatcherQueueTimer
+        // because animating GridLength via Storyboard is clunky. Drive
+        // the VerticalTabHost's own internal column in lockstep so its
+        // visual sidebar fills the outer column.
+        TweenColumnWidth(stripCol, stripCol.Width.Value, targetColWidth, SwitchDurationMs,
+            onTick: _ => _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth));
+    }
+
+    private static TranslateTransform GetOrCreateTranslate(FrameworkElement fe)
+    {
+        if (fe.RenderTransform is TranslateTransform t) return t;
+        var nt = new TranslateTransform();
+        fe.RenderTransform = nt;
+        return nt;
+    }
+
+    private static DoubleAnimation MakeDoubleAnim(DependencyObject target, string path, double from, double to)
+    {
+        var anim = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = new Duration(TimeSpan.FromMilliseconds(SwitchDurationMs)),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+        Storyboard.SetTarget(anim, target);
+        Storyboard.SetTargetProperty(anim, path);
+        return anim;
+    }
+
+    private static DoubleAnimation MakeTransformAnim(FrameworkElement target, string axis, double from, double to)
+    {
+        var anim = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = new Duration(TimeSpan.FromMilliseconds(SwitchDurationMs)),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+        Storyboard.SetTarget(anim, target.RenderTransform);
+        Storyboard.SetTargetProperty(anim, axis);
+        return anim;
+    }
+
+    private void TweenColumnWidth(ColumnDefinition col, double from, double to, int durationMs, Action<double>? onTick = null)
+    {
+        var startTime = DateTime.UtcNow;
+        var duration = TimeSpan.FromMilliseconds(durationMs);
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(16);
+        timer.IsRepeating = true;
+        timer.Tick += (t, _) =>
+        {
+            var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
+            var progress = Math.Min(1.0, elapsed / duration.TotalMilliseconds);
+            var eased = 1 - (1 - progress) * (1 - progress);
+            var value = from + (to - from) * eased;
+            col.Width = new GridLength(value);
+            onTick?.Invoke(value);
+            if (progress >= 1.0) t.Stop();
+        };
+        timer.Start();
     }
 
     /// <summary>
@@ -297,52 +637,40 @@ public sealed partial class MainWindow : Window
                 // See https://github.com/deblasis/ghostty/issues/165.
                 if (_acceleratorFiredThisKeyDown == captured.Action) return;
                 _acceleratorFiredThisKeyDown = captured.Action;
-                PaneActionRouter.Invoke(
-                    captured.Action,
-                    _tabManager,
-                    onTabCloseRequested: OnTabCloseRequestedFromKeyboard,
-                    onToggleVerticalTabsPinned: OnToggleVerticalTabsPinnedFromKeyboard);
+                PaneActionRouter.Invoke(captured.Action, _tabManager);
             };
             _tabHost.HostElement.KeyboardAccelerators.Add(accel);
         }
 
         _tabHost.HostElement.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
         _tabHost.HostElement.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
-    }
 
-    // Route a keyboard-driven full-tab close through the shared
-    // RequestCloseTabAsync path so the confirmation dialog is the
-    // same code path as the per-tab X button and the context-menu
-    // Close item.
-    //
-    // async void is unavoidable here: this is invoked from a
-    // synchronous Action<TabManager> boundary inside the router. An
-    // unhandled exception from an async void method tears down the
-    // whole process, so we log and surface — but we do NOT swallow
-    // silently: Debug.Fail in debug builds makes bugs noisy, and the
-    // release path still logs to the debug stream for post-mortem.
-    private async void OnTabCloseRequestedFromKeyboard(TabManager mgr)
-    {
-        try
+        // Listen for keyboard-driven full-tab close. Route through
+        // TabHost.RequestCloseTabAsync so the confirmation dialog
+        // is the same code path as the per-tab X button and the
+        // context-menu Close item — single source of truth for
+        // close confirmation lives in TabHost, which has XamlRoot.
+        PaneActionRouter.TabCloseRequestedFromKeyboard += async (_, mgr) =>
         {
             if (!ReferenceEquals(mgr, _tabManager)) return;
             await _tabHost.RequestCloseTabAsync(_tabManager.ActiveTab);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"[MainWindow] OnTabCloseRequestedFromKeyboard failed: {ex}");
-            System.Diagnostics.Debug.Fail("Tab close from keyboard threw", ex.ToString());
-        }
-    }
+        };
 
-    // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
-    // when the layout is horizontal (TabHost) — the chord is
-    // registered globally but only VerticalTabHost responds.
-    private void OnToggleVerticalTabsPinnedFromKeyboard(TabManager mgr)
-    {
-        if (!ReferenceEquals(mgr, _tabManager)) return;
-        if (_tabHost is VerticalTabHost vth)
-            vth.TogglePinnedFromKeyboard();
+        // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
+        // when the layout is horizontal (TabHost) — the chord is
+        // registered globally but only VerticalTabHost responds.
+        PaneActionRouter.ToggleVerticalTabsPinnedFromKeyboard += (_, mgr) =>
+        {
+            if (!ReferenceEquals(mgr, _tabManager)) return;
+            if (_tabHost is VerticalTabHost vth)
+                vth.TogglePinnedFromKeyboard();
+        };
+
+        // Runtime tab-layout switch via Ctrl+Shift+Alt+V.
+        PaneActionRouter.ToggleTabLayoutFromKeyboard += (_, mgr) =>
+        {
+            if (!ReferenceEquals(mgr, _tabManager)) return;
+            ToggleTabLayout();
+        };
     }
 }

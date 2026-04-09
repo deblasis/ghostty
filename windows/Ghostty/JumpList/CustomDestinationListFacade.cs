@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using Ghostty.Core.JumpList;
 using Ghostty.Interop;
 
@@ -12,12 +11,11 @@ namespace Ghostty.JumpList;
 /// COM object via <see cref="ShellInterop.CoCreateInstance"/> on
 /// construction and forwards every facade call to it.
 ///
-/// The instance is single-use: one BeginList/Commit cycle per facade.
-/// Dispose after Commit to release the underlying STA RCW deterministically
-/// instead of waiting for the finalizer queue. Callers in App.xaml.cs
-/// wrap the facade in a <c>using</c> block.
+/// One instance per process is typical; <see cref="JumpListBuilder"/>
+/// calls <see cref="BeginList"/> and <see cref="Commit"/> in pairs
+/// to replace the list wholesale.
 /// </summary>
-internal sealed class CustomDestinationListFacade : ICustomDestinationListFacade, IDisposable
+internal sealed class CustomDestinationListFacade : ICustomDestinationListFacade
 {
     private readonly ShellInterop.ICustomDestinationList _list;
     // AddUserTasks on ICustomDestinationList is a one-shot call per
@@ -60,43 +58,24 @@ internal sealed class CustomDestinationListFacade : ICustomDestinationListFacade
             var link = CreateShellLink(e.exePath, e.args, e.title);
             collection.AddObject(link);
         }
-        // QI cast: IObjectCollection inherits IObjectArray at the COM
-        // level but not in the C# type system (classic ComImport doesn't
-        // chain vtables), so this cast goes through the RCW's
-        // QueryInterface rather than a type-system coercion.
         var array = (ShellInterop.IObjectArray)collection;
         _list.AppendCategory(categoryName, array);
     }
 
     public void Commit()
     {
-        try
+        if (_pendingTasks.Count > 0)
         {
-            if (_pendingTasks.Count > 0)
+            var collection = CreateCollection();
+            foreach (var t in _pendingTasks)
             {
-                var collection = CreateCollection();
-                foreach (var t in _pendingTasks)
-                {
-                    var link = CreateShellLink(t.exe, t.args, t.title);
-                    collection.AddObject(link);
-                }
-                _list.AddUserTasks((ShellInterop.IObjectArray)collection);
+                var link = CreateShellLink(t.exe, t.args, t.title);
+                collection.AddObject(link);
             }
-            _list.CommitList();
-        }
-        finally
-        {
-            // Always drop pending state, even on failure, so a retried
-            // Commit() on the same facade doesn't replay stale tasks.
+            _list.AddUserTasks((ShellInterop.IObjectArray)collection);
             _pendingTasks.Clear();
         }
-    }
-
-    public void Dispose()
-    {
-        // Deterministically release the STA RCW so the underlying
-        // ICustomDestinationList doesn't sit on the finalizer queue.
-        Marshal.FinalReleaseComObject(_list);
+        _list.CommitList();
     }
 
     private static ShellInterop.IShellLinkW CreateShellLink(string exePath, string arguments, string title)
@@ -112,9 +91,10 @@ internal sealed class CustomDestinationListFacade : ICustomDestinationListFacade
         var link = (ShellInterop.IShellLinkW)obj;
         link.SetPath(exePath);
         link.SetArguments(arguments);
-        // Title shown in the jump list comes from System.Title on the
-        // IPropertyStore side of this object — IShellLinkW.SetDescription
-        // is ignored by the Shell jump list UI on Win10+. Skip it.
+        link.SetDescription(title);
+        // Title shown in the jump list comes from System.Title, not
+        // the description. Set it via the IPropertyStore side of the
+        // same object.
         ShellInterop.SetShellLinkTitle(link, title);
         return link;
     }

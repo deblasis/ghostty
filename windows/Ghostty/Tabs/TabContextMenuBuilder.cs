@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Ghostty.Core.Tabs;
+using Ghostty.Input;
+using Ghostty.Settings;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Ghostty.Tabs;
@@ -38,6 +40,22 @@ internal static class TabContextMenuBuilder
         var closeRight = new MenuFlyoutItem { Text = "Close Tabs to the Right" };
         closeRight.Click += (_, _) => CloseToRight(manager, tab);
         flyout.Items.Add(closeRight);
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        // Runtime tab layout switch. The label flips based on the
+        // currently persisted setting so users see where they will
+        // end up. Dispatches via PaneActionRouter so MainWindow's
+        // single ToggleTabLayout entry point is the only place that
+        // actually flips state.
+        var settings = UiSettings.Load();
+        var switchLayout = new MenuFlyoutItem
+        {
+            Text = settings.VerticalTabs ? "Switch to horizontal tabs" : "Switch to vertical tabs",
+        };
+        switchLayout.Click += (_, _) =>
+            PaneActionRouter.RequestToggleTabLayout(manager);
+        flyout.Items.Add(switchLayout);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 

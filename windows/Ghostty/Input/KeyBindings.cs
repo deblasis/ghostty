@@ -97,5 +97,7 @@ internal sealed class KeyBindings
         // is enabled; PaneActionRouter no-ops if the host is not a
         // VerticalTabHost.
         new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.Space, PaneAction.ToggleVerticalTabsPinned),
+        // Runtime switch between horizontal and vertical tab layouts.
+        new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift | VirtualKeyModifiers.Menu, VirtualKey.V, PaneAction.ToggleTabLayout),
     });
 }
