@@ -2,9 +2,12 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Ghostty.Clipboard;
 using Ghostty.Controls;
+using Ghostty.Core.Clipboard;
 using Ghostty.Interop;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 
 namespace Ghostty.Hosting;
 
@@ -36,6 +39,8 @@ internal sealed class GhosttyHost : IDisposable
     public DateTime LastKeystrokeTimestamp { get; private set; } = DateTime.MinValue;
 
     internal void NoteKeystroke() => LastKeystrokeTimestamp = DateTime.UtcNow;
+
+    private ClipboardBridge? _clipboardBridge;
 
     // Delegates must be retained as fields; P/Invoke hands out native
     // function pointers the GC cannot track.
@@ -70,6 +75,22 @@ internal sealed class GhosttyHost : IDisposable
         _confirmReadClipboardCb = OnConfirmReadClipboard;
         _writeClipboardCb = OnWriteClipboard;
         _closeSurfaceCb = OnCloseSurface;
+
+        // Build the clipboard bridge after all delegate fields are assigned.
+        // The bridge takes lambdas that close over `this`, so the delegates
+        // themselves are not captured -- the ordering relative to the runtime
+        // config struct does not matter for correctness, but keeping it here
+        // makes the construction visually adjacent to the callbacks it serves.
+        var clipboardBackend = new WinUiClipboardBackend(_dispatcher);
+        var clipboardConfirmer = new DialogClipboardConfirmer(
+            _dispatcher,
+            xamlRootProvider: ResolveActiveXamlRoot);
+        var clipboardService = new ClipboardService(clipboardBackend, clipboardConfirmer);
+        _clipboardBridge = new ClipboardBridge(
+            _dispatcher,
+            clipboardService,
+            resolveSurface: ResolveSurfaceFromUserdata,
+            isSurfaceAlive: IsSurfaceAlive);
 
         var runtime = new GhosttyRuntimeConfig
         {
@@ -114,6 +135,7 @@ internal sealed class GhosttyHost : IDisposable
         _confirmReadClipboardCb = null;
         _writeClipboardCb = null;
         _closeSurfaceCb = null;
+        _clipboardBridge = null;
     }
 
     private void OnWakeup(IntPtr userdata)
@@ -228,9 +250,14 @@ internal sealed class GhosttyHost : IDisposable
         }
     }
 
-    private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state) => false;
-    private void OnConfirmReadClipboard(IntPtr userdata, IntPtr str, IntPtr state, GhosttyClipboardRequest request) { }
-    private void OnWriteClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr content, UIntPtr count, bool confirm) { }
+    private bool OnReadClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr state)
+        => _clipboardBridge?.HandleRead(userdata, kind, state) ?? false;
+
+    private void OnConfirmReadClipboard(IntPtr userdata, IntPtr str, IntPtr state, GhosttyClipboardRequest request)
+        => _clipboardBridge?.HandleConfirm(userdata, str, state, request);
+
+    private void OnWriteClipboard(IntPtr userdata, GhosttyClipboard kind, IntPtr content, UIntPtr count, bool confirm)
+        => _clipboardBridge?.HandleWrite(userdata, kind, content, count, confirm);
 
     private void OnCloseSurface(IntPtr userdata, bool processAlive)
     {
@@ -269,5 +296,49 @@ internal sealed class GhosttyHost : IDisposable
         foreach (var c in _surfaces.Values)
             if (ReferenceEquals(c, control)) return true;
         return false;
+    }
+
+    // Clipboard bridge helpers -------------------------------------------
+
+    private IntPtr ResolveSurfaceFromUserdata(IntPtr userdata)
+    {
+        if (userdata == IntPtr.Zero) return IntPtr.Zero;
+        try
+        {
+            var handle = GCHandle.FromIntPtr(userdata);
+            if (handle.IsAllocated && handle.Target is TerminalControl ctrl)
+                return ctrl.SurfaceHandle;
+        }
+        catch { }
+        return IntPtr.Zero;
+    }
+
+    private bool IsSurfaceAlive(IntPtr surface)
+    {
+        // The _surfaces dictionary is the authoritative live-surface registry.
+        // Checking it here is cheap (ConcurrentDictionary ContainsKey), and
+        // guards against a TerminalControl whose DisposeSurface() ran between
+        // the bridge's dispatch and the async continuation completing.
+        return surface != IntPtr.Zero && _surfaces.ContainsKey(surface);
+    }
+
+    private XamlRoot? ResolveActiveXamlRoot()
+    {
+        // GhosttyHost has no direct reference to a Window. The least-coupling
+        // approach that does not require threading extra state through the
+        // construction chain: grab any live TerminalControl from the surfaces
+        // registry and return its XamlRoot. All controls in a single window
+        // share the same XamlRoot, so "any" is equivalent to "the right one".
+        //
+        // If no surface is live yet (race during startup) or the dictionary
+        // was cleared during shutdown, XamlRoot will be null and
+        // DialogClipboardConfirmer auto-denies the request -- the safe
+        // fallback for a security-relevant dialog.
+        foreach (var ctrl in _surfaces.Values)
+        {
+            var root = ctrl.XamlRoot;
+            if (root is not null) return root;
+        }
+        return null;
     }
 }
