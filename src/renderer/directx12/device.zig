@@ -333,26 +333,27 @@ pub fn waitForGpu(self: *Device) !void {
 /// call this for HWND or SwapChainPanel surfaces).
 pub fn recreateSharedTexture(self: *Device, width: u32, height: u32) !void {
     // Drain GPU work referencing the old resource before releasing
-    // anything it might still touch.
-    try self.waitForGpu();
+    // anything it might still touch. Log on failure so a TDR mid-
+    // resize leaves a trail in the renderer log; the caller still
+    // has to set device_lost, but at least the diagnostic is here.
+    self.waitForGpu() catch |err| {
+        log.err("waitForGpu failed during recreateSharedTexture: {}", .{err});
+        return err;
+    };
 
     // Build a fresh state off-lock. createSharedTextureState does
     // its own errdefer cleanup on failure, so nothing leaks if this
     // returns an error.
-    var new_state = try createSharedTextureState(
+    const new_state = try createSharedTextureState(
         self.device,
         self.fence,
         width,
         height,
     );
 
-    // The fence handle from createSharedTextureState is a brand new
-    // NT handle for the same underlying fence -- we already have a
-    // handle for that fence from the initial Device.init, and we
-    // promised consumers that fence_handle is stable. Discard the
-    // new one.
+    // Fence handle is stable across resize; discard the new one
+    // (see doc comment above).
     _ = d3d12.CloseHandle(new_state.fence_handle);
-    new_state.fence_handle = undefined;
 
     self.shared_texture_mutex.lock();
     defer self.shared_texture_mutex.unlock();
