@@ -683,20 +683,44 @@ pub inline fn beginFrame(
     const dev_ptr = &(api.dev orelse return error.NoDevice);
 
     // If the apprt asked for a new surface size since the last frame,
-    // resize the swap chain now -- on the renderer thread, before any
-    // command list work. setTargetSize only records the desired size;
-    // it cannot touch GPU state because it runs on the apprt thread.
-    // Shared-texture mode has a fixed-size resource; ResizeBuffers does
-    // not apply.
-    if (api.swap_chain3 != null) {
-        const want = unpackSize(api.desired_size.load(.monotonic));
-        if (want.width != 0 and want.height != 0 and
-            (want.width != api.applied_width or want.height != api.applied_height))
-        {
+    // resize now -- on the renderer thread, before any command list work.
+    // setTargetSize only records the desired size; it cannot touch GPU
+    // state because it runs on the apprt thread.
+    //
+    // Swap-chain mode calls ResizeBuffers and re-acquires back buffers.
+    // Shared-texture mode calls recreateSharedTexture and refreshes the
+    // single RTV at heap slot 0 so subsequent beginFrame calls use the
+    // new resource dimensions. The two paths are mutually exclusive.
+    const want = unpackSize(api.desired_size.load(.monotonic));
+    if (want.width != 0 and want.height != 0 and
+        (want.width != api.applied_width or want.height != api.applied_height))
+    {
+        if (api.swap_chain3 != null) {
             api.resizeSwapChain(want.width, want.height) catch |err| {
                 log.err("DX12 swap chain resize failed: {}", .{err});
                 return error.ResizeFailed;
             };
+        } else if (dev_ptr.shared_texture != null) {
+            // Shared-texture mode has no swap chain to resize; recreate the
+            // shared resource, refresh the single RTV, and bump the version
+            // counter so consumers re-open their handle.
+            dev_ptr.recreateSharedTexture(want.width, want.height) catch |err| {
+                log.err("recreateSharedTexture failed: {}", .{err});
+                api.device_lost = true;
+                return error.ResizeFailed;
+            };
+            // Refresh the single RTV to point at the new resource.
+            // Slot 0 is the fixed shared-texture slot allocated in init();
+            // overwriting the descriptor is safe because waitForGpu inside
+            // recreateSharedTexture already drained all in-flight GPU work.
+            if (api.rtv_heap) |*heap| {
+                const st = &dev_ptr.shared_texture.?;
+                const rtv_handle = heap.cpuHandle(0);
+                dev_ptr.device.CreateRenderTargetView(st.resource, null, rtv_handle);
+                api.shared_rtv = rtv_handle;
+            }
+            api.applied_width = want.width;
+            api.applied_height = want.height;
         }
     }
 
