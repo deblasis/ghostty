@@ -91,14 +91,15 @@ public partial class App : Application
         // the process-to-AUMID association on first use and reads
         // the jump list from a per-AUMID store. Without this, the
         // jump list silently no-ops on unpackaged exes.
-        const string AppUserModelId = "com.deblasis.ghostty";
         try
         {
-            Ghostty.Interop.ShellInterop.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+            Ghostty.Interop.ShellInterop.SetCurrentProcessExplicitAppUserModelID(Ghostty.Core.AppIdentity.AumId);
         }
-        catch (System.Exception ex)
+        catch (System.Runtime.InteropServices.COMException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to set AUMID: {ex.Message}");
+            // Visible in Release too — Trace goes to attached debuggers
+            // and the process's default trace listeners, unlike Debug.
+            System.Diagnostics.Trace.TraceWarning("Ghostty: failed to set AUMID: 0x{0:x8} {1}", ex.HResult, ex.Message);
             // Continue anyway; app still functions, just without jump list.
         }
 
@@ -113,19 +114,19 @@ public partial class App : Application
             var exePath = System.Environment.ProcessPath ?? string.Empty;
             if (!string.IsNullOrEmpty(exePath))
             {
-                var facade = new Ghostty.JumpList.CustomDestinationListFacade();
+                using var facade = new Ghostty.JumpList.CustomDestinationListFacade();
                 var builder = new Ghostty.Core.JumpList.JumpListBuilder(
                     facade,
                     // TODO(config): profiles — swap for config-driven list
                     profilesProvider: () => System.Array.Empty<Ghostty.Core.JumpList.ProfileEntry>(),
                     exePath: exePath,
-                    appId: AppUserModelId);
+                    appId: Ghostty.Core.AppIdentity.AumId);
                 builder.Build();
             }
         }
-        catch (System.Exception ex)
+        catch (System.Runtime.InteropServices.COMException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to build jump list: {ex.Message}");
+            System.Diagnostics.Trace.TraceWarning("Ghostty: failed to build jump list: 0x{0:x8} {1}", ex.HResult, ex.Message);
             // Jump list is nice-to-have; failure here does not block startup.
         }
 
