@@ -395,27 +395,20 @@ public sealed partial class TerminalControl : UserControl
         // PointerDeviceType.Touchpad is only reported when the user has a
         // precision-touchpad driver; legacy touchpads masquerade as Mouse
         // and correctly fall through to the discrete branch below.
-        var precision = pt.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touchpad;
-
-        double delta;
-        int scrollMods;
-        if (precision)
+        //
+        // Precision path: Surface.zig treats the offset as pixels and
+        // applies mouse_scroll_multiplier.precision. Windows touchpads
+        // report small sub-WHEEL_DELTA values (~8..40 per frame) which
+        // map reasonably to pixel counts, so we pass the raw delta
+        // through without the /120 normalization used for wheels.
+        //
+        // Discrete wheel path: 120 units = one notch (WHEEL_DELTA).
+        // Surface.zig multiplies this by cell_size * discrete multiplier.
+        var (delta, scrollMods) = pt.PointerDeviceType switch
         {
-            // Precision path: Surface.zig treats the offset as pixels and
-            // applies mouse_scroll_multiplier.precision. Windows touchpads
-            // report small sub-WHEEL_DELTA values (~8..40 per frame) which
-            // map reasonably to pixel counts, so we pass the raw delta
-            // through without the /120 normalization used for wheels.
-            delta = rawDelta;
-            scrollMods = ScrollModsPrecision;
-        }
-        else
-        {
-            // Discrete wheel path: 120 units = one notch (WHEEL_DELTA).
-            // Surface.zig multiplies this by cell_size * discrete multiplier.
-            delta = rawDelta / 120.0;
-            scrollMods = 0;
-        }
+            PointerDeviceType.Touchpad => ((double)rawDelta, ScrollModsPrecision),
+            _ => (rawDelta / 120.0, 0),
+        };
 
         NativeMethods.SurfaceMouseScroll(
             _surface,
