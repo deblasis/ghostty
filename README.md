@@ -30,13 +30,13 @@
 > The `windows` branch is the default and contains all Windows-specific work
 > rebased on top of upstream `main`, which is synced daily.
 >
-> **Status:** DX12 renderer in progress, WinUI 3 shell with tabs, splits, jump list, taskbar progress, and runtime layout switch landed
+> **Status:** DX12 renderer end-to-end through generic.zig, WinUI 3 shell with tabs, splits, jump list, taskbar progress, and runtime layout switch landed
 >
 > **MVWT** Minimum Viewable Windows Terminal
-> `[█████████████████▌░░] 88%`
+> `[██████████████████░░] 90%`
 >
 > **MVT** Moonshot Viable Terminal ([#26](https://github.com/deblasis/ghostty/issues/26))
-> `[░░░░░░░░░░░░░░░░░░░░]  0%`
+> `[████░░░░░░░░░░░░░░░░] 22%`
 >
 > The Windows app is a native C# GUI wrapping `libghostty.dll`, same architecture
 > as macOS where Swift wraps `libghostty`. All terminal emulation stays in Zig.
