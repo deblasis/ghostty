@@ -458,16 +458,19 @@ public sealed partial class MainWindow : Window
         _frecencyStore = FrecencyStore.Load();
         var frecency = _frecencyStore;
 
+        // Defer command execution to the next dispatcher tick so the
+        // palette closes first, avoiding visual tree contention between
+        // Popup teardown and PaneHost Rebuild (e.g. close-pane).
         var builtIn = new BuiltInCommandSource(
-            paneActionFactory: action => _ => _router.Invoke(action),
-            bindingActionFactory: actionKey => _ => ExecuteBindingAction(actionKey));
+            paneActionFactory: action => _ => DispatcherQueue.TryEnqueue(() => _router.Invoke(action)),
+            bindingActionFactory: actionKey => _ => DispatcherQueue.TryEnqueue(() => ExecuteBindingAction(actionKey)));
 
         var jump = new JumpCommandSource(
             _tabManager,
-            jumpAction: (tabIdx, _) => _tabManager.JumpTo(tabIdx));
+            jumpAction: (tabIdx, _) => DispatcherQueue.TryEnqueue(() => _tabManager.JumpTo(tabIdx)));
 
         var config = new ConfigCommandSource(
-            bindingActionFactory: actionKey => _ => ExecuteBindingAction(actionKey));
+            bindingActionFactory: actionKey => _ => DispatcherQueue.TryEnqueue(() => ExecuteBindingAction(actionKey)));
 
         var sources = new List<ICommandSource> { builtIn, jump, config };
 
