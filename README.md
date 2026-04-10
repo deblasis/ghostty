@@ -30,7 +30,7 @@
 > The `windows` branch is the default and contains all Windows-specific work
 > rebased on top of upstream `main`, which is synced daily.
 >
-> **Status:** DX12 renderer in progress, WinUI 3 shell with tabs, splits, jump list, taskbar progress, and runtime layout switch landed
+> **Status:** DX12 renderer done, WinUI 3 shell with tabs, splits, jump list, taskbar progress, and runtime layout switch. NativeAOT builds a 32MB single exe with no runtime dependency.
 >
 > **MVWT** Minimum Viewable Windows Terminal
 > `[█████████████████▌░░] 88%`
@@ -38,10 +38,11 @@
 > **MVT** Moonshot Viable Terminal ([#26](https://github.com/deblasis/ghostty/issues/26))
 > `[░░░░░░░░░░░░░░░░░░░░]  0%`
 >
-> The Windows app is a native C# GUI wrapping `libghostty.dll`, same architecture
+> The Windows app is a native C# GUI wrapping `libghostty`, same architecture
 > as macOS where Swift wraps `libghostty`. All terminal emulation stays in Zig.
-> The C# layer handles windowing, input, and platform integration via P/Invoke.
-> The renderer uses DirectX 12 with DXGI swap chains and DirectComposition.
+> The C# layer handles windowing, input, and platform integration via source-generated
+> LibraryImport. The renderer uses DirectX 12 with DXGI swap chains and DirectComposition.
+> NativeAOT statically links libghostty into a single 32MB exe (no DLL, no .NET runtime).
 >
 > ### Building
 >
@@ -53,6 +54,12 @@
 > just test-lib-vt  # Fast: test libghostty-vt only
 > just build-dll    # Build libghostty.dll
 > just sync         # Rebase on latest upstream
+> ```
+>
+> **NativeAOT (single exe, no runtime):**
+> ```bash
+> zig build -Dapp-runtime=none -Drenderer=directx12  # Build static lib
+> cd windows/Ghostty && dotnet publish -r win-x64 -c Release  # 32MB exe
 > ```
 >
 > See [docs/windows/tooling.md](docs/windows/tooling.md) for why Just and how CI (I should call it DisContinous Integration) works.
@@ -77,29 +84,32 @@
 > - [x] DLL init regression test and build instructions
 > - [x] Full Windows CI test suite
 >
-> **DX12 renderer infrastructure** (in fork, in progress)
+> **DX12 renderer** (in fork, done)
 >
-> - [x] DXGI bindings (adapters, factories, swap chains -- carried from DX11)
-> - [x] DirectComposition bindings (DWM composition -- carried from DX11)
-> - [x] COM helpers and test infrastructure (carried from DX11)
+> - [x] DXGI bindings (adapters, factories, swap chains)
+> - [x] DirectComposition bindings (DWM composition)
+> - [x] COM helpers and test infrastructure
 > - [x] HLSL shaders (5 pipelines, SM 6.0 via dxc.exe)
-> - [ ] D3D12 COM interface bindings
-> - [ ] DX12 device lifecycle (command queue, fence, descriptor heaps)
-> - [ ] DX12 render pipeline (PSOs, root signatures, command lists)
-> - [ ] DX12 GPU primitives (upload heap buffers, textures, samplers)
-> - [ ] Backend enum with `directx12` variant
+> - [x] D3D12 COM interface bindings
+> - [x] DX12 device lifecycle (command queue, fence, descriptor heaps)
+> - [x] DX12 render pipeline (PSOs, root signatures, command lists)
+> - [x] DX12 GPU primitives (upload heap buffers, textures, samplers)
+> - [x] Backend enum with `directx12` variant
+> - [x] TDR detection, custom shaders, shared texture surface mode
 >
 > **SwapChainPanel spike** (in fork, [demo video](https://www.youtube.com/watch?v=-Cn9mlxX_GA))
 >
 > - [x] DX11 swap chain created from Zig, bound to WinUI 3 SwapChainPanel
 > - [x] Instanced cell grid rendering, bitmap font, animated demo scenes, resize, DPI
 >
-> **App scaffold** (in fork)
+> **WinUI 3 shell** (in fork, done)
 >
 > - [x] C# WinUI 3 project scaffold (`windows/Ghostty/`)
-> - [x] P/Invoke bindings for libghostty C API
-> - [x] `--version` flag working from command line
-> - [x] Interop test suite (7 tests against the real DLL)
+> - [x] Source-generated LibraryImport bindings for libghostty C API
+> - [x] Ghostty.Core shared assembly with pure-logic types (97 unit tests)
+> - [x] Tabs (horizontal + vertical with runtime switch), multi-pane splits
+> - [x] Custom title bar with Mica backdrop, jump list, taskbar progress
+> - [x] NativeAOT publish (32MB single exe, `PublishAot=true`)
 >
 > ### Architecture: Surface Modes
 >
@@ -113,21 +123,23 @@
 >
 > ### What is next
 >
-> - [ ] DX12 renderer: device, command queue, fence, descriptor heaps
-> - [ ] DX12 render pipelines: PSOs, root signatures, command list recording
-> - [ ] DX12 GPU primitives: upload heap buffers, textures, samplers
-> - [ ] DX12 clear-to-color: first pixels via DX12
-> - [ ] DX12 cell rendering: wire all 5 HLSL pipelines through DX12
-> - [ ] DirectWrite font backend (currently FreeType fallback, no font discovery)
-> - [ ] Clipboard (read/write stubs, not yet wired to Win32 clipboard API)
-> - [ ] Per-monitor DPI (handled but manifest not linked in example), dark/light mode theming
->
-> **Feature parity** (later)
->
-> - [ ] Multi-window, tabs, splits
+> - [ ] Config-driven theming (wire ghostty config to shell chrome)
+> - [ ] Shell integration (PSReadLine, OSC 133, CWD reporting)
 > - [ ] Native settings UI, desktop notifications
 > - [ ] Quick terminal, command palette, global keybinds
 > - [ ] Installer packages (MSI, MSIX, winget), auto-update
+> - [ ] Multi-window support
+>
+> ### What is done (beyond build infra)
+>
+> - [x] DX12 renderer: all 15 PRs merged (device, pipelines, textures, TDR, custom shaders)
+> - [x] DirectWrite font backend with font discovery and variable font support
+> - [x] Clipboard via libghostty callbacks (read, write, confirm paste)
+> - [x] WinUI 3 shell: tabs, splits, vertical tab strip, runtime layout switch
+> - [x] Jump list, taskbar progress, AUMID for unpackaged app
+> - [x] Scrollbar overlay with auto-fade, precision touchpad scroll
+> - [x] LibraryImport migration (all 30 P/Invoke declarations, AOT-safe)
+> - [x] NativeAOT: 32MB single exe, static libghostty linking, no runtime
 >
 > ### .NET Examples
 >
