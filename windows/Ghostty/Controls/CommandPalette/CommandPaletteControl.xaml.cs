@@ -64,6 +64,16 @@ internal sealed partial class CommandPaletteControl : UserControl
         SyncAll();
     }
 
+    /// <summary>
+    /// Moves keyboard focus into the search TextBox.
+    /// Called by MainWindow after opening the Popup, because WinUI Popups
+    /// don't automatically move focus into their content.
+    /// </summary>
+    public void FocusSearchBox()
+    {
+        SearchBox.Focus(FocusState.Programmatic);
+    }
+
     // ── ViewModel → UI ────────────────────────────────────────────────────────
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

@@ -411,6 +411,10 @@ public sealed partial class MainWindow : Window
             _commandPaletteVm.Open();
             CommandPalettePopup.IsOpen = true;
             Controls.TerminalControl.CommandPaletteIsOpen = true;
+
+            // WinUI Popups don't auto-focus their content. Dispatch the
+            // focus call so it runs after the Popup finishes layout.
+            DispatcherQueue.TryEnqueue(() => CommandPaletteUI.FocusSearchBox());
         }
     }
 
