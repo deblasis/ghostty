@@ -111,13 +111,31 @@ internal struct GhosttyInputKey
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct GhosttySharedTextureConfig
+{
+    [MarshalAs(UnmanagedType.I1)]
+    public bool Enabled;
+    public uint Width;
+    public uint Height;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct GhosttyPlatformWindows
 {
-    public IntPtr Hwnd;               // null for composition mode
-    public IntPtr SwapChainPanel;     // ISwapChainPanelNative*
-    public IntPtr SharedTextureOut;   // OUT: HANDLE
-    public uint TextureWidth;
-    public uint TextureHeight;
+    public IntPtr Hwnd;                        // null for composition mode
+    public IntPtr SwapChainPanel;              // ISwapChainPanelNative*
+    public GhosttySharedTextureConfig SharedTexture;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct GhosttySharedTextureSnapshot
+{
+    public IntPtr ResourceHandle;  // NT HANDLE -- do NOT CloseHandle; ghostty retains ownership
+    public IntPtr FenceHandle;     // NT HANDLE -- do NOT CloseHandle; stable for surface lifetime
+    public ulong FenceValue;
+    public uint Width;
+    public uint Height;
+    public ulong Version;
 }
 
 // ghostty_platform_u — explicit layout so all three variants share memory.
@@ -335,6 +353,12 @@ internal static partial class NativeMethods
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ghostty_surface_size")]
     internal static extern GhosttySurfaceSize SurfaceSize(GhosttySurface surface);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ghostty_surface_shared_texture")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SurfaceSharedTexture(
+        GhosttySurface surface,
+        out GhosttySharedTextureSnapshot snapshot);
 
     // ---- surface input -------------------------------------------------
 
