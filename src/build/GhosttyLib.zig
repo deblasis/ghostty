@@ -10,9 +10,11 @@ const LipoStep = @import("LipoStep.zig");
 /// The step that generates the file.
 step: *std.Build.Step,
 
-/// The final static library file
+/// The final library file
 output: std.Build.LazyPath,
 dsym: ?std.Build.LazyPath,
+pkg_config: ?std.Build.LazyPath,
+pkg_config_static: ?std.Build.LazyPath,
 
 pub fn initStatic(
     b: *std.Build,
@@ -54,6 +56,8 @@ pub fn initStatic(
         .step = &lib.step,
         .output = lib.getEmittedBin(),
         .dsym = null,
+        .pkg_config = null,
+        .pkg_config_static = null,
     };
 
     // Create a static lib that contains all our dependencies.
@@ -70,6 +74,8 @@ pub fn initStatic(
 
         // Static libraries cannot have dSYMs because they aren't linked.
         .dsym = null,
+        .pkg_config = null,
+        .pkg_config_static = null,
     };
 }
 
@@ -146,10 +152,20 @@ pub fn initShared(
         break :dsymutil output;
     };
 
+    // pkg-config
+    //
+    // pkg-config's --static only expands Libs.private / Requires.private;
+    // it doesn't change -lghostty into an archive-only reference when
+    // both shared and static libraries are installed. Install a dedicated
+    // static module so consumers can request the archive explicitly.
+    const pcs = pkgConfigFiles(b, deps);
+
     return .{
         .step = &lib.step,
         .output = lib.getEmittedBin(),
         .dsym = dsymutil,
+        .pkg_config = pcs.shared,
+        .pkg_config_static = pcs.@"static",
     };
 }
 
@@ -180,13 +196,31 @@ pub fn initMacOSUniversal(
         // You can't run dsymutil on a universal binary, you have to
         // do it on the individual binaries.
         .dsym = null,
+        .pkg_config = null,
+        .pkg_config_static = null,
     };
 }
 
 pub fn install(self: *const GhosttyLib, name: []const u8) void {
     const b = self.step.owner;
+    const step = b.getInstallStep();
     const lib_install = b.addInstallLibFile(self.output, name);
-    b.getInstallStep().dependOn(&lib_install.step);
+    step.dependOn(&lib_install.step);
+
+    if (self.pkg_config) |pc| {
+        step.dependOn(&b.addInstallFileWithDir(
+            pc,
+            .prefix,
+            "share/pkgconfig/libghostty.pc",
+        ).step);
+    }
+    if (self.pkg_config_static) |pc| {
+        step.dependOn(&b.addInstallFileWithDir(
+            pc,
+            .prefix,
+            "share/pkgconfig/libghostty-static.pc",
+        ).step);
+    }
 }
 
 pub fn installHeader(self: *const GhosttyLib) void {
@@ -196,4 +230,51 @@ pub fn installHeader(self: *const GhosttyLib) void {
         "ghostty.h",
     );
     b.getInstallStep().dependOn(&header_install.step);
+}
+
+const PkgConfigFiles = struct {
+    shared: std.Build.LazyPath,
+    @"static": std.Build.LazyPath,
+};
+
+fn pkgConfigFiles(
+    b: *std.Build,
+    deps: *const SharedDeps,
+) PkgConfigFiles {
+    const os_tag = deps.config.target.result.os.tag;
+    const wf = b.addWriteFiles();
+
+    return .{
+        .shared = wf.add("libghostty.pc", b.fmt(
+            \\prefix={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
+            \\
+            \\Name: libghostty
+            \\URL: https://github.com/ghostty-org/ghostty
+            \\Description: Ghostty terminal emulator library
+            \\Version: {f}
+            \\Cflags: -I${{includedir}}
+            \\Libs: -L${{libdir}} -lghostty
+        , .{ b.install_prefix, deps.config.version })),
+        .@"static" = wf.add("libghostty-static.pc", b.fmt(
+            \\prefix={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
+            \\
+            \\Name: libghostty-static
+            \\URL: https://github.com/ghostty-org/ghostty
+            \\Description: Ghostty terminal emulator library (static)
+            \\Version: {f}
+            \\Cflags: -I${{includedir}}
+            \\Libs: ${{libdir}}/{s}
+        , .{ b.install_prefix, deps.config.version, staticLibraryName(os_tag) })),
+    };
+}
+
+fn staticLibraryName(os_tag: std.Target.Os.Tag) []const u8 {
+    return if (os_tag == .windows)
+        "ghostty-static.lib"
+    else
+        "libghostty.a";
 }
