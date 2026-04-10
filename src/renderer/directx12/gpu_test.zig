@@ -687,6 +687,47 @@ test "Device: shared texture 0x0 dimensions does not crash" {
     try std.testing.expectEqual(@as(u32, 1), st.height);
 }
 
+test "Device: recreateSharedTexture bumps version and changes handle" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    var device = Device.init(.{ .shared_texture = .{
+        .width = 320,
+        .height = 240,
+    } }, .{}) catch return;
+    defer device.deinit();
+
+    const st_before = device.shared_texture.?;
+    const version_before = st_before.version;
+    const handle_before = st_before.resource_handle;
+    const fence_handle_before = st_before.fence_handle;
+
+    device.recreateSharedTexture(800, 600) catch return;
+
+    const st_after = device.shared_texture.?;
+    try std.testing.expect(st_after.version > version_before);
+    try std.testing.expect(st_after.resource_handle != handle_before);
+    // Fence handle is stable across resize.
+    try std.testing.expectEqual(fence_handle_before, st_after.fence_handle);
+    try std.testing.expectEqual(@as(u32, 800), st_after.width);
+    try std.testing.expectEqual(@as(u32, 600), st_after.height);
+}
+
+test "Device: shared texture deinit does not leak" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    // Create + destroy several times; if handles leak, the OS will
+    // eventually refuse new allocations. This is a weak guarantee but
+    // catches gross mistakes.
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        var device = Device.init(.{ .shared_texture = .{
+            .width = 64,
+            .height = 64,
+        } }, .{}) catch return;
+        device.deinit();
+    }
+}
+
 test "Device: HWND surface with 0x0 dimensions clamps to 1x1" {
     if (comptime builtin.os.tag != .windows) return;
 
