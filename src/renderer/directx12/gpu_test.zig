@@ -672,7 +672,7 @@ test "Device: shared texture 0x0 dimensions does not crash" {
     if (comptime builtin.os.tag != .windows) return;
 
     // SharedTexture mode has no swap chain, so 0x0 should not hit DXGI.
-    // createSharedTextureState clamps both dimensions to 1.
+    // SharedTextureState.init clamps both dimensions to 1.
     var device = Device.init(.{ .shared_texture = .{
         .width = 0,
         .height = 0,
@@ -680,7 +680,7 @@ test "Device: shared texture 0x0 dimensions does not crash" {
     defer device.deinit();
 
     try std.testing.expect(device.swap_chain == null);
-    try std.testing.expect(device.fence_value == 0);
+    try std.testing.expectEqual(@as(u64, 0), device.fence_value.load(.monotonic));
 
     const st = device.shared_texture orelse return error.SharedTextureNotPopulated;
     try std.testing.expectEqual(@as(u32, 1), st.width);

@@ -33,7 +33,7 @@ pub const frame_count: u32 = 3;
 device: *d3d12.ID3D12Device,
 command_queue: *d3d12.ID3D12CommandQueue,
 fence: *d3d12.ID3D12Fence,
-fence_value: u64,
+fence_value: std.atomic.Value(u64),
 fence_event: std.os.windows.HANDLE,
 
 swap_chain: ?*dxgi.IDXGISwapChain1,
@@ -43,19 +43,17 @@ dcomp_device: ?*dcomp.IDCompositionDevice,
 dcomp_target: ?*dcomp.IDCompositionTarget,
 dcomp_visual: ?*dcomp.IDCompositionVisual,
 
-/// Shared-texture mode state. Null for HWND / SwapChainPanel modes.
-/// Populated by Device.init when the surface variant is shared_texture
-/// and mutated by recreateSharedTexture on resize. Readers must hold
+/// Null for HWND / SwapChainPanel modes. Readers must hold
 /// shared_texture_mutex.
 shared_texture: ?SharedTextureState = null,
 
-/// Guards shared_texture and the fence_value counter for atomic reads
-/// by ghostty_surface_shared_texture() on the apprt thread.
+/// Guards shared_texture for atomic snapshot reads by
+/// ghostty_surface_shared_texture() on the apprt thread.
 shared_texture_mutex: std.Thread.Mutex = .{},
 
 /// Shared-texture mode state. Populated by Device.init when the
 /// surface variant is .shared_texture, torn down in Device.deinit,
-/// and recreated on resize. Readers must hold `shared_texture_mutex`.
+/// and recreated on resize.
 pub const SharedTextureState = struct {
     /// The ID3D12Resource ghostty renders into. Owned by Device.
     resource: *d3d12.ID3D12Resource,
@@ -70,6 +68,111 @@ pub const SharedTextureState = struct {
     height: u32,
     /// Monotonically increasing; bumped by recreateSharedTexture.
     version: u64,
+
+    /// Create a shared committed ID3D12Resource and NT handles for both
+    /// the resource and the given fence. Returns a populated
+    /// SharedTextureState ready to be stored on Device.
+    ///
+    /// Format is B8G8R8A8_UNORM to match the renderer's swap-chain path
+    /// (no shader or pipeline permutations required). Flags are
+    /// ALLOW_RENDER_TARGET (ghostty writes to it) plus
+    /// ALLOW_SIMULTANEOUS_ACCESS (consumers can read while ghostty writes
+    /// without explicit state transitions). Initial state is COMMON, the
+    /// only state ALLOW_SIMULTANEOUS_ACCESS resources are ever allowed to
+    /// be in on either device -- the fence is our sole synchronization
+    /// primitive.
+    ///
+    /// Width/height are clamped to a minimum of 1 because
+    /// CreateCommittedResource rejects zero dimensions.
+    pub fn init(
+        device: *d3d12.ID3D12Device,
+        fence: *d3d12.ID3D12Fence,
+        width: u32,
+        height: u32,
+    ) !SharedTextureState {
+        const w: u32 = @max(width, 1);
+        const h: u32 = @max(height, 1);
+
+        const heap_props = d3d12.D3D12_HEAP_PROPERTIES{
+            .Type = .DEFAULT,
+            .CPUPageProperty = 0,
+            .MemoryPoolPreference = 0,
+            .CreationNodeMask = 0,
+            .VisibleNodeMask = 0,
+        };
+
+        const desc = d3d12.D3D12_RESOURCE_DESC{
+            .Dimension = .TEXTURE2D,
+            .Alignment = 0,
+            .Width = @as(u64, w),
+            .Height = h,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .Format = .B8G8R8A8_UNORM,
+            .SampleDesc = .{ .Count = 1, .Quality = 0 },
+            .Layout = .UNKNOWN,
+            .Flags = @enumFromInt(
+                @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_RENDER_TARGET) |
+                    @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_SIMULTANEOUS_ACCESS),
+            ),
+        };
+
+        var resource: ?*d3d12.ID3D12Resource = null;
+        {
+            const hr = device.CreateCommittedResource(
+                &heap_props,
+                @intFromEnum(d3d12.D3D12_HEAP_FLAGS.SHARED),
+                &desc,
+                .COMMON,
+                null,
+                &d3d12.ID3D12Resource.IID,
+                @ptrCast(&resource),
+            );
+            if (FAILED(hr)) {
+                log.err("CreateCommittedResource (shared) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+                return error.SharedResourceCreationFailed;
+            }
+        }
+        const res = resource orelse return error.SharedResourceCreationFailed;
+        errdefer _ = res.Release();
+
+        var resource_handle: std.os.windows.HANDLE = undefined;
+        {
+            const hr = device.CreateSharedHandle(
+                @ptrCast(res),
+                d3d12.GENERIC_ALL,
+                &resource_handle,
+            );
+            if (FAILED(hr)) {
+                log.err("CreateSharedHandle (resource) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+                return error.SharedHandleCreationFailed;
+            }
+        }
+        errdefer _ = d3d12.CloseHandle(resource_handle);
+
+        var fence_handle: std.os.windows.HANDLE = undefined;
+        {
+            const hr = device.CreateSharedHandle(
+                @ptrCast(fence),
+                d3d12.GENERIC_ALL,
+                &fence_handle,
+            );
+            if (FAILED(hr)) {
+                log.err("CreateSharedHandle (fence) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
+                return error.SharedHandleCreationFailed;
+            }
+        }
+        errdefer _ = d3d12.CloseHandle(fence_handle);
+
+        return .{
+            .resource = res,
+            .resource_handle = resource_handle,
+            .fence_handle = fence_handle,
+            .width = w,
+            .height = h,
+            .version = 1,
+        };
+    }
 };
 
 pub const InitOptions = struct {
@@ -151,8 +254,8 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
     // debug layer from warning about attempting to share an unshared
     // fence, and CreateFence itself does not care either way.
     const fence_flags: d3d12.D3D12_FENCE_FLAGS = switch (surface) {
+        .hwnd, .swap_chain_panel => .NONE,
         .shared_texture => .SHARED,
-        else => .NONE,
     };
 
     // -- Fence --
@@ -240,7 +343,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
             // SharedTexture: no swap chain. Create the shared committed
             // resource + NT handles for the resource and the fence so the
             // consumer device can OpenSharedHandle on both.
-            result_shared_texture = try createSharedTextureState(
+            result_shared_texture = try SharedTextureState.init(
                 dev,
                 fence.?,
                 cfg.width,
@@ -264,7 +367,7 @@ pub fn init(surface: @import("surface.zig").Surface, opts: InitOptions) !Device 
         .device = dev,
         .command_queue = command_queue.?,
         .fence = fence.?,
-        .fence_value = 0,
+        .fence_value = std.atomic.Value(u64).init(0),
         .fence_event = fence_event,
         .swap_chain = swap_chain,
         .dcomp_device = dcomp_device_ptr,
@@ -301,8 +404,7 @@ pub fn deinit(self: *Device) void {
 
 /// Signal the fence from the command queue and block until the GPU catches up.
 pub fn waitForGpu(self: *Device) !void {
-    self.fence_value += 1;
-    const signal_value = self.fence_value;
+    const signal_value = self.fence_value.fetchAdd(1, .release) + 1;
 
     var hr = self.command_queue.Signal(self.fence, signal_value);
     if (FAILED(hr)) return error.FenceSignalFailed;
@@ -324,7 +426,7 @@ pub fn waitForGpu(self: *Device) !void {
 /// The fence handle is preserved across resize -- the fence itself
 /// is stable for the surface lifetime, and re-issuing a shared
 /// handle for it would force every consumer to re-open the fence
-/// every time the window resized. createSharedTextureState
+/// every time the window resized. SharedTextureState.init
 /// unavoidably produces a fresh fence handle as part of its output;
 /// we close it immediately.
 ///
@@ -341,10 +443,10 @@ pub fn recreateSharedTexture(self: *Device, width: u32, height: u32) !void {
         return err;
     };
 
-    // Build a fresh state off-lock. createSharedTextureState does
+    // Build a fresh state off-lock. SharedTextureState.init does
     // its own errdefer cleanup on failure, so nothing leaks if this
     // returns an error.
-    const new_state = try createSharedTextureState(
+    const new_state = try SharedTextureState.init(
         self.device,
         self.fence,
         width,
@@ -502,116 +604,6 @@ fn createDCompVisual(
     }
 
     return visual.?;
-}
-
-/// Create a shared committed ID3D12Resource and NT handles for both
-/// the resource and the given fence. Returns a populated
-/// SharedTextureState ready to be stored on Device.
-///
-/// Format is B8G8R8A8_UNORM to match the renderer's swap-chain path
-/// (no shader or pipeline permutations required). Flags are
-/// ALLOW_RENDER_TARGET (ghostty writes to it) plus
-/// ALLOW_SIMULTANEOUS_ACCESS (consumers can read while ghostty writes
-/// without explicit state transitions). Initial state is COMMON, the
-/// only state ALLOW_SIMULTANEOUS_ACCESS resources are ever allowed to
-/// be in on either device -- the fence is our sole synchronization
-/// primitive.
-///
-/// Width/height are clamped to a minimum of 1 because
-/// CreateCommittedResource rejects zero dimensions.
-fn createSharedTextureState(
-    device: *d3d12.ID3D12Device,
-    fence: *d3d12.ID3D12Fence,
-    width: u32,
-    height: u32,
-) !SharedTextureState {
-    const w: u32 = @max(width, 1);
-    const h: u32 = @max(height, 1);
-
-    const heap_props = d3d12.D3D12_HEAP_PROPERTIES{
-        .Type = .DEFAULT,
-        .CPUPageProperty = 0,
-        .MemoryPoolPreference = 0,
-        .CreationNodeMask = 0,
-        .VisibleNodeMask = 0,
-    };
-
-    const desc = d3d12.D3D12_RESOURCE_DESC{
-        .Dimension = .TEXTURE2D,
-        .Alignment = 0,
-        .Width = @as(u64, w),
-        .Height = h,
-        .DepthOrArraySize = 1,
-        .MipLevels = 1,
-        .Format = .B8G8R8A8_UNORM,
-        .SampleDesc = .{ .Count = 1, .Quality = 0 },
-        .Layout = .UNKNOWN,
-        .Flags = @enumFromInt(
-            @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_RENDER_TARGET) |
-                @intFromEnum(d3d12.D3D12_RESOURCE_FLAGS.ALLOW_SIMULTANEOUS_ACCESS),
-        ),
-    };
-
-    var resource: ?*d3d12.ID3D12Resource = null;
-    {
-        const hr = device.CreateCommittedResource(
-            &heap_props,
-            @intFromEnum(d3d12.D3D12_HEAP_FLAGS.SHARED),
-            &desc,
-            .COMMON,
-            null,
-            &d3d12.ID3D12Resource.IID,
-            @ptrCast(&resource),
-        );
-        if (FAILED(hr)) {
-            log.err("CreateCommittedResource (shared) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
-            return error.SharedResourceCreationFailed;
-        }
-    }
-    const res = resource orelse return error.SharedResourceCreationFailed;
-    errdefer _ = res.Release();
-
-    var resource_handle: std.os.windows.HANDLE = undefined;
-    {
-        const hr = device.CreateSharedHandle(
-            @ptrCast(res),
-            d3d12.GENERIC_ALL,
-            &resource_handle,
-        );
-        if (FAILED(hr)) {
-            log.err("CreateSharedHandle (resource) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
-            return error.SharedHandleCreationFailed;
-        }
-    }
-    errdefer _ = d3d12.CloseHandle(resource_handle);
-
-    var fence_handle: std.os.windows.HANDLE = undefined;
-    {
-        const hr = device.CreateSharedHandle(
-            @ptrCast(fence),
-            d3d12.GENERIC_ALL,
-            &fence_handle,
-        );
-        if (FAILED(hr)) {
-            log.err("CreateSharedHandle (fence) failed: 0x{x}", .{@as(u32, @bitCast(hr))});
-            // resource_handle and res are cleaned up by their
-            // respective errdefers above. fence_handle is never set
-            // because CreateSharedHandle failed.
-            return error.SharedHandleCreationFailed;
-        }
-    }
-    // NOTE: no errdefer on fence_handle. Nothing between this point
-    // and the return can fail, so the errdefer would be dead code.
-    // If future edits add a fallible step here, add an errdefer too.
-
-    return .{
-        .resource = res,
-        .resource_handle = resource_handle,
-        .fence_handle = fence_handle,
-        .width = w,
-        .height = h,
-        .version = 1,
-    };
 }
 
 // --- Tests ---

@@ -1853,7 +1853,7 @@ pub const CAPI = struct {
     ) bool {
         if (comptime builtin.os.tag != .windows) return false;
         const api_ptr = &surface.core_surface.renderer.api;
-        if (comptime !@hasField(@TypeOf(api_ptr.*), "dev")) return false;
+        if (comptime @TypeOf(api_ptr.*) != renderer.DirectX12) return false;
         if (api_ptr.dev == null) return false;
         const dev = &api_ptr.dev.?;
 
@@ -1865,7 +1865,7 @@ pub const CAPI = struct {
         out.* = .{
             .resource_handle = @ptrCast(st.resource_handle),
             .fence_handle = @ptrCast(st.fence_handle),
-            .fence_value = dev.fence_value,
+            .fence_value = dev.fence_value.load(.acquire),
             .width = st.width,
             .height = st.height,
             .version = st.version,
