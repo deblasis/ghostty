@@ -52,13 +52,6 @@
         </Grid.ColumnDefinitions>
 
         <!--
-            Vertical-mode title bar. Spans both columns so the drag
-            region and title text fill the window width; the caption
-            inset on the right reserves room for the OS min/max/close
-            buttons. Width of that inset is kept in sync with
-            AppWindow.TitleBar.RightInset from code-behind.
-        -->
-        <!--
             Vertical-mode title bar. Three columns:
             Col 0 mirrors StripColumn so the drag region starts after
             the tab strip, avoiding a Z-order fight with the chevron
@@ -74,7 +67,7 @@
               Height="32"
               Visibility="Collapsed">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="TitleBarStripMirror" Width="40"/>
+                <ColumnDefinition x:Name="TitleBarStripMirror" Width="0"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition x:Name="VerticalCaptionInset" Width="146"/>
             </Grid.ColumnDefinitions>
