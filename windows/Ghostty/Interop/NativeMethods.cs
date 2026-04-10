@@ -447,6 +447,6 @@ internal static partial class NativeMethods
     internal const uint MB_OK = 0x00000000;
 
     [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
+    [return: MarshalAs(UnmanagedType.Bool)] // Win32 BOOL is 4 bytes, not 1
     internal static partial bool MessageBeep(uint uType);
 }
