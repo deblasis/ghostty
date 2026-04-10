@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window
     private readonly TaskbarHost _taskbar;
 
     private CommandPaletteViewModel? _commandPaletteVm;
+    private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
@@ -206,6 +207,21 @@ public sealed partial class MainWindow : Window
 
         _commandPaletteVm = CreateCommandPaletteViewModel();
         CommandPaletteUI.Bind(_commandPaletteVm);
+
+        // When the ViewModel closes itself (e.g. after executing a command),
+        // sync the Popup and focus state.
+        _commandPaletteVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(CommandPaletteViewModel.IsOpen) && !_commandPaletteVm.IsOpen)
+            {
+                CommandPalettePopup.IsOpen = false;
+                Controls.TerminalControl.CommandPaletteIsOpen = false;
+                _frecencyStore.Save();
+                _previousFocusSurface?.Focus(FocusState.Programmatic);
+            }
+        };
+
+        // When the Popup is light-dismissed (click outside), sync the ViewModel.
         CommandPalettePopup.Closed += (_, _) =>
         {
             _commandPaletteVm.Close();
@@ -420,7 +436,8 @@ public sealed partial class MainWindow : Window
 
     private CommandPaletteViewModel CreateCommandPaletteViewModel()
     {
-        var frecency = FrecencyStore.Load();
+        _frecencyStore = FrecencyStore.Load();
+        var frecency = _frecencyStore;
 
         var builtIn = new BuiltInCommandSource(
             paneActionFactory: action => _ => _router.Invoke(action),
