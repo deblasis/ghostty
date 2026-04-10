@@ -412,7 +412,10 @@ pub fn add(
     // C files
     step.linkLibC();
     step.addIncludePath(b.path("src/stb"));
-    step.addCSourceFiles(.{ .files = &.{"src/stb/stb.c"} });
+    step.addCSourceFiles(.{
+        .files = &.{"src/stb/stb.c"},
+        .flags = &.{"-fno-sanitize=undefined"},
+    });
     if (step.rootModuleTarget().os.tag == .linux) {
         step.addIncludePath(b.path("src/apprt/gtk"));
     }
