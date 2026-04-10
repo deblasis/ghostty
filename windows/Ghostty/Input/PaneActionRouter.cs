@@ -49,6 +49,12 @@ internal sealed class PaneActionRouter
     public event EventHandler? ToggleTabLayoutRequested;
 
     /// <summary>
+    /// Raised when the Ctrl+Shift+P chord fires. MainWindow listens
+    /// and shows or hides the command palette overlay.
+    /// </summary>
+    public event EventHandler? CommandPaletteToggleRequested;
+
+    /// <summary>
     /// Raised when the keyboard close chord targets a full-tab close.
     /// MainWindow listens and shows the confirmation dialog (if needed)
     /// before calling <see cref="TabManager.CloseTab"/>.
@@ -101,6 +107,9 @@ internal sealed class PaneActionRouter
                 break;
             case PaneAction.ToggleTabLayout:
                 ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
+                break;
+            case PaneAction.ToggleCommandPalette:
+                CommandPaletteToggleRequested?.Invoke(this, EventArgs.Empty);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
