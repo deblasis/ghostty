@@ -125,9 +125,13 @@ internal sealed partial class CommandPaletteControl : UserControl
     {
         if (_vm is null) return;
 
-        // Replace ItemsSource with a new list snapshot so WinUI re-creates
-        // the containers and ContainerContentChanging fires for all items.
-        ResultsList.ItemsSource = _vm.FilteredCommands.ToArray();
+        // WinUI's ItemsSource setter throws ArgumentException for internal
+        // types because the XAML runtime can't access them via reflection.
+        // Use Items.Clear() + Add() instead — the ContainerContentChanging
+        // handler populates the template elements from the CommandItem.
+        ResultsList.Items.Clear();
+        foreach (var cmd in _vm.FilteredCommands)
+            ResultsList.Items.Add(cmd);
 
         SyncSelectedItem();
     }

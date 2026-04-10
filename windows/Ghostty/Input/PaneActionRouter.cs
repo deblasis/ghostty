@@ -63,6 +63,21 @@ internal sealed class PaneActionRouter
 
     public void Invoke(PaneAction action)
     {
+        // Event-only actions that don't need pane/tab state — handle
+        // before accessing ActiveTab.PaneHost to avoid null/cast issues.
+        switch (action)
+        {
+            case PaneAction.ToggleVerticalTabsPinned:
+                ToggleVerticalTabsPinnedRequested?.Invoke(this, EventArgs.Empty);
+                return;
+            case PaneAction.ToggleTabLayout:
+                ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
+                return;
+            case PaneAction.ToggleCommandPalette:
+                CommandPaletteToggleRequested?.Invoke(this, EventArgs.Empty);
+                return;
+        }
+
         var pane = _tabs.ActiveTab.PaneHost;
         var concrete = (PaneHost)pane;
         switch (action)
@@ -102,15 +117,6 @@ internal sealed class PaneActionRouter
                 if (i > 0) _tabs.Move(i, i - 1);
                 break;
             }
-            case PaneAction.ToggleVerticalTabsPinned:
-                ToggleVerticalTabsPinnedRequested?.Invoke(this, EventArgs.Empty);
-                break;
-            case PaneAction.ToggleTabLayout:
-                ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
-                break;
-            case PaneAction.ToggleCommandPalette:
-                CommandPaletteToggleRequested?.Invoke(this, EventArgs.Empty);
-                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
