@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
+using Ghostty.Commands;
+using Ghostty.Controls;
 using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;
 using Ghostty.Hosting;
 using Ghostty.Input;
+using Ghostty.Interop;
 using Ghostty.Panes;
 using Ghostty.Settings;
 using Ghostty.Shell;
@@ -54,6 +59,9 @@ public sealed partial class MainWindow : Window
     private readonly LayoutCoordinator _layout;
     private readonly TitleBarCoordinator _titleBar;
     private readonly TaskbarHost _taskbar;
+
+    private CommandPaletteViewModel? _commandPaletteVm;
+    private Controls.TerminalControl? _previousFocusSurface;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
     // fires accelerator Invoked twice for a single key event when the
@@ -195,6 +203,18 @@ public sealed partial class MainWindow : Window
         };
 
         InstallPaneAccelerators();
+
+        _commandPaletteVm = CreateCommandPaletteViewModel();
+        CommandPaletteUI.Bind(_commandPaletteVm);
+        CommandPalettePopup.Closed += (_, _) =>
+        {
+            _commandPaletteVm.Close();
+            Controls.TerminalControl.CommandPaletteIsOpen = false;
+            _previousFocusSurface?.Focus(FocusState.Programmatic);
+        };
+
+        _host.CommandPaletteToggleRequested += (_, _) =>
+            DispatcherQueue.TryEnqueue(ToggleCommandPalette);
 
         _tabManager.LastTabClosed += (_, _) => Close();
 
@@ -365,5 +385,98 @@ public sealed partial class MainWindow : Window
         // Runtime tab-layout switch via Ctrl+Shift+Alt+V (and the
         // title-bar icon + context menu, which share the event path).
         _router.ToggleTabLayoutRequested += (_, _) => ToggleTabLayout();
+
+        _router.CommandPaletteToggleRequested += (_, _) => ToggleCommandPalette();
+    }
+
+    private void ToggleCommandPalette()
+    {
+        if (_commandPaletteVm!.IsOpen)
+        {
+            _commandPaletteVm.Close();
+            CommandPalettePopup.IsOpen = false;
+            Controls.TerminalControl.CommandPaletteIsOpen = false;
+            _previousFocusSurface?.Focus(FocusState.Programmatic);
+        }
+        else
+        {
+            _previousFocusSurface = FocusManager.GetFocusedElement(Content.XamlRoot) as Controls.TerminalControl;
+
+            var windowWidth = AppWindow.Size.Width;
+            var paletteWidth = Math.Min(600, windowWidth * 0.9);
+            CommandPalettePopup.HorizontalOffset = (windowWidth - paletteWidth) / 2;
+            CommandPalettePopup.VerticalOffset = 48;
+            CommandPaletteUI.Width = paletteWidth;
+
+            _commandPaletteVm.Open();
+            CommandPalettePopup.IsOpen = true;
+            Controls.TerminalControl.CommandPaletteIsOpen = true;
+        }
+    }
+
+    private CommandPaletteViewModel CreateCommandPaletteViewModel()
+    {
+        var frecency = FrecencyStore.Load();
+
+        var builtIn = new BuiltInCommandSource(
+            paneActionFactory: action => _ => _router.Invoke(action),
+            bindingActionFactory: actionKey => _ => ExecuteBindingAction(actionKey));
+
+        var jump = new JumpCommandSource(
+            _tabManager,
+            jumpAction: (tabIdx, _) => _tabManager.JumpTo(tabIdx));
+
+        var config = new ConfigCommandSource(
+            bindingActionFactory: actionKey => _ => ExecuteBindingAction(actionKey));
+
+        var sources = new List<ICommandSource> { builtIn, jump, config };
+
+        // Build the action autocompleter with a minimal set of action schemas.
+        var schemas = new Dictionary<string, ActionSchema>
+        {
+            ["reset"] = new() { Name = "reset", Description = "Reset the terminal", RequiresParameter = false },
+            ["copy_to_clipboard"] = new() { Name = "copy_to_clipboard", Description = "Copy selection to clipboard", RequiresParameter = false },
+            ["paste_from_clipboard"] = new() { Name = "paste_from_clipboard", Description = "Paste from clipboard", RequiresParameter = false },
+            ["select_all"] = new() { Name = "select_all", Description = "Select all terminal content", RequiresParameter = false },
+            ["increase_font_size"] = new() { Name = "increase_font_size", Description = "Increase font size", RequiresParameter = true, Parameters = ["1", "2"] },
+            ["decrease_font_size"] = new() { Name = "decrease_font_size", Description = "Decrease font size", RequiresParameter = true, Parameters = ["1", "2"] },
+            ["reset_font_size"] = new() { Name = "reset_font_size", Description = "Reset font size to default", RequiresParameter = false },
+            ["clear_screen"] = new() { Name = "clear_screen", Description = "Clear screen and scrollback", RequiresParameter = false },
+            ["scroll_to_top"] = new() { Name = "scroll_to_top", Description = "Scroll to top of scrollback", RequiresParameter = false },
+            ["scroll_to_bottom"] = new() { Name = "scroll_to_bottom", Description = "Scroll to bottom", RequiresParameter = false },
+            ["open_config"] = new() { Name = "open_config", Description = "Open configuration file", RequiresParameter = false },
+            ["reload_config"] = new() { Name = "reload_config", Description = "Reload configuration", RequiresParameter = false },
+            ["toggle_fullscreen"] = new() { Name = "toggle_fullscreen", Description = "Toggle fullscreen mode", RequiresParameter = false },
+            ["equalize_splits"] = new() { Name = "equalize_splits", Description = "Equalize split panes", RequiresParameter = false },
+            ["toggle_split_zoom"] = new() { Name = "toggle_split_zoom", Description = "Zoom current split", RequiresParameter = false },
+        };
+
+        var autoCompleter = new ActionAutoCompleter(schemas);
+
+        return new CommandPaletteViewModel(
+            sources,
+            frecency,
+            autoCompleter,
+            groupByCategory: _uiSettings.CommandPaletteGroupCommands);
+    }
+
+    private void ExecuteBindingAction(string actionKey)
+    {
+        var leaf = _tabManager.ActiveTab?.PaneHost?.ActiveLeaf;
+        if (leaf is null) return;
+
+        var terminal = leaf.Terminal();
+        var surfaceHandle = terminal.SurfaceHandle;
+        if (surfaceHandle == IntPtr.Zero) return;
+
+        var surface = new GhosttySurface(surfaceHandle);
+        var actionBytes = Encoding.UTF8.GetBytes(actionKey);
+        unsafe
+        {
+            fixed (byte* p = actionBytes)
+            {
+                NativeMethods.SurfaceBindingAction(surface, p, (UIntPtr)actionBytes.Length);
+            }
+        }
     }
 }
