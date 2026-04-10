@@ -27,6 +27,7 @@ internal sealed class JumpCommandSource : ICommandSource
     private List<CommandItem> BuildCommands()
     {
         var commands = new List<CommandItem>();
+        if (_tabs.Tabs.Count == 0) return commands;
 
         for (int tabIdx = 0; tabIdx < _tabs.Tabs.Count; tabIdx++)
         {

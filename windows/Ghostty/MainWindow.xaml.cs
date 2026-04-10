@@ -9,6 +9,7 @@ using Ghostty.Dialogs;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Interop;
+using Ghostty.Core.Panes;
 using Ghostty.Panes;
 using Ghostty.Settings;
 using Ghostty.Shell;
@@ -63,7 +64,13 @@ public sealed partial class MainWindow : Window
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
-    private bool _paletteClosing;
+
+    /// <summary>
+    /// Palette close state: prevents re-entrant close handling between
+    /// ViewModel.PropertyChanged and Popup.Closed callbacks.
+    /// </summary>
+    private enum PaletteCloseState { Idle, ClosingFromCommand, ClosingFromToggle }
+    private PaletteCloseState _paletteCloseState;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
     // fires accelerator Invoked twice for a single key event when the
@@ -211,18 +218,18 @@ public sealed partial class MainWindow : Window
         CommandPaletteUI.ApplySettings(_uiSettings.CommandPaletteBackground);
 
         // When the ViewModel closes itself (e.g. after executing a command),
-        // sync the Popup and focus state. Guard: only act once per close.
+        // sync the Popup and focus state.
         _commandPaletteVm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(CommandPaletteViewModel.IsOpen)) return;
             if (_commandPaletteVm.IsOpen) return;
+            if (_paletteCloseState != PaletteCloseState.Idle) return;
 
-            // Prevent Popup.Closed from re-entering.
-            _paletteClosing = true;
+            _paletteCloseState = PaletteCloseState.ClosingFromCommand;
             try
             {
                 CommandPalettePopup.IsOpen = false;
-                Controls.TerminalControl.CommandPaletteIsOpen = false;
+                SetCommandPaletteOpenOnAllTerminals(false);
                 _frecencyStore?.Save();
 
                 // Don't focus a surface that may have just been disposed
@@ -231,26 +238,31 @@ public sealed partial class MainWindow : Window
             }
             finally
             {
-                _paletteClosing = false;
+                _paletteCloseState = PaletteCloseState.Idle;
             }
         };
 
         // When the Popup is light-dismissed (click outside), sync the ViewModel.
-        // For command-execution closes, _paletteClosing prevents re-entry, but
-        // Popup.Closed may fire asynchronously after the flag resets. Use
-        // _commandPaletteVm.IsOpen as the definitive check — if the ViewModel
-        // already closed, we only need to restore focus for light-dismiss.
         CommandPalettePopup.Closed += (_, _) =>
         {
-            if (_paletteClosing) return;
-            var wasCommandExecution = !_commandPaletteVm.IsOpen;
-            _commandPaletteVm.Close();
-            Controls.TerminalControl.CommandPaletteIsOpen = false;
-            // Only restore previous focus for light-dismiss (Escape, click outside).
-            // For command execution, let the command's own focus handling win
-            // (e.g., PaneHost focuses the new split pane).
-            if (!wasCommandExecution)
-                _previousFocusSurface?.Focus(FocusState.Programmatic);
+            if (_paletteCloseState != PaletteCloseState.Idle) return;
+
+            _paletteCloseState = PaletteCloseState.ClosingFromCommand;
+            try
+            {
+                var wasOpen = _commandPaletteVm.IsOpen;
+                _commandPaletteVm.Close();
+                SetCommandPaletteOpenOnAllTerminals(false);
+                // Only restore previous focus for light-dismiss (Escape, click outside).
+                // For command execution, let the command's own focus handling win
+                // (e.g., PaneHost focuses the new split pane).
+                if (wasOpen)
+                    _previousFocusSurface?.Focus(FocusState.Programmatic);
+            }
+            finally
+            {
+                _paletteCloseState = PaletteCloseState.Idle;
+            }
         };
 
         _host.CommandPaletteToggleRequested += (_, _) =>
@@ -431,17 +443,19 @@ public sealed partial class MainWindow : Window
 
     private void ToggleCommandPalette()
     {
-        if (_commandPaletteVm!.IsOpen)
+        if (_commandPaletteVm is not { } vm) return;
+
+        if (vm.IsOpen)
         {
-            _paletteClosing = true;
+            _paletteCloseState = PaletteCloseState.ClosingFromToggle;
             try
             {
-                _commandPaletteVm.Close();
+                vm.Close();
                 CommandPalettePopup.IsOpen = false;
-                Controls.TerminalControl.CommandPaletteIsOpen = false;
+                SetCommandPaletteOpenOnAllTerminals(false);
                 _previousFocusSurface?.Focus(FocusState.Programmatic);
             }
-            finally { _paletteClosing = false; }
+            finally { _paletteCloseState = PaletteCloseState.Idle; }
         }
         else
         {
@@ -453,13 +467,23 @@ public sealed partial class MainWindow : Window
             CommandPalettePopup.VerticalOffset = 48;
             CommandPaletteUI.Width = paletteWidth;
 
-            _commandPaletteVm.Open();
+            vm.Open();
             CommandPalettePopup.IsOpen = true;
-            Controls.TerminalControl.CommandPaletteIsOpen = true;
+            SetCommandPaletteOpenOnAllTerminals(true);
 
             // WinUI Popups don't auto-focus their content. Dispatch the
             // focus call so it runs after the Popup finishes layout.
             DispatcherQueue.TryEnqueue(() => CommandPaletteUI.FocusSearchBox());
+        }
+    }
+
+    private void SetCommandPaletteOpenOnAllTerminals(bool isOpen)
+    {
+        foreach (var tab in _tabManager.Tabs)
+        {
+            var paneHost = (Panes.PaneHost)tab.PaneHost;
+            foreach (var leaf in PaneTree.Leaves(paneHost.RootNode))
+                leaf.Terminal().CommandPaletteIsOpen = isOpen;
         }
     }
 
@@ -479,8 +503,7 @@ public sealed partial class MainWindow : Window
             _tabManager,
             jumpAction: (tabIdx, _) => DispatcherQueue.TryEnqueue(() => _tabManager.JumpTo(tabIdx)));
 
-        var config = new ConfigCommandSource(
-            bindingActionFactory: actionKey => _ => DispatcherQueue.TryEnqueue(() => ExecuteBindingAction(actionKey)));
+        var config = new ConfigCommandSource();
 
         var sources = new List<ICommandSource> { builtIn, jump, config };
 

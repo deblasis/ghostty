@@ -144,13 +144,16 @@ internal partial class CommandPaletteViewModel : ObservableObject
                 (c.ActionKey?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
-        var sorted = filtered
-            .OrderByDescending(c => _frecency.Score(c.Id))
-            .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase);
-
         FilteredCommands = _groupByCategory
-            ? sorted.OrderBy(c => c.Category).ThenByDescending(c => _frecency.Score(c.Id)).ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase).ToList()
-            : sorted.ToList();
+            ? filtered
+                .OrderBy(c => c.Category)
+                .ThenByDescending(c => _frecency.Score(c.Id))
+                .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : filtered
+                .OrderByDescending(c => _frecency.Score(c.Id))
+                .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         GhostText = null;
         StatusText = FilteredCommands.Count == 1

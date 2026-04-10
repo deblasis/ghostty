@@ -5,12 +5,10 @@ namespace Ghostty.Commands;
 
 internal enum CommandCategory
 {
-    Recent,
     Tab,
     Pane,
     Navigation,
     Terminal,
-    Search,
     Config,
     Custom,
 }

@@ -25,9 +25,10 @@ public sealed partial class TerminalControl : UserControl
     /// <summary>
     /// Set by MainWindow when the command palette opens/closes. When true,
     /// OnKeyDown returns immediately so keystrokes go to the palette's
-    /// TextBox instead of libghostty.
+    /// TextBox instead of libghostty. Instance-scoped so multi-window
+    /// does not suppress input in unrelated windows.
     /// </summary>
-    internal static bool CommandPaletteIsOpen { get; set; }
+    internal bool CommandPaletteIsOpen { get; set; }
 
     // Handles ------------------------------------------------------------
 

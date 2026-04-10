@@ -60,17 +60,10 @@ internal sealed class FrecencyStore
         }
     }
 
-    private static string FilePath
-    {
-        get
-        {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Ghostty");
-            Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "command-frecency.json");
-        }
-    }
+    private static string FilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "Ghostty",
+        "command-frecency.json");
 
     public static FrecencyStore Load()
     {
@@ -92,7 +85,9 @@ internal sealed class FrecencyStore
     {
         try
         {
-            File.WriteAllText(FilePath, ToJson());
+            var path = FilePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, ToJson());
         }
         catch (Exception ex)
         {

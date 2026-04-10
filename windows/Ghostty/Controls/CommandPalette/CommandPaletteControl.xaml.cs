@@ -216,10 +216,13 @@ internal sealed partial class CommandPaletteControl : UserControl
         if (args.Item is not CommandItem item) return;
 
         // Phase 0 fires synchronously during measure; grab the template root.
-        if (args.ItemContainer.ContentTemplateRoot is not Grid root) return;
+        // Children are indexed by column order in the DataTemplate:
+        //   [0] Ellipse  [1] FontIcon  [2] StackPanel  [3] Border>TextBlock
+        if (args.ItemContainer.ContentTemplateRoot is not Grid root || root.Children.Count < 4)
+            return;
 
-        // Color dot
-        if (root.FindName("LeadingColorDot") is Ellipse dot)
+        // Color dot (column 0)
+        if (root.Children[0] is Ellipse dot)
         {
             if (item.LeadingColor is { } color)
             {
@@ -233,8 +236,8 @@ internal sealed partial class CommandPaletteControl : UserControl
             }
         }
 
-        // Leading icon glyph
-        if (root.FindName("LeadingIcon") is FontIcon icon)
+        // Leading icon glyph (column 1)
+        if (root.Children[1] is FontIcon icon)
         {
             if (!string.IsNullOrEmpty(item.LeadingIcon))
             {
@@ -247,31 +250,33 @@ internal sealed partial class CommandPaletteControl : UserControl
             }
         }
 
-        // Title
-        if (root.FindName("ItemTitle") is TextBlock title)
-            title.Text = item.Title;
-
-        // Description
-        if (root.FindName("ItemDescription") is TextBlock desc)
+        // Title + Description (column 2 = StackPanel with 2 TextBlocks)
+        if (root.Children[2] is StackPanel stack && stack.Children.Count >= 2)
         {
-            if (!string.IsNullOrEmpty(item.Description))
+            if (stack.Children[0] is TextBlock title)
+                title.Text = item.Title;
+
+            if (stack.Children[1] is TextBlock desc)
             {
-                desc.Text = item.Description;
-                desc.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                desc.Visibility = Visibility.Collapsed;
+                if (!string.IsNullOrEmpty(item.Description))
+                {
+                    desc.Text = item.Description;
+                    desc.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    desc.Visibility = Visibility.Collapsed;
+                }
             }
         }
 
-        // Shortcut
-        if (root.FindName("ShortcutBorder") is Border shortcutBorder &&
-            root.FindName("ShortcutText") is TextBlock shortcutText)
+        // Shortcut (column 3 = Border containing TextBlock)
+        if (root.Children[3] is Border shortcutBorder)
         {
             if (item.Shortcut is { } kb)
             {
-                shortcutText.Text = FormatKeyBinding(kb);
+                if (shortcutBorder.Child is TextBlock shortcutText)
+                    shortcutText.Text = FormatKeyBinding(kb);
                 shortcutBorder.Visibility = Visibility.Visible;
             }
             else
