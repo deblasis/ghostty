@@ -236,12 +236,21 @@ public sealed partial class MainWindow : Window
         };
 
         // When the Popup is light-dismissed (click outside), sync the ViewModel.
+        // For command-execution closes, _paletteClosing prevents re-entry, but
+        // Popup.Closed may fire asynchronously after the flag resets. Use
+        // _commandPaletteVm.IsOpen as the definitive check — if the ViewModel
+        // already closed, we only need to restore focus for light-dismiss.
         CommandPalettePopup.Closed += (_, _) =>
         {
-            if (_paletteClosing) return; // already handled by PropertyChanged
+            if (_paletteClosing) return;
+            var wasCommandExecution = !_commandPaletteVm.IsOpen;
             _commandPaletteVm.Close();
             Controls.TerminalControl.CommandPaletteIsOpen = false;
-            _previousFocusSurface?.Focus(FocusState.Programmatic);
+            // Only restore previous focus for light-dismiss (Escape, click outside).
+            // For command execution, let the command's own focus handling win
+            // (e.g., PaneHost focuses the new split pane).
+            if (!wasCommandExecution)
+                _previousFocusSurface?.Focus(FocusState.Programmatic);
         };
 
         _host.CommandPaletteToggleRequested += (_, _) =>
