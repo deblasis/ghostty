@@ -179,7 +179,7 @@ pub fn initShared(
             null,
         .dsym = dsymutil,
         .pkg_config = pcs.shared,
-        .pkg_config_static = pcs.static,
+        .pkg_config_static = pcs.@"static",
     };
 }
 
@@ -248,7 +248,7 @@ pub fn installHeader(self: *const GhosttyLib) void {
 
 const PkgConfigFiles = struct {
     shared: std.Build.LazyPath,
-    static: std.Build.LazyPath,
+    @"static": std.Build.LazyPath,
 };
 
 fn pkgConfigFiles(
@@ -270,10 +270,8 @@ fn pkgConfigFiles(
             \\Version: {f}
             \\Cflags: -I${{includedir}}
             \\Libs: -L${{libdir}} -lghostty
-            \\Libs.private:
-            \\Requires.private:
         , .{ b.install_prefix, deps.config.version })),
-        .static = wf.add("libghostty-static.pc", b.fmt(
+        .@"static" = wf.add("libghostty-static.pc", b.fmt(
             \\prefix={s}
             \\includedir=${{prefix}}/include
             \\libdir=${{prefix}}/lib
@@ -284,8 +282,6 @@ fn pkgConfigFiles(
             \\Version: {f}
             \\Cflags: -I${{includedir}}
             \\Libs: ${{libdir}}/{s}
-            \\Libs.private:
-            \\Requires.private:
         , .{ b.install_prefix, deps.config.version, staticLibraryName(os_tag) })),
     };
 }
