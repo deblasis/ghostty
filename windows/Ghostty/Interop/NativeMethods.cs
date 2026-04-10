@@ -110,14 +110,9 @@ internal struct GhosttyInputKey
     public bool Composing;
 }
 
-[StructLayout(LayoutKind.Sequential)]
-internal struct GhosttySharedTextureConfig
-{
-    [MarshalAs(UnmanagedType.I1)]
-    public bool Enabled;
-    public uint Width;
-    public uint Height;
-}
+// GhosttySharedTextureConfig and GhosttySharedTextureSnapshot live in
+// Ghostty.Core/Interop/GhosttySharedTexture.cs so the test project can
+// pin their layouts without depending on the WinUI 3 app project.
 
 [StructLayout(LayoutKind.Sequential)]
 internal struct GhosttyPlatformWindows
@@ -125,17 +120,6 @@ internal struct GhosttyPlatformWindows
     public IntPtr Hwnd;                        // null for composition mode
     public IntPtr SwapChainPanel;              // ISwapChainPanelNative*
     public GhosttySharedTextureConfig SharedTexture;
-}
-
-[StructLayout(LayoutKind.Sequential)]
-internal struct GhosttySharedTextureSnapshot
-{
-    public IntPtr ResourceHandle;  // NT HANDLE -- do NOT CloseHandle; ghostty retains ownership
-    public IntPtr FenceHandle;     // NT HANDLE -- do NOT CloseHandle; stable for surface lifetime
-    public ulong FenceValue;
-    public uint Width;
-    public uint Height;
-    public ulong Version;
 }
 
 // ghostty_platform_u — explicit layout so all three variants share memory.
