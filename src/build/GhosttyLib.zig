@@ -48,29 +48,18 @@ pub fn initStatic(
     }
 
     // Add our dependencies. Get the list of all static deps so we can
-    // build a combined archive if necessary.
+    // build a combined archive.
     var lib_list = try deps.add(lib);
     try lib_list.append(b.allocator, lib.getEmittedBin());
 
-    if (!deps.config.target.result.os.tag.isDarwin()) return .{
-        .step = &lib.step,
-        .output = lib.getEmittedBin(),
-        .dsym = null,
-        .pkg_config = null,
-        .pkg_config_static = null,
-    };
-
-    // Create a static lib that contains all our dependencies.
-    const libtool = LibtoolStep.create(b, .{
-        .name = "ghostty",
-        .out_name = "libghostty-fat.a",
-        .sources = lib_list.items,
-    });
-    libtool.step.dependOn(&lib.step);
+    // Combine all archives into a single fat static library so
+    // consumers only need to link one file.
+    const combined = combineArchives(b, deps.config.target, lib_list.items);
+    combined.step.dependOn(&lib.step);
 
     return .{
-        .step = libtool.step,
-        .output = libtool.output,
+        .step = combined.step,
+        .output = combined.output,
 
         // Static libraries cannot have dSYMs because they aren't linked.
         .dsym = null,
@@ -230,6 +219,61 @@ pub fn installHeader(self: *const GhosttyLib) void {
         "ghostty.h",
     );
     b.getInstallStep().dependOn(&header_install.step);
+}
+
+/// Combine multiple static archives into a single fat archive.
+/// Uses libtool on Darwin, lib.exe on Windows, and ar MRI scripts
+/// on other platforms.
+fn combineArchives(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    sources: []const std.Build.LazyPath,
+) struct { step: *std.Build.Step, output: std.Build.LazyPath } {
+    const os_tag = target.result.os.tag;
+
+    if (os_tag.isDarwin()) {
+        const libtool = LibtoolStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty-fat.a",
+            .sources = @constCast(sources),
+        });
+        return .{ .step = libtool.step, .output = libtool.output };
+    }
+
+    if (os_tag == .windows) {
+        // Zig's bundled LLVM archiver can flatten COFF archives with
+        // the L modifier. MSVC's lib.exe cannot read Zig-produced
+        // GNU-format archives, so we use zig ar instead.
+        const run = RunStep.create(b, "combine-archives ghostty");
+        run.addArgs(&.{ b.graph.zig_exe, "ar", "qcL", "--format=coff" });
+        const output = run.addOutputFileArg("ghostty-fat.lib");
+        for (sources) |source| run.addFileArg(source);
+        return .{ .step = &run.step, .output = output };
+    }
+
+    // On Linux and other platforms, use an MRI script with ar -M to
+    // combine archives directly without extracting.
+    const run = RunStep.create(b, "combine-archives ghostty");
+    run.addArgs(&.{
+        "/bin/sh", "-c",
+        \\set -e
+        \\out="$1"; shift
+        \\script="CREATE $out"
+        \\for a in "$@"; do
+        \\  script="$script
+        \\ADDLIB $a"
+        \\done
+        \\script="$script
+        \\SAVE
+        \\END"
+        \\echo "$script" | ar -M
+        ,
+        "_",
+    });
+    const output = run.addOutputFileArg("libghostty-fat.a");
+    for (sources) |source| run.addFileArg(source);
+
+    return .{ .step = &run.step, .output = output };
 }
 
 const PkgConfigFiles = struct {
