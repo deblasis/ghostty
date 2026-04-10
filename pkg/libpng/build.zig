@@ -53,6 +53,7 @@ pub fn build(b: *std.Build) !void {
             "-DPNG_POWERPC_VSX_OPT=0",
             "-DPNG_INTEL_SSE_OPT=0",
             "-DPNG_MIPS_MSA_OPT=0",
+            "-fno-sanitize=undefined",
         });
 
         lib.addCSourceFiles(.{

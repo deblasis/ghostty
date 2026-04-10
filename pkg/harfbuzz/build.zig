@@ -122,6 +122,7 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, &.{
         "-DHAVE_STDBOOL_H",
+        "-fno-sanitize=undefined",
     });
     if (target.result.os.tag != .windows) {
         try flags.appendSlice(b.allocator, &.{
