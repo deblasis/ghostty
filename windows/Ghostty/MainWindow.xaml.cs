@@ -257,7 +257,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Toggle between horizontal and vertical tab layouts at runtime.
-    /// Triggered by Ctrl+Shift+Alt+V, the title-bar icon button, and
+    /// Triggered by Ctrl+Shift+, (comma), the title-bar icon button, and
     /// the strip context menu. Persists the choice via
     /// <see cref="UiSettings"/> so it survives the next launch.
     /// </summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Ghostty.Tabs;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -35,7 +36,6 @@ internal sealed class LayoutCoordinator
     private readonly Grid _verticalTitleBar;
 
     private bool _switching;
-    private Storyboard? _activeColumnSb;
     private DispatcherTimer? _columnTimer;
 
     public LayoutCoordinator(
@@ -101,15 +101,11 @@ internal sealed class LayoutCoordinator
     /// <summary>
     /// Cross-fade + slide animation between horizontal and vertical
     /// layouts. Runs the chrome transforms (Opacity, RenderTransform)
-    /// AND the strip column width inside a single
-    /// <see cref="Storyboard"/> so all the animations share one
-    /// timeline and one Completed handler.
-    ///
-    /// The column width is animated through
-    /// <see cref="GridLengthAnimator"/>, a small DependencyObject
-    /// proxy that converts <c>double</c> ticks into
-    /// <see cref="GridLength"/> writes — WinUI 3 has no native
-    /// GridLengthAnimation.
+    /// inside a <see cref="Storyboard"/> while snapping the strip
+    /// column width immediately. WinUI 3 has no native
+    /// GridLengthAnimation, and custom DependencyObjects not in the
+    /// visual tree are rejected by Storyboard.Begin, so the column
+    /// width is set directly — the crossfade hides the snap.
     /// </summary>
     public void Animate(bool verticalTabs, Action? onCompleted = null)
     {
@@ -139,8 +135,6 @@ internal sealed class LayoutCoordinator
 
         // Cancel any in-flight column tween from a previous chevron
         // click so the layout switch owns the column width.
-        _activeColumnSb?.Stop();
-        _activeColumnSb = null;
         _columnTimer?.Stop();
         _columnTimer = null;
 
@@ -156,14 +150,8 @@ internal sealed class LayoutCoordinator
         sb.Children.Add(MakeTransformAnim(outgoing, "X", outgoingTx.X, outgoingOffset.X));
         sb.Children.Add(MakeTransformAnim(outgoing, "Y", outgoingTx.Y, outgoingOffset.Y));
 
-        // Snap the strip column width immediately rather than
-        // animating it through a GridLengthAnimator proxy. WinUI 3's
-        // Storyboard.Begin rejects custom DependencyObjects that are
-        // not in the visual tree, which throws COMException 0x800F1000
-        // "Cannot resolve TargetProperty Value on specified object".
-        // The opacity/transform crossfade is the visual payoff here;
-        // the column width snap is instantaneous and unnoticeable
-        // behind the fading hosts.
+        // Snap the strip column width immediately. The crossfade
+        // hides the jump; see the Animate summary for rationale.
         _stripColumn.Width = new GridLength(targetColWidth);
         _titleBarStripMirror.Width = new GridLength(targetColWidth);
         _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth);
@@ -189,20 +177,13 @@ internal sealed class LayoutCoordinator
     /// </summary>
     public void TweenStripColumn(double from, double to, Action<double>? onTick = null)
     {
-        // WinUI 3 Storyboard.Begin rejects custom DependencyObjects
-        // (GridLengthAnimator) that are not in the visual tree.
-        // Use a DispatcherTimer to drive the tween manually instead.
-        _activeColumnSb?.Stop();
-        _activeColumnSb = null;
-
         _columnTimer?.Stop();
-        var start = DateTime.UtcNow;
+        var sw = Stopwatch.StartNew();
         var duration = TimeSpan.FromMilliseconds(SwitchDurationMs);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         timer.Tick += (_, _) =>
         {
-            var elapsed = DateTime.UtcNow - start;
-            var t = Math.Min(elapsed / duration, 1.0);
+            var t = Math.Min(sw.Elapsed / duration, 1.0);
             // Quadratic ease-out: 1 - (1 - t)^2
             var eased = 1.0 - (1.0 - t) * (1.0 - t);
             var value = from + (to - from) * eased;
