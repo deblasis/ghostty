@@ -65,6 +65,7 @@
         <Grid x:Name="VerticalTitleBar"
               Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
               Height="32"
+              RequestedTheme="Dark"
               Visibility="Collapsed">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="TitleBarStripMirror" Width="0"/>

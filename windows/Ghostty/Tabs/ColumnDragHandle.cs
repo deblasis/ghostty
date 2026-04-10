@@ -1,4 +1,6 @@
 using System;
+using Ghostty.Controls;
+using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -17,7 +19,7 @@ namespace Ghostty.Tabs;
 /// model. The vertical tab strip has no such pair — it just owns
 /// one column width.
 /// </summary>
-internal sealed class ColumnDragHandle : Grid
+internal sealed partial class ColumnDragHandle : Grid
 {
     private readonly Action<double> _onWidthChanged;
     private readonly Func<double> _readCurrentWidth;
@@ -33,7 +35,9 @@ internal sealed class ColumnDragHandle : Grid
         // it. A 1px transparent strip is technically grabbable but
         // invisible, which was the original complaint.
         Width = 4;
-        Background = (SolidColorBrush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
+        Background = ThemeResources.Get<Brush>(
+            "ControlStrokeColorDefaultBrush",
+            new SolidColorBrush(Colors.Gray));
         HorizontalAlignment = HorizontalAlignment.Right;
         VerticalAlignment = VerticalAlignment.Stretch;
         IsHitTestVisible = true;

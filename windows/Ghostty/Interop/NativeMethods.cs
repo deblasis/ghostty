@@ -106,14 +106,8 @@ internal struct GhosttyInputKey
     public uint Keycode;
     public IntPtr Text;              // const char*
     public uint UnshiftedCodepoint;
-    // Zig bool is 1 byte; use byte to avoid SYSLIB1051 without
-    // assembly-wide DisableRuntimeMarshalling.
-    private byte _composing;
-    public bool Composing
-    {
-        readonly get => _composing != 0;
-        set => _composing = value ? (byte)1 : (byte)0;
-    }
+    [MarshalAs(UnmanagedType.I1)]
+    public bool Composing;
 }
 
 // GhosttySharedTextureConfig and GhosttySharedTextureSnapshot live in
@@ -158,12 +152,8 @@ internal struct GhosttySurfaceConfig
     public IntPtr EnvVars;          // ghostty_env_var_s*
     public UIntPtr EnvVarCount;
     public IntPtr InitialInput;     // const char*
-    private byte _waitAfterCommand; // Zig bool → byte (see GhosttyInputKey)
-    public bool WaitAfterCommand
-    {
-        readonly get => _waitAfterCommand != 0;
-        set => _waitAfterCommand = value ? (byte)1 : (byte)0;
-    }
+    [MarshalAs(UnmanagedType.I1)]
+    public bool WaitAfterCommand;
     public GhosttySurfaceContext Context;
 }
 
@@ -253,12 +243,8 @@ internal struct GhosttyActionSetTitle
 internal struct GhosttyRuntimeConfig
 {
     public IntPtr Userdata;
-    private byte _supportsSelectionClipboard; // Zig bool → byte (see GhosttyInputKey)
-    public bool SupportsSelectionClipboard
-    {
-        readonly get => _supportsSelectionClipboard != 0;
-        set => _supportsSelectionClipboard = value ? (byte)1 : (byte)0;
-    }
+    [MarshalAs(UnmanagedType.I1)]
+    public bool SupportsSelectionClipboard;
     public IntPtr WakeupCb;              // function pointers held as IntPtr
     public IntPtr ActionCb;              // so we control the lifetime of the
     public IntPtr ReadClipboardCb;       // managed delegates they point at.

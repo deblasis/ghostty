@@ -103,6 +103,7 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
 
         var flags: std.ArrayList([]const u8) = .empty;
         defer flags.deinit(b.allocator);
+        try flags.append(b.allocator, "-fno-sanitize=undefined");
         lib.addCSourceFiles(.{
             .root = upstream.path(""),
             .flags = flags.items,
