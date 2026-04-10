@@ -99,6 +99,9 @@ internal sealed class KeyBindings
         new KeyBinding(VirtualKeyModifiers.Menu, VirtualKey.Right, PaneAction.FocusRight),
         new KeyBinding(VirtualKeyModifiers.Menu, VirtualKey.Up, PaneAction.FocusUp),
         new KeyBinding(VirtualKeyModifiers.Menu, VirtualKey.Down, PaneAction.FocusDown),
+        new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.Enter, PaneAction.ToggleSplitZoom),
+        new KeyBinding(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, (VirtualKey)187, PaneAction.EqualizeSplits), // '='
+        new KeyBinding(VirtualKeyModifiers.None, VirtualKey.F11, PaneAction.ToggleFullscreen),
 
         // Tabs (this PR). Ctrl+Shift+W is now CloseActiveProgressive
         // (pane -> tab -> window with confirmation), no longer plain ClosePane.

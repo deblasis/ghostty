@@ -19,6 +19,9 @@ internal enum PaneAction
     FocusRight,
     FocusUp,
     FocusDown,
+    EqualizeSplits,
+    ToggleSplitZoom,
+    ToggleFullscreen,
 
     // Tab operations (this PR)
     NewTab,
