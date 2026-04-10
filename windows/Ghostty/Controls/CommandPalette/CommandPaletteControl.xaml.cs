@@ -49,7 +49,18 @@ internal sealed partial class CommandPaletteControl : UserControl
         _vm = viewModel;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
 
-        // Sync initial state
+        // Defer initial sync until the control is loaded into the visual tree.
+        // Setting ItemsSource on a ListView that hasn't been measured yet throws
+        // ArgumentException from WinUI's ItemsControl.
+        if (IsLoaded)
+            SyncAll();
+        else
+            Loaded += OnFirstLoaded;
+    }
+
+    private void OnFirstLoaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= OnFirstLoaded;
         SyncAll();
     }
 
