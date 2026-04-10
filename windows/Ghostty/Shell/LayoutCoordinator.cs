@@ -28,6 +28,7 @@ internal sealed class LayoutCoordinator
     public const int SwitchDurationMs = 220;
 
     private readonly ColumnDefinition _stripColumn;
+    private readonly ColumnDefinition _titleBarStripMirror;
     private readonly FrameworkElement _horizontalHost;
     private readonly VerticalTabHost _verticalTabHost;
     private readonly FrameworkElement _verticalHost;
@@ -35,14 +36,17 @@ internal sealed class LayoutCoordinator
 
     private bool _switching;
     private Storyboard? _activeColumnSb;
+    private DispatcherTimer? _columnTimer;
 
     public LayoutCoordinator(
         ColumnDefinition stripColumn,
+        ColumnDefinition titleBarStripMirror,
         FrameworkElement horizontalHost,
         VerticalTabHost verticalTabHost,
         Grid verticalTitleBar)
     {
         _stripColumn = stripColumn;
+        _titleBarStripMirror = titleBarStripMirror;
         _horizontalHost = horizontalHost;
         _verticalTabHost = verticalTabHost;
         _verticalHost = verticalTabHost;
@@ -69,7 +73,9 @@ internal sealed class LayoutCoordinator
     /// </summary>
     public void Snap(bool verticalTabs)
     {
-        _stripColumn.Width = new GridLength(verticalTabs ? VerticalStripCollapsedWidth : 0);
+        var w = verticalTabs ? VerticalStripCollapsedWidth : 0;
+        _stripColumn.Width = new GridLength(w);
+        _titleBarStripMirror.Width = new GridLength(w);
         _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth);
 
         _verticalHost.Opacity = verticalTabs ? 1 : 0;
@@ -105,7 +111,7 @@ internal sealed class LayoutCoordinator
     /// <see cref="GridLength"/> writes — WinUI 3 has no native
     /// GridLengthAnimation.
     /// </summary>
-    public void Animate(bool verticalTabs)
+    public void Animate(bool verticalTabs, Action? onCompleted = null)
     {
         if (_switching) return;
         _switching = true;
@@ -131,10 +137,12 @@ internal sealed class LayoutCoordinator
         incomingTx.Y = incomingOffset.Y;
         incoming.Opacity = 0;
 
-        // Cancel any column tween from a previous chevron click so
-        // the storyboard owns the column width for its full duration.
+        // Cancel any in-flight column tween from a previous chevron
+        // click so the layout switch owns the column width.
         _activeColumnSb?.Stop();
         _activeColumnSb = null;
+        _columnTimer?.Stop();
+        _columnTimer = null;
 
         var sb = new Storyboard();
         sb.Children.Add(MakeDoubleAnim(incoming, "Opacity", 0, 1));
@@ -148,18 +156,23 @@ internal sealed class LayoutCoordinator
         sb.Children.Add(MakeTransformAnim(outgoing, "X", outgoingTx.X, outgoingOffset.X));
         sb.Children.Add(MakeTransformAnim(outgoing, "Y", outgoingTx.Y, outgoingOffset.Y));
 
-        // Strip column width: bridge GridLength via the proxy.
-        // Snap the inner strip column once at the start — during a
-        // layout switch the chevron pinned-state never changes, so
-        // there is no per-frame onTick callback to drive.
+        // Snap the strip column width immediately rather than
+        // animating it through a GridLengthAnimator proxy. WinUI 3's
+        // Storyboard.Begin rejects custom DependencyObjects that are
+        // not in the visual tree, which throws COMException 0x800F1000
+        // "Cannot resolve TargetProperty Value on specified object".
+        // The opacity/transform crossfade is the visual payoff here;
+        // the column width snap is instantaneous and unnoticeable
+        // behind the fading hosts.
+        _stripColumn.Width = new GridLength(targetColWidth);
+        _titleBarStripMirror.Width = new GridLength(targetColWidth);
         _verticalTabHost.SetInternalStripWidth(VerticalStripCollapsedWidth);
-        var widthProxy = new GridLengthAnimator(_stripColumn, _stripColumn.Width.Value);
-        sb.Children.Add(MakeDoubleAnim(widthProxy, "Value", _stripColumn.Width.Value, targetColWidth));
 
         sb.Completed += (_, _) =>
         {
             Snap(verticalTabs);
             _switching = false;
+            onCompleted?.Invoke();
         };
         sb.Begin();
     }
@@ -176,18 +189,35 @@ internal sealed class LayoutCoordinator
     /// </summary>
     public void TweenStripColumn(double from, double to, Action<double>? onTick = null)
     {
+        // WinUI 3 Storyboard.Begin rejects custom DependencyObjects
+        // (GridLengthAnimator) that are not in the visual tree.
+        // Use a DispatcherTimer to drive the tween manually instead.
         _activeColumnSb?.Stop();
+        _activeColumnSb = null;
 
-        var proxy = new GridLengthAnimator(_stripColumn, from) { OnTick = onTick };
-        var sb = new Storyboard();
-        sb.Children.Add(MakeDoubleAnim(proxy, "Value", from, to));
-        sb.Completed += (s, _) =>
+        _columnTimer?.Stop();
+        var start = DateTime.UtcNow;
+        var duration = TimeSpan.FromMilliseconds(SwitchDurationMs);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        timer.Tick += (_, _) =>
         {
-            if (ReferenceEquals(_activeColumnSb, s))
-                _activeColumnSb = null;
+            var elapsed = DateTime.UtcNow - start;
+            var t = Math.Min(elapsed / duration, 1.0);
+            // Quadratic ease-out: 1 - (1 - t)^2
+            var eased = 1.0 - (1.0 - t) * (1.0 - t);
+            var value = from + (to - from) * eased;
+            _stripColumn.Width = new GridLength(value);
+            _titleBarStripMirror.Width = new GridLength(value);
+            onTick?.Invoke(value);
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                if (ReferenceEquals(_columnTimer, timer))
+                    _columnTimer = null;
+            }
         };
-        _activeColumnSb = sb;
-        sb.Begin();
+        _columnTimer = timer;
+        timer.Start();
     }
 
     private static TranslateTransform GetOrCreateTranslate(FrameworkElement fe)
