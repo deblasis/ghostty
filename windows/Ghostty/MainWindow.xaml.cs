@@ -63,6 +63,7 @@ public sealed partial class MainWindow : Window
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
+    private bool _paletteClosing;
 
     // Dedup guard for KeyboardAccelerator double-dispatch. WinUI 3
     // fires accelerator Invoked twice for a single key event when the
@@ -209,21 +210,34 @@ public sealed partial class MainWindow : Window
         CommandPaletteUI.Bind(_commandPaletteVm);
 
         // When the ViewModel closes itself (e.g. after executing a command),
-        // sync the Popup and focus state.
+        // sync the Popup and focus state. Guard: only act once per close.
         _commandPaletteVm.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(CommandPaletteViewModel.IsOpen) && !_commandPaletteVm.IsOpen)
+            if (e.PropertyName != nameof(CommandPaletteViewModel.IsOpen)) return;
+            if (_commandPaletteVm.IsOpen) return;
+
+            // Prevent Popup.Closed from re-entering.
+            _paletteClosing = true;
+            try
             {
                 CommandPalettePopup.IsOpen = false;
                 Controls.TerminalControl.CommandPaletteIsOpen = false;
-                _frecencyStore.Save();
-                _previousFocusSurface?.Focus(FocusState.Programmatic);
+                _frecencyStore?.Save();
+
+                // Don't focus a surface that may have just been disposed
+                // by the command we executed (e.g. close pane).
+                // Let the tab/pane system handle focus naturally.
+            }
+            finally
+            {
+                _paletteClosing = false;
             }
         };
 
         // When the Popup is light-dismissed (click outside), sync the ViewModel.
         CommandPalettePopup.Closed += (_, _) =>
         {
+            if (_paletteClosing) return; // already handled by PropertyChanged
             _commandPaletteVm.Close();
             Controls.TerminalControl.CommandPaletteIsOpen = false;
             _previousFocusSurface?.Focus(FocusState.Programmatic);
@@ -409,10 +423,15 @@ public sealed partial class MainWindow : Window
     {
         if (_commandPaletteVm!.IsOpen)
         {
-            _commandPaletteVm.Close();
-            CommandPalettePopup.IsOpen = false;
-            Controls.TerminalControl.CommandPaletteIsOpen = false;
-            _previousFocusSurface?.Focus(FocusState.Programmatic);
+            _paletteClosing = true;
+            try
+            {
+                _commandPaletteVm.Close();
+                CommandPalettePopup.IsOpen = false;
+                Controls.TerminalControl.CommandPaletteIsOpen = false;
+                _previousFocusSurface?.Focus(FocusState.Programmatic);
+            }
+            finally { _paletteClosing = false; }
         }
         else
         {
