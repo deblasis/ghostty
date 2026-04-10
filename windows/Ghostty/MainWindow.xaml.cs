@@ -208,6 +208,7 @@ public sealed partial class MainWindow : Window
 
         _commandPaletteVm = CreateCommandPaletteViewModel();
         CommandPaletteUI.Bind(_commandPaletteVm);
+        CommandPaletteUI.ApplySettings(_uiSettings.CommandPaletteBackground);
 
         // When the ViewModel closes itself (e.g. after executing a command),
         // sync the Popup and focus state. Guard: only act once per close.

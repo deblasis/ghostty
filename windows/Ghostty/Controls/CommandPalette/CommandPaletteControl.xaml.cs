@@ -74,6 +74,29 @@ internal sealed partial class CommandPaletteControl : UserControl
         SearchBox.Focus(FocusState.Programmatic);
     }
 
+    /// <summary>
+    /// Applies the configured background material to the outer Border.
+    ///
+    /// Supported values:
+    ///   "acrylic" (default) — in-app acrylic via <c>AcrylicInAppFillColorDefaultBrush</c>.
+    ///     This is the frosted-glass translucent look that uses the WinUI acrylic brush.
+    ///     In high contrast mode, WinUI's ThemeResource automatically substitutes a
+    ///     solid system color so no special handling is needed.
+    ///   "mica"    — Mica is a window-level SystemBackdrop, not a per-element brush.
+    ///     For individual control surfaces we approximate it with the solid base fill
+    ///     (<c>SolidBackgroundFillColorBaseBrush</c>).
+    ///   "opaque"  — fully opaque solid fill using <c>SolidBackgroundFillColorBaseBrush</c>.
+    /// </summary>
+    public void ApplySettings(string backgroundSetting)
+    {
+        OuterBorder.Background = backgroundSetting switch
+        {
+            "mica" => (Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"],
+            "opaque" => (Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"],
+            _ => (Brush)Application.Current.Resources["AcrylicInAppFillColorDefaultBrush"],
+        };
+    }
+
     // ── ViewModel → UI ────────────────────────────────────────────────────────
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
