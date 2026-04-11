@@ -68,6 +68,13 @@ internal sealed class PaneActionRouter
     /// </summary>
     public event EventHandler? ToggleFullscreenRequested;
 
+    /// <summary>
+    /// Raised when the sidebar collapse toggle fires via context menu.
+    /// MainWindow listens and calls <c>VerticalTabHost.ToggleCollapse</c>
+    /// if the current <see cref="Tabs.ITabHost"/> is a VerticalTabHost.
+    /// </summary>
+    public event EventHandler? ToggleSidebarCollapseRequested;
+
     public void Invoke(PaneAction action)
     {
         // Event-only actions that don't need pane/tab state — handle
@@ -138,6 +145,14 @@ internal sealed class PaneActionRouter
     /// </summary>
     public void RequestToggleTabLayout()
         => ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Public dispatch entry for sidebar collapse toggle via context menu.
+    /// MainWindow listens and calls <c>VerticalTabHost.ToggleCollapse</c>
+    /// if the current <see cref="Tabs.ITabHost"/> is a VerticalTabHost.
+    /// </summary>
+    public void RequestToggleSidebarCollapse()
+        => ToggleSidebarCollapseRequested?.Invoke(this, EventArgs.Empty);
 
     private void HandleProgressiveClose()
     {
