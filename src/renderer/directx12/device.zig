@@ -549,7 +549,10 @@ fn createCompositionSwapChain(
         // GPU) the stretch becomes a visible smear -- accept that as a
         // graceful degradation rather than a black bar.
         .Scaling = .STRETCH,
-        .SwapEffect = .FLIP_DISCARD,
+        // FLIP_SEQUENTIAL is required for premultiplied alpha to
+        // composite correctly through SwapChainPanel. FLIP_DISCARD
+        // may discard the alpha channel during presentation.
+        .SwapEffect = .FLIP_SEQUENTIAL,
         .AlphaMode = .PREMULTIPLIED,
         .Flags = 0,
     };

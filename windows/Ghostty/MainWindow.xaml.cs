@@ -67,6 +67,10 @@ public sealed partial class MainWindow : Window
     private readonly TaskbarHost _taskbar;
     private readonly WindowThemeManager _themeManager;
 
+    // Tracks whether we're currently in transparent mode so we can
+    // skip redundant SystemBackdrop swaps on config reload.
+    private bool _isTransparent;
+
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
@@ -145,19 +149,10 @@ public sealed partial class MainWindow : Window
                     dark ? Ghostty.Interop.GhosttyColorScheme.Dark : Ghostty.Interop.GhosttyColorScheme.Light));
         };
 
-        // Match the RootGrid background (#0C0C0C). Win32 COLORREF is 0x00BBGGRR.
-        var hwnd = WindowNative.GetWindowHandle(this);
-        var brush = CreateSolidBrush(0x000C0C0Cu);
-        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, brush);
-
-        // Mica is only available on Windows 11 22H1+ with a supported GPU.
-        // Our TargetPlatformMinVersion is still 19041 (Windows 10), so a
-        // bare `new MicaBackdrop()` would silently fail on older systems
-        // and leave the window with a transparent black backdrop. Probe
-        // MicaController.IsSupported() and skip the backdrop on unsupported
-        // hosts; XAML's default Window background takes over.
-        if (MicaController.IsSupported())
-            SystemBackdrop = new MicaBackdrop();
+        // Apply initial backdrop (Mica when opaque, transparent when
+        // background-opacity < 1). Also sets the Win32 class brush
+        // and RootGrid background to match.
+        ApplyTransparency();
 
         // Extend content into the title bar: remove the system-drawn
         // title bar chrome and let TabHost's TabView strip render
@@ -358,6 +353,10 @@ public sealed partial class MainWindow : Window
         // Ctrl+Shift+Scroll wheel opacity adjustment from any terminal surface.
         _host.OpacityAdjustRequested += (_, direction) => AdjustOpacity(direction);
 
+        // Re-evaluate transparency state after every config reload so
+        // Ctrl+Shift+Scroll and Settings UI changes take effect live.
+        _configService.ConfigChanged += _ => ApplyTransparency();
+
         _tabManager.LastTabClosed += (_, _) => Close();
 
         Closed += OnClosedAsync;
@@ -546,6 +545,51 @@ public sealed partial class MainWindow : Window
         if (Content is FrameworkElement root)
             root.RequestedTheme = _themeManager.ElementTheme;
         _themeManager.ApplyToWindow(this);
+    }
+
+    /// <summary>
+    /// Switch the window backdrop between Mica (opaque) and a fully
+    /// transparent acrylic backdrop based on background-opacity. Also
+    /// toggles the Win32 class brush and the XAML RootGrid background
+    /// so resize flicker matches the transparency state.
+    /// </summary>
+    private void ApplyTransparency()
+    {
+        var wantTransparent = _configService.BackgroundOpacity < 1.0;
+        if (wantTransparent == _isTransparent && SystemBackdrop is not null)
+            return; // no change
+
+        _isTransparent = wantTransparent;
+
+        var hwnd = WindowNative.GetWindowHandle(this);
+
+        if (wantTransparent && DesktopAcrylicController.IsSupported())
+        {
+            SystemBackdrop = new TransparentBackdrop();
+
+            // Hollow brush so composition alpha shows through to the
+            // desktop during resize. Solid dark brush would flash opaque.
+            SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+                Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH));
+
+            RootGrid.Background = new SolidColorBrush(
+                Windows.UI.Color.FromArgb(0, 0, 0, 0));
+        }
+        else
+        {
+            // Opaque path: Mica if supported, otherwise XAML default.
+            if (MicaController.IsSupported())
+                SystemBackdrop = new MicaBackdrop();
+            else
+                SystemBackdrop = null;
+
+            // Dark solid brush hides white resize flicker.
+            SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+                CreateSolidBrush(0x000C0C0Cu));
+
+            RootGrid.Background = new SolidColorBrush(
+                Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x0C, 0x0C, 0x0C));
+        }
     }
 
     /// <summary>

@@ -9,14 +9,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
-using WinRT;
-
 namespace Ghostty.Controls;
 
 /// <summary>
-/// Single libghostty-backed terminal surface, hosted via the WinUI 3
-/// SwapChainPanel composition path (null HWND). Matches how macOS's
-/// Ghostty.Surface.swift owns one ghostty_surface_t per SwiftUI view.
+/// Single libghostty-backed terminal surface, hosted via WinUI 3
+/// SwapChainPanel. Matches how macOS's Ghostty.Surface.swift owns
+/// one ghostty_surface_t per SwiftUI view.
 ///
 /// Config and app handle ownership lives in <see cref="Ghostty.Hosting.GhosttyHost"/>,
 /// which is constructed by MainWindow and assigned via the Host property before load.
@@ -37,11 +35,6 @@ public sealed partial class TerminalControl : UserControl
     private IntPtr _workingDirectoryUtf8;
     private IntPtr _commandUtf8;
     private IntPtr _initialInputUtf8;
-
-    // Composition visual that presents the DX12 swap chain content
-    // in the XAML tree. Created after SurfaceNew, sized on resize.
-    private Microsoft.UI.Composition.SpriteVisual? _compositionVisual;
-    private Microsoft.UI.Composition.CompositionSurfaceBrush? _compositionBrush;
 
     // The libghostty surface lifecycle is decoupled from
     // OnLoaded/OnUnloaded so that visual-tree reparenting (which fires
@@ -295,13 +288,13 @@ public sealed partial class TerminalControl : UserControl
         _commandUtf8 = AllocEmptyUtf8();
         _initialInputUtf8 = AllocEmptyUtf8();
 
+        var panelPtr = SwapChainPanelInterop.QueryInterface(Panel);
         var surfaceConfig = NativeMethods.SurfaceConfigNew();
         surfaceConfig.PlatformTag = GhosttyPlatform.Windows;
-        // Both Hwnd and SwapChainPanel are null: libghostty uses the
-        // composition surface path, creating a swap chain without
-        // binding it. We retrieve the pointer below and bind it to
-        // a Windows.UI.Composition visual in the XAML tree.
-        surfaceConfig.Platform.Windows = new GhosttyPlatformWindows();
+        surfaceConfig.Platform.Windows = new GhosttyPlatformWindows
+        {
+            SwapChainPanel = panelPtr,
+        };
         surfaceConfig.ScaleFactor = Panel.CompositionScaleX > 0 ? Panel.CompositionScaleX : 1.0;
         surfaceConfig.Context = GhosttySurfaceContext.Window;
         surfaceConfig.WorkingDirectory = _workingDirectoryUtf8;
@@ -318,106 +311,13 @@ public sealed partial class TerminalControl : UserControl
         surfaceConfig.Userdata = GCHandle.ToIntPtr(_selfHandle);
 
         _surface = NativeMethods.SurfaceNew(app, surfaceConfig);
+        // Drop our ref: libghostty does not retain the panel pointer.
+        SwapChainPanelInterop.Release(panelPtr);
         Host.Register(_surface, this);
-
-        // Bind the swap chain. First try composition visual for
-        // transparency support. Fall back to SwapChainPanel if the
-        // composition path fails.
-        if (!BindCompositionVisual())
-        {
-            // Fallback: bind swap chain to the panel directly via
-            // ISwapChainPanelNative.SetSwapChain (vtable slot 3).
-            // This is the opaque path (no transparency).
-            var swapChainPtr = NativeMethods.SurfaceGetSwapChain(_surface);
-            if (swapChainPtr != IntPtr.Zero)
-            {
-                var panelPtr = SwapChainPanelInterop.QueryInterface(Panel);
-                unsafe
-                {
-                    var vtable = *(IntPtr*)panelPtr;
-                    var setSwapChain = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, int>)
-                        *(IntPtr*)(vtable + 3 * IntPtr.Size);
-                    setSwapChain(panelPtr, swapChainPtr);
-                }
-                SwapChainPanelInterop.Release(panelPtr);
-                System.Diagnostics.Debug.WriteLine("[TerminalControl] Fallback: bound swap chain to SwapChainPanel (opaque)");
-            }
-        }
 
         // Request focus so keyboard input starts flowing immediately.
         // Focus lives on the UserControl now, not the panel.
         this.Focus(FocusState.Programmatic);
-    }
-
-    /// <summary>
-    /// Retrieve the DX12 swap chain from libghostty and bind it to a
-    /// composition visual injected into the XAML tree. This replaces
-    /// SwapChainPanel's internal composition binding with one that
-    /// supports per-pixel alpha transparency.
-    /// </summary>
-    /// <returns>true if composition visual was bound, false to fall back to SwapChainPanel.</returns>
-    private bool BindCompositionVisual()
-    {
-        var swapChainPtr = NativeMethods.SurfaceGetSwapChain(_surface);
-        if (swapChainPtr == IntPtr.Zero)
-            return false;
-
-        // Get the compositor from the XAML visual tree.
-        var elementVisual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview
-            .GetElementVisual(Panel);
-        var compositor = elementVisual.Compositor;
-
-        // QI the compositor for ICompositorInterop. Built-in COM is
-        // disabled (NativeAOT), so we use the CsWinRT IWinRTObject
-        // pattern to get the underlying COM pointer -- same approach
-        // as SwapChainPanelInterop.QueryInterface.
-        var compositorPtr = ((IWinRTObject)compositor).NativeObject.ThisPtr;
-        var iid = typeof(ICompositorInterop).GUID;
-        var qiHr = Marshal.QueryInterface(compositorPtr, ref iid, out var interopPtr);
-
-        if (qiHr < 0 || interopPtr == IntPtr.Zero)
-        {
-            System.Diagnostics.Debug.WriteLine($"[TerminalControl] ICompositorInterop QI failed: 0x{qiHr:X8}");
-            return false;
-        }
-
-        // Call CreateCompositionSurfaceForSwapChain via the vtable.
-        // ICompositorInterop vtable: IUnknown(0-2), then slot 3.
-        int hr;
-        IntPtr surfacePtr;
-        unsafe
-        {
-            var vtable = *(IntPtr*)interopPtr;
-            var createSurface = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr*, int>)
-                *(IntPtr*)(vtable + 3 * IntPtr.Size);
-            IntPtr surfacePtrLocal;
-            hr = createSurface(interopPtr, swapChainPtr, &surfacePtrLocal);
-            surfacePtr = surfacePtrLocal;
-        }
-        Marshal.Release(interopPtr);
-        if (hr < 0 || surfacePtr == IntPtr.Zero)
-        {
-            System.Diagnostics.Debug.WriteLine($"[TerminalControl] CreateCompositionSurfaceForSwapChain failed: 0x{hr:X8}");
-            return false;
-        }
-
-        // Wrap the raw pointer as a WinRT ICompositionSurface.
-        var surface = MarshalInterface<Microsoft.UI.Composition.ICompositionSurface>
-            .FromAbi(surfacePtr);
-
-        _compositionBrush = compositor.CreateSurfaceBrush(surface);
-        _compositionBrush.Stretch = Microsoft.UI.Composition.CompositionStretch.Fill;
-
-        _compositionVisual = compositor.CreateSpriteVisual();
-        _compositionVisual.Brush = _compositionBrush;
-        _compositionVisual.Size = new System.Numerics.Vector2(
-            (float)Panel.ActualWidth,
-            (float)Panel.ActualHeight);
-
-        // Inject into the XAML tree as a child of the Panel.
-        Microsoft.UI.Xaml.Hosting.ElementCompositionPreview
-            .SetElementChildVisual(Panel, _compositionVisual);
-        return true;
     }
 
     private void DisableAncestorScrollViewerTabStop()
@@ -476,20 +376,6 @@ public sealed partial class TerminalControl : UserControl
         _surfaceDisposed = true;
 
         Panel.LayoutUpdated -= OnFirstLayoutUpdated;
-
-        // Detach the composition visual from the XAML tree.
-        if (_compositionVisual is not null)
-        {
-            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview
-                .SetElementChildVisual(Panel, null);
-            _compositionVisual.Dispose();
-            _compositionVisual = null;
-        }
-        if (_compositionBrush is not null)
-        {
-            _compositionBrush.Dispose();
-            _compositionBrush = null;
-        }
 
         if (_surface.Handle != IntPtr.Zero)
         {
@@ -551,11 +437,6 @@ public sealed partial class TerminalControl : UserControl
         // Present. We never block here, never touch draw_mutex, and
         // never do GPU work on the UI thread.
         NativeMethods.SurfaceSetSize(_surface, w, h);
-
-        // Sync the composition visual size with the panel layout.
-        if (_compositionVisual is not null)
-            _compositionVisual.Size = new System.Numerics.Vector2(
-                (float)Panel.ActualWidth, (float)Panel.ActualHeight);
     }
 
     private void OnCompositionScaleChanged(SwapChainPanel sender, object args)
