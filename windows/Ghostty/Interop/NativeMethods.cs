@@ -419,6 +419,9 @@ internal static partial class NativeMethods
         GhosttySurface surface,
         out GhosttySharedTextureSnapshot snapshot);
 
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_get_swap_chain")]
+    internal static partial IntPtr SurfaceGetSwapChain(GhosttySurface surface);
+
     // ---- surface input -------------------------------------------------
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_key")]
