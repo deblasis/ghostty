@@ -34,3 +34,5 @@ glad.zip
 
 vgcore.*
 
+# IconGen preview output from `just branding-preview`
+/dist/windows/preview/
