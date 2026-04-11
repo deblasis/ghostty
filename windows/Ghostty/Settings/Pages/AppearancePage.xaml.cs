@@ -23,6 +23,7 @@ internal sealed partial class AppearancePage : Page
         _editor = editor;
         InitializeComponent();
         _fontList = new SearchableList(FontFamilySearch, chosen => OnValueChanged("font-family", chosen));
+        OpacitySlider.Value = configService.BackgroundOpacity;
         _loading = false;
         LoadFontsAsync();
     }
@@ -149,6 +150,11 @@ internal sealed partial class AppearancePage : Page
     private void FontSize_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         OnValueChanged("font-size", sender.Value.ToString());
+    }
+
+    private void Opacity_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        OnValueChanged("background-opacity", e.NewValue.ToString("F2"));
     }
 
     private void ShaderPath_LostFocus(object sender, RoutedEventArgs e)

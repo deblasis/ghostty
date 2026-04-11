@@ -29,6 +29,7 @@ internal sealed class ConfigService : IConfigService
     public string ConfigFilePath { get; }
     public bool AutoReloadEnabled { get; private set; }
     public bool SettingsUiEnabled { get; private set; }
+    public double BackgroundOpacity { get; private set; } = 1.0;
     public int DiagnosticsCount { get; private set; }
 
     /// <summary>
@@ -136,6 +137,7 @@ internal sealed class ConfigService : IConfigService
     {
         AutoReloadEnabled = GetBool("auto-reload-config");
         SettingsUiEnabled = GetBool("windows-settings-ui");
+        BackgroundOpacity = Math.Clamp(GetDouble("background-opacity", 1.0), 0.0, 1.0);
     }
 
     private unsafe bool GetBool(string key)
@@ -150,6 +152,21 @@ internal sealed class ConfigService : IConfigService
                 (IntPtr)keyPtr,
                 (UIntPtr)keyBytes.Length);
             return found && result != 0;
+        }
+    }
+
+    private unsafe double GetDouble(string key, double defaultValue)
+    {
+        double result = 0;
+        var keyBytes = System.Text.Encoding.UTF8.GetBytes(key);
+        fixed (byte* keyPtr = keyBytes)
+        {
+            var found = NativeMethods.ConfigGet(
+                _config,
+                (IntPtr)(&result),
+                (IntPtr)keyPtr,
+                (UIntPtr)keyBytes.Length);
+            return found ? result : defaultValue;
         }
     }
 

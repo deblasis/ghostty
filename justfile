@@ -107,10 +107,21 @@ build-win:
 # bash shebang to `exec` the .exe, which forced git-bash on Windows for no
 # reason - launching a Windows .exe works fine from pwsh.
 
-# Build the DLL and the shell, then launch it.
+# Build the DLL and the shell, copy ghostty.dll into the output, then launch.
+# The explicit copy works around MSBuild incremental-build caching: when the
+# output dir already exists from a prior build that lacked the DLL, MSBuild's
+# PreserveNewest check does not re-evaluate and the DLL never arrives.
 [windows]
 run-win: build-dll build-win
+    New-Item -ItemType Directory -Force -Path windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/native | Out-Null; Copy-Item -Force zig-out/lib/ghostty.dll windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/native/ghostty.dll
     ./windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/Ghostty.exe
+
+# NativeAOT: build the static lib, publish as a single-file exe, then launch.
+# Uses dotnet publish which links ghostty-static.lib directly into the exe.
+[windows]
+run-win-aot: build-dll
+    dotnet publish windows/Ghostty/Ghostty.csproj -r win-x64 -c Release /p:Platform=x64
+    ./windows/Ghostty/bin/x64/Release/net9.0-windows10.0.19041.0/win-x64/publish/Ghostty.exe
 
 # === Upstream Sync ===
 

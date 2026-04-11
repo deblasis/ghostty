@@ -36,6 +36,8 @@ internal sealed class ThemeProvider : IThemeProvider, IDisposable
 
     private void Refresh()
     {
+        BackgroundOpacity = _configService.BackgroundOpacity;
+
         // Enumerate theme files from the user themes directory.
         // Ghostty looks for themes in <config_dir>/themes/<name>.
         var configDir = Path.GetDirectoryName(_configService.ConfigFilePath);

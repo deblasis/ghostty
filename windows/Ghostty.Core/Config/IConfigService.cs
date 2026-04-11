@@ -22,6 +22,11 @@ public interface IConfigService : IDisposable
     bool SettingsUiEnabled { get; }
 
     /// <summary>
+    /// Background opacity from config (0.0 fully transparent, 1.0 opaque).
+    /// </summary>
+    double BackgroundOpacity { get; }
+
+    /// <summary>
     /// Re-read config from disk and apply it. Returns true on
     /// success, false if the reload failed (old config stays active).
     /// </summary>

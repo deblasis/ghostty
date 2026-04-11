@@ -107,6 +107,16 @@ public sealed partial class MainWindow : Window
     [LibraryImport("gdi32.dll")]
     private static partial IntPtr CreateSolidBrush(uint crColor);
 
+    [LibraryImport("dwmapi.dll")]
+    private static partial int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, in int pvAttribute, int cbAttribute);
+
+    // Forces the title bar caption buttons (min/max/close) to dark or
+    // light rendering. XAML's RequestedTheme and AppWindow.TitleBar
+    // button color properties are both ignored when
+    // ExtendsContentIntoTitleBar is true -- only this DWM attribute
+    // controls the OS-rendered non-client area.
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
     internal MainWindow(ConfigService configService)
     {
         InitializeComponent();
@@ -159,6 +169,15 @@ public sealed partial class MainWindow : Window
         // TabHost is parented so the content area is sized without
         // the default title bar row.
         ExtendsContentIntoTitleBar = true;
+
+        // Force the non-client area (caption buttons) to dark mode.
+        // XAML RequestedTheme and AppWindow.TitleBar button colors are
+        // both ignored when ExtendsContentIntoTitleBar is true -- only
+        // this DWM attribute controls the OS-rendered chrome. Will be
+        // replaced by proper window-theme support (issue 195).
+        int useDarkMode = 1;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            in useDarkMode, sizeof(int));
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
