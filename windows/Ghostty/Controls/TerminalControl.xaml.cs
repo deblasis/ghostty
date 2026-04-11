@@ -344,9 +344,32 @@ public sealed partial class TerminalControl : UserControl
             .GetElementVisual(Panel);
         var compositor = elementVisual.Compositor;
 
-        // QI the compositor for ICompositorInterop to bind the swap chain.
-        var interop = (ICompositorInterop)(object)compositor;
-        var hr = interop.CreateCompositionSurfaceForSwapChain(swapChainPtr, out var surfacePtr);
+        // QI the compositor for ICompositorInterop. Built-in COM is
+        // disabled (NativeAOT), so we use the CsWinRT IWinRTObject
+        // pattern to get the underlying COM pointer -- same approach
+        // as SwapChainPanelInterop.QueryInterface.
+        var compositorPtr = ((IWinRTObject)compositor).NativeObject.ThisPtr;
+        var iid = typeof(ICompositorInterop).GUID;
+        var qiHr = Marshal.QueryInterface(compositorPtr, ref iid, out var interopPtr);
+
+        if (qiHr < 0 || interopPtr == IntPtr.Zero)
+            throw new InvalidOperationException(
+                $"QueryInterface for ICompositorInterop failed: 0x{qiHr:X8}");
+
+        // Call CreateCompositionSurfaceForSwapChain via the vtable.
+        // ICompositorInterop vtable: IUnknown(0-2), then slot 3.
+        int hr;
+        IntPtr surfacePtr;
+        unsafe
+        {
+            var vtable = *(IntPtr*)interopPtr;
+            var createSurface = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr*, int>)
+                *(IntPtr*)(vtable + 3 * IntPtr.Size);
+            IntPtr surfacePtrLocal;
+            hr = createSurface(interopPtr, swapChainPtr, &surfacePtrLocal);
+            surfacePtr = surfacePtrLocal;
+        }
+        Marshal.Release(interopPtr);
         if (hr < 0 || surfacePtr == IntPtr.Zero)
             throw new InvalidOperationException(
                 $"CreateCompositionSurfaceForSwapChain failed: 0x{hr:X8}");
