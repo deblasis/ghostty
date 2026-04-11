@@ -42,9 +42,9 @@ internal sealed class PaneActionRouter
     public event EventHandler? ToggleVerticalTabsPinnedRequested;
 
     /// <summary>
-    /// Raised when the Ctrl+Shift+Alt+V chord — or the title-bar
-    /// icon, or the context-menu item — fires. MainWindow listens
-    /// and runs its animated layout switch.
+    /// Raised when the Ctrl+Shift+, chord or the strip context menu
+    /// item fires. MainWindow listens and runs its animated layout
+    /// switch.
     /// </summary>
     public event EventHandler? ToggleTabLayoutRequested;
 
@@ -67,13 +67,6 @@ internal sealed class PaneActionRouter
     /// <c>AppWindow.SetPresenter(FullScreen/Default)</c>.
     /// </summary>
     public event EventHandler? ToggleFullscreenRequested;
-
-    /// <summary>
-    /// Raised when the sidebar collapse toggle fires via context menu.
-    /// MainWindow listens and calls <c>VerticalTabHost.ToggleCollapse</c>
-    /// if the current <see cref="Tabs.ITabHost"/> is a VerticalTabHost.
-    /// </summary>
-    public event EventHandler? ToggleSidebarCollapseRequested;
 
     public void Invoke(PaneAction action)
     {
@@ -147,12 +140,13 @@ internal sealed class PaneActionRouter
         => ToggleTabLayoutRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
-    /// Public dispatch entry for sidebar collapse toggle via context menu.
-    /// MainWindow listens and calls <c>VerticalTabHost.ToggleCollapse</c>
-    /// if the current <see cref="Tabs.ITabHost"/> is a VerticalTabHost.
+    /// Public dispatch entry for the sidebar collapse toggle. Reuses
+    /// the existing ToggleVerticalTabsPinnedRequested event so
+    /// MainWindow has one handler for every source (Ctrl+Shift+Space
+    /// keyboard chord, chevron button, strip context menu).
     /// </summary>
     public void RequestToggleSidebarCollapse()
-        => ToggleSidebarCollapseRequested?.Invoke(this, EventArgs.Empty);
+        => ToggleVerticalTabsPinnedRequested?.Invoke(this, EventArgs.Empty);
 
     private void HandleProgressiveClose()
     {
