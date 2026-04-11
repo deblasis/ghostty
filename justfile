@@ -125,6 +125,16 @@ run-win-aot: build-dll
     dotnet publish windows/Ghostty/Ghostty.csproj -r win-x64 -c Release /p:Platform=x64
     ./windows/Ghostty/bin/x64/Release/net9.0-windows10.0.19041.0/win-x64/publish/Ghostty.exe
 
+# Build the WinUI 3 app shell as a nightly build (hazard-striped icon).
+[windows]
+build-win-nightly:
+    dotnet build windows/Ghostty/Ghostty.sln /p:Platform=x64 /p:Channel=Nightly
+
+# Build the DLL and the nightly shell, then launch it.
+[windows]
+run-win-nightly: build-dll build-win-nightly
+    ./windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/Ghostty.exe
+
 # === Upstream Sync ===
 
 # Pinned to bash via shebang so the POSIX `[` branch test below works
@@ -142,3 +152,18 @@ sync force="":
     git fetch upstream
     git rebase upstream/main
     echo "Rebase complete. Review any conflicts, then: git push --force-with-lease origin windows"
+
+# === Branding assets ===
+
+# Regenerate branding assets standalone for preview and iteration.
+# Channel defaults to "stable"; pass "nightly" to see the dev variant.
+[windows]
+branding-preview channel="stable":
+    dotnet run --project dist/windows/IconGen -- --channel {{channel}} --out dist/windows/preview
+    explorer.exe dist\windows\preview
+
+# Wipe generated branding artifacts (preview dir and obj Branding dir).
+[windows]
+branding-clean:
+    if (Test-Path dist/windows/preview) { Remove-Item -Recurse -Force dist/windows/preview }
+    Get-ChildItem -Path windows/Ghostty/obj -Directory -Recurse -Filter Branding -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
