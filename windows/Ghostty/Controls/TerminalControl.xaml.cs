@@ -320,8 +320,29 @@ public sealed partial class TerminalControl : UserControl
         _surface = NativeMethods.SurfaceNew(app, surfaceConfig);
         Host.Register(_surface, this);
 
-        // Bind the swap chain to a composition visual in the XAML tree.
-        BindCompositionVisual();
+        // Bind the swap chain. First try composition visual for
+        // transparency support. Fall back to SwapChainPanel if the
+        // composition path fails.
+        if (!BindCompositionVisual())
+        {
+            // Fallback: bind swap chain to the panel directly via
+            // ISwapChainPanelNative.SetSwapChain (vtable slot 3).
+            // This is the opaque path (no transparency).
+            var swapChainPtr = NativeMethods.SurfaceGetSwapChain(_surface);
+            if (swapChainPtr != IntPtr.Zero)
+            {
+                var panelPtr = SwapChainPanelInterop.QueryInterface(Panel);
+                unsafe
+                {
+                    var vtable = *(IntPtr*)panelPtr;
+                    var setSwapChain = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, int>)
+                        *(IntPtr*)(vtable + 3 * IntPtr.Size);
+                    setSwapChain(panelPtr, swapChainPtr);
+                }
+                SwapChainPanelInterop.Release(panelPtr);
+                System.Diagnostics.Debug.WriteLine("[TerminalControl] Fallback: bound swap chain to SwapChainPanel (opaque)");
+            }
+        }
 
         // Request focus so keyboard input starts flowing immediately.
         // Focus lives on the UserControl now, not the panel.
@@ -334,10 +355,12 @@ public sealed partial class TerminalControl : UserControl
     /// SwapChainPanel's internal composition binding with one that
     /// supports per-pixel alpha transparency.
     /// </summary>
-    private void BindCompositionVisual()
+    /// <returns>true if composition visual was bound, false to fall back to SwapChainPanel.</returns>
+    private bool BindCompositionVisual()
     {
         var swapChainPtr = NativeMethods.SurfaceGetSwapChain(_surface);
-        if (swapChainPtr == IntPtr.Zero) return;
+        if (swapChainPtr == IntPtr.Zero)
+            return false;
 
         // Get the compositor from the XAML visual tree.
         var elementVisual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview
@@ -353,8 +376,10 @@ public sealed partial class TerminalControl : UserControl
         var qiHr = Marshal.QueryInterface(compositorPtr, ref iid, out var interopPtr);
 
         if (qiHr < 0 || interopPtr == IntPtr.Zero)
-            throw new InvalidOperationException(
-                $"QueryInterface for ICompositorInterop failed: 0x{qiHr:X8}");
+        {
+            System.Diagnostics.Debug.WriteLine($"[TerminalControl] ICompositorInterop QI failed: 0x{qiHr:X8}");
+            return false;
+        }
 
         // Call CreateCompositionSurfaceForSwapChain via the vtable.
         // ICompositorInterop vtable: IUnknown(0-2), then slot 3.
@@ -371,8 +396,10 @@ public sealed partial class TerminalControl : UserControl
         }
         Marshal.Release(interopPtr);
         if (hr < 0 || surfacePtr == IntPtr.Zero)
-            throw new InvalidOperationException(
-                $"CreateCompositionSurfaceForSwapChain failed: 0x{hr:X8}");
+        {
+            System.Diagnostics.Debug.WriteLine($"[TerminalControl] CreateCompositionSurfaceForSwapChain failed: 0x{hr:X8}");
+            return false;
+        }
 
         // Wrap the raw pointer as a WinRT ICompositionSurface.
         var surface = MarshalInterface<Microsoft.UI.Composition.ICompositionSurface>
@@ -390,6 +417,7 @@ public sealed partial class TerminalControl : UserControl
         // Inject into the XAML tree as a child of the Panel.
         Microsoft.UI.Xaml.Hosting.ElementCompositionPreview
             .SetElementChildVisual(Panel, _compositionVisual);
+        return true;
     }
 
     private void DisableAncestorScrollViewerTabStop()
