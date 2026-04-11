@@ -88,7 +88,7 @@ internal sealed partial class TabHost : UserControl, ITabHost
         {
             Header = headerPanel,
             Content = null,
-            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync, _router, _dialogs),
+            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync, _dialogs),
             DataContext = tab,
         };
         tab.PropertyChanged += (_, e) =>
