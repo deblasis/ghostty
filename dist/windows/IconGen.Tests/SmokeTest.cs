@@ -5,9 +5,15 @@ namespace Ghostty.IconGen.Tests;
 public class SmokeTest
 {
     [Fact]
-    public void ProgramMainReturnsZeroOnEmptyArgs()
+    public void ProgramRunWithValidArgsReturnsZero()
     {
-        var exitCode = Program.Main(Array.Empty<string>());
+        using var tempDir = new TempDir();
+        var repoRoot = TempDir.FindRepoRoot();
+
+        var exitCode = Program.Run(
+            new[] { "--channel", "stable", "--out", tempDir.Path },
+            repoRoot);
+
         Assert.Equal(0, exitCode);
     }
 }

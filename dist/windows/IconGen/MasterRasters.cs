@@ -16,6 +16,9 @@ internal sealed class MasterRasters : IDisposable
         _byPx = byPx;
     }
 
+    internal static MasterRasters FromDictionary(Dictionary<int, Bitmap> byPx)
+        => new(byPx);
+
     public IReadOnlyCollection<int> Sizes => _byPx.Keys;
 
     public Bitmap Get(int px)
