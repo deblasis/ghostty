@@ -45,9 +45,8 @@
     -->
     <Channel Condition="'$(Channel)' == '' and '$(Configuration)' == 'Debug'">Nightly</Channel>
     <Channel Condition="'$(Channel)' == ''">Stable</Channel>
-    <!-- Generate to obj/.../Branding/ using platform and config from build properties -->
-    <BrandingOutputDir>$(MSBuildProjectDirectory)\obj\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\Branding\</BrandingOutputDir>
-    <ApplicationIcon>$(BrandingOutputDir)ghostty.ico</ApplicationIcon>
+    <GeneratedBrandingDir>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\$(TargetFramework)\Branding\</GeneratedBrandingDir>
+    <ApplicationIcon>$(GeneratedBrandingDir)ghostty.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -113,25 +112,23 @@
 
   <!--
     Build-time generation of the app icon (.ico) and scaled PNG assets.
-    The IconGen tool reads the macOS-style master rasters under
-    images/icons/ and generates ghostty.ico and AppIcon.scale-*.png
-    files into the obj/.../Branding/ directory. These are picked up by
-    the <Content> item group below so WinUI 3 resolves
+    Inputs are the macOS-style master rasters under images/icons/ and
+    the IconGen source files. Outputs go to obj/.../Branding/ and are
+    picked up by the <Content> item group below so WinUI 3 resolves
     ms-appx:///Assets/AppIcon.scale-xxx.png at runtime. The .ico is
     embedded in the exe automatically via <ApplicationIcon>.
   -->
   <Target Name="GenerateBrandingAssets"
-          BeforeTargets="BeforeBuild">
-    <PropertyGroup>
-      <_BrandingDirNoTrail>$(BrandingOutputDir.TrimEnd('\'))</_BrandingDirNoTrail>
-    </PropertyGroup>
-    <MakeDir Directories="$(BrandingOutputDir)" />
-    <Exec Command="cmd /c dotnet run --project ..\..\dist\windows\IconGen --no-launch-profile -c Release -- --channel $(Channel) --out &quot;$(_BrandingDirNoTrail)&quot;"
-          WorkingDirectory="$(MSBuildProjectDirectory)" />
+          BeforeTargets="BeforeBuild"
+          Inputs="..\..\dist\windows\IconGen\**\*.cs;..\..\images\icons\icon_*.png"
+          Outputs="$(GeneratedBrandingDir)ghostty.ico">
+    <MakeDir Directories="$(GeneratedBrandingDir)" />
+    <Exec Command="dotnet run --project ..\..\dist\windows\IconGen --no-launch-profile -c Release -- --channel $(Channel) --out &quot;$(GeneratedBrandingDir.TrimEnd('\'))&quot;"
+          WorkingDirectory="$(MSBuildThisFileDirectory)" />
   </Target>
 
   <ItemGroup>
-    <Content Include="$(BrandingOutputDir)AppIcon.scale-*.png">
+    <Content Include="$(GeneratedBrandingDir)AppIcon.scale-*.png">
       <Link>Assets\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
