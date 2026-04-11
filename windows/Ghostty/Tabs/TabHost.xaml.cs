@@ -143,14 +143,6 @@ internal sealed partial class TabHost : UserControl, ITabHost
         _suppressSelectionEvent = false;
     }
 
-    private void RefreshHeader(TabViewItem item, TabModel tab)
-    {
-        // EffectiveTitle is a computed property; INPC events fire for
-        // ShellReportedTitle / UserOverrideTitle. Re-set Header to
-        // force the simple binding to re-read.
-        item.Header = tab.EffectiveTitle;
-    }
-
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
 
     private async void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)

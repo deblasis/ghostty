@@ -29,8 +29,11 @@ internal static class PngWriter
     public static Bitmap Resize(MasterRasters masters, int targetPx)
     {
         // Pick the smallest master >= target for cleanest downsample.
-        // If none are large enough, pick the largest available.
-        int sourcePx = masters.Sizes.Where(s => s >= targetPx).DefaultIfEmpty(masters.Sizes.Max()).Min();
+        // If none are large enough, fall back to the largest available
+        // and let DrawImage upscale. Written as two statements rather
+        // than a single LINQ chain so the fallback is obvious at a glance.
+        var largeEnough = masters.Sizes.Where(s => s >= targetPx).ToList();
+        int sourcePx = largeEnough.Count > 0 ? largeEnough.Min() : masters.Sizes.Max();
         using var source = masters.Get(sourcePx);
 
         var output = new Bitmap(targetPx, targetPx, PixelFormat.Format32bppArgb);

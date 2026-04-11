@@ -45,7 +45,15 @@
     -->
     <Channel Condition="'$(Channel)' == '' and '$(Configuration)' == 'Debug'">Nightly</Channel>
     <Channel Condition="'$(Channel)' == ''">Stable</Channel>
-    <GeneratedBrandingDir>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\$(TargetFramework)\Branding\</GeneratedBrandingDir>
+    <!--
+      Channel is part of the path so switching variants (e.g.
+      -p:Channel=Nightly after a Stable build) regenerates the icon
+      instead of reusing the stale one. MSBuild only skips the
+      GenerateBrandingAssets target when its declared Output already
+      exists AND is newer than its Inputs; keeping each channel in
+      its own directory makes "does ghostty.ico exist?" channel-aware.
+    -->
+    <GeneratedBrandingDir>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\$(TargetFramework)\Branding\$(Channel)\</GeneratedBrandingDir>
     <ApplicationIcon>$(GeneratedBrandingDir)ghostty.ico</ApplicationIcon>
   </PropertyGroup>
 

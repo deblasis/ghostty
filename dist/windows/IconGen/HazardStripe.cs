@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
@@ -23,6 +24,13 @@ internal static class HazardStripe
 
     public static void Apply(Bitmap bitmap)
     {
+        // Icon masters are square and the band-height / stripe-width
+        // math below assumes Width == Height. Assert explicitly so a
+        // future non-square caller fails loud in Debug instead of
+        // silently producing off-axis stripes.
+        Debug.Assert(bitmap.Width == bitmap.Height,
+            "HazardStripe.Apply expects a square bitmap.");
+
         int size = bitmap.Width;
         int bandHeight = (int)Math.Round(size * BandHeightFraction);
         if (bandHeight < 2) bandHeight = 2;

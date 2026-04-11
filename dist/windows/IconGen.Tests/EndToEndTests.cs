@@ -64,6 +64,13 @@ public class EndToEndTests
             $"Stable icon should have no yellow stripes; got {yellowCount}.");
     }
 
+    // TODO(icongen): GDI+ antialiasing is not byte-stable across
+    // different GDI+ versions shipped with various Windows 10/11
+    // builds. Two runs on the same machine produce identical bytes
+    // today, but CI on a different host image can drift. If this
+    // flakes, either (a) pin the antialiasing in HazardStripe.Apply
+    // so the diagonal polygons are deterministic, or (b) hash only
+    // the non-stripe region of the icon.
     [Fact]
     public void DeterministicAcrossRuns()
     {

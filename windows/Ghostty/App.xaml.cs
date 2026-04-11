@@ -13,6 +13,10 @@ namespace Ghostty;
 /// </summary>
 public partial class App : Application
 {
+    // TODO(multi-window, #161): replace with an XamlRoot -> Window
+    // registry once the shell supports multiple top-level windows
+    // (Move Tab to New Window, Settings window, etc.). Single-window
+    // assumption is only safe while there is exactly one root.
     public static Window? RootWindow { get; internal set; }
 
     private Window? _window;
