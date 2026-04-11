@@ -125,6 +125,16 @@ run-win-aot: build-dll
     dotnet publish windows/Ghostty/Ghostty.csproj -r win-x64 -c Release /p:Platform=x64
     ./windows/Ghostty/bin/x64/Release/net9.0-windows10.0.19041.0/win-x64/publish/Ghostty.exe
 
+# Build the WinUI 3 app shell as a nightly build (hazard-striped icon).
+[windows]
+build-win-nightly:
+    dotnet build windows/Ghostty/Ghostty.sln /p:Platform=x64 /p:Channel=Nightly
+
+# Build the DLL and the nightly shell, then launch it.
+[windows]
+run-win-nightly: build-dll build-win-nightly
+    ./windows/Ghostty/bin/x64/Debug/net9.0-windows10.0.19041.0/Ghostty.exe
+
 # === Upstream Sync ===
 
 # Pinned to bash via shebang so the POSIX `[` branch test below works
