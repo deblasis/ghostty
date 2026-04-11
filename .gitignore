@@ -34,10 +34,3 @@ glad.zip
 
 vgcore.*
 
-# .NET build artifacts
-bin/
-obj/
-*.dll
-*.pdb
-*.exe
-

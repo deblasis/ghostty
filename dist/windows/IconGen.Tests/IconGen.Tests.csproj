@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
+    <AssemblyName>Ghostty.IconGen.Tests</AssemblyName>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
