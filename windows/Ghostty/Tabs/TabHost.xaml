@@ -51,6 +51,7 @@
             IsAddTabButtonVisible="True"
             AddTabButtonClick="OnAddTabButtonClick"
             TabCloseRequested="OnTabCloseRequested"
+            ContextRequested="OnTabViewContextRequested"
             SelectionChanged="OnSelectionChanged"
             TabDragCompleted="OnTabDragCompleted">
             <controls:TabView.TabStripHeader>

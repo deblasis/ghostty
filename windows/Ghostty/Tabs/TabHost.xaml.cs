@@ -6,6 +6,9 @@ using Ghostty.Input;
 using Ghostty.Panes;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
+using Windows.Foundation;
 
 namespace Ghostty.Tabs;
 
@@ -205,6 +208,32 @@ internal sealed partial class TabHost : UserControl, ITabHost
                 if (vi == item) { _manager.Activate(model); return; }
             }
         }
+    }
+
+    private void OnTabViewContextRequested(
+        UIElement sender, ContextRequestedEventArgs e)
+    {
+        // If the right-click landed on a TabViewItem, the per-item
+        // ContextFlyout from TabContextMenuBuilder handles it. Bail out.
+        var source = e.OriginalSource as DependencyObject;
+        if (VisualTreeHelperEx.FindAncestor<TabViewItem>(source) is not null)
+            return;
+
+        var flyout = StripContextMenuBuilder.Build(
+            _manager, _router, isVertical: false);
+
+        var anchor = (FrameworkElement)sender;
+        if (e.TryGetPosition(anchor, out Point position))
+        {
+            flyout.ShowAt(anchor, new FlyoutShowOptions { Position = position });
+        }
+        else
+        {
+            // Keyboard-triggered (Shift+F10 or context menu key).
+            // Show at the sender so keyboard users get a usable anchor.
+            flyout.ShowAt(anchor);
+        }
+        e.Handled = true;
     }
 
     private void OnTabDragCompleted(TabView sender, TabViewTabDragCompletedEventArgs args)
