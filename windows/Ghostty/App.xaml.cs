@@ -13,6 +13,8 @@ namespace Ghostty;
 /// </summary>
 public partial class App : Application
 {
+    public static Window? RootWindow { get; internal set; }
+
     private Window? _window;
 
     static App()
@@ -132,6 +134,7 @@ public partial class App : Application
         var configService = new ConfigService(DispatcherQueue.GetForCurrentThread());
 
         _window = new MainWindow(configService);
+        RootWindow = _window;
         _window.Activate();
     }
 }
