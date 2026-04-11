@@ -152,3 +152,18 @@ sync force="":
     git fetch upstream
     git rebase upstream/main
     echo "Rebase complete. Review any conflicts, then: git push --force-with-lease origin windows"
+
+# === Branding assets ===
+
+# Regenerate branding assets standalone for preview and iteration.
+# Channel defaults to "stable"; pass "nightly" to see the dev variant.
+[windows]
+branding-preview channel="stable":
+    dotnet run --project dist/windows/IconGen -- --channel {{channel}} --out dist/windows/preview
+    explorer.exe dist\windows\preview
+
+# Wipe generated branding artifacts (preview dir and obj Branding dir).
+[windows]
+branding-clean:
+    if (Test-Path dist/windows/preview) { Remove-Item -Recurse -Force dist/windows/preview }
+    Get-ChildItem -Path windows/Ghostty/obj -Directory -Recurse -Filter Branding -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
