@@ -6,6 +6,11 @@ namespace Ghostty.Core.Config;
 /// Pure-logic type that computes what window layers should do based on
 /// the background-opacity config value. No Win32 or WinUI dependencies
 /// so it can be unit-tested directly.
+///
+/// Not yet consumed by MainWindow -- this is scaffolding for issue #196
+/// (actual window transparency via HWND + DirectComposition). The type
+/// and its tests land here so the follow-up PR can wire it in without
+/// a large diff.
 /// </summary>
 public readonly struct WindowTransparencyState : IEquatable<WindowTransparencyState>
 {
@@ -43,6 +48,9 @@ public readonly struct WindowTransparencyState : IEquatable<WindowTransparencySt
 
     private WindowTransparencyState(double opacity)
     {
+        // Defensive clamp: IConfigService.BackgroundOpacity already
+        // guarantees [0,1], but this type must be safe standalone since
+        // it is the public API for computing transparency decisions.
         Opacity = Math.Clamp(opacity, 0.0, 1.0);
         IsTransparent = Opacity < 1.0;
         UseSystemBackdrop = !IsTransparent;

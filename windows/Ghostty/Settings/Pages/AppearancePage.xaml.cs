@@ -24,8 +24,23 @@ internal sealed partial class AppearancePage : Page
         InitializeComponent();
         _fontList = new SearchableList(FontFamilySearch, chosen => OnValueChanged("font-family", chosen));
         OpacitySlider.Value = configService.BackgroundOpacity;
+        SelectWindowTheme(configService.WindowTheme);
         _loading = false;
         LoadFontsAsync();
+    }
+
+    private void SelectWindowTheme(string theme)
+    {
+        foreach (ComboBoxItem item in WindowThemeCombo.Items)
+        {
+            if (string.Equals(item.Tag?.ToString(), theme, StringComparison.OrdinalIgnoreCase))
+            {
+                WindowThemeCombo.SelectedItem = item;
+                return;
+            }
+        }
+        // Default to "auto" if the value is unrecognized.
+        WindowThemeCombo.SelectedIndex = 0;
     }
 
     private void LoadFontsAsync()
@@ -155,6 +170,12 @@ internal sealed partial class AppearancePage : Page
     private void Opacity_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
         OnValueChanged("background-opacity", e.NewValue.ToString("F2"));
+    }
+
+    private void WindowTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item)
+            OnValueChanged("window-theme", item.Tag?.ToString() ?? "auto");
     }
 
     private void ShaderPath_LostFocus(object sender, RoutedEventArgs e)

@@ -7,6 +7,16 @@
         <StackPanel Spacing="8" MaxWidth="600">
             <TextBlock Text="Appearance" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,16" />
 
+            <ComboBox
+                x:Name="WindowThemeCombo"
+                Header="Window theme"
+                SelectionChanged="WindowTheme_SelectionChanged">
+                <ComboBoxItem Content="Auto" Tag="auto" />
+                <ComboBoxItem Content="System" Tag="system" />
+                <ComboBoxItem Content="Light" Tag="light" />
+                <ComboBoxItem Content="Dark" Tag="dark" />
+            </ComboBox>
+
             <AutoSuggestBox
                 x:Name="FontFamilySearch"
                 Header="Font family"

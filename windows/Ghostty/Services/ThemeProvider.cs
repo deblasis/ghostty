@@ -14,7 +14,6 @@ internal sealed class ThemeProvider : IThemeProvider, IDisposable
     public uint ForegroundColor { get; private set; } = 0xFFCDD6F4;
     public uint CursorColor { get; private set; } = 0xFFF5E0DC;
     public uint SelectionColor { get; private set; } = 0xFF585B70;
-    public double BackgroundOpacity { get; private set; } = 1.0;
     public string? FontFamily { get; private set; }
     public double FontSize { get; private set; } = 13.0;
     public string? ThemeName { get; private set; }
@@ -36,8 +35,6 @@ internal sealed class ThemeProvider : IThemeProvider, IDisposable
 
     private void Refresh()
     {
-        BackgroundOpacity = _configService.BackgroundOpacity;
-
         // Enumerate theme files from the user themes directory.
         // Ghostty looks for themes in <config_dir>/themes/<name>.
         var configDir = Path.GetDirectoryName(_configService.ConfigFilePath);
