@@ -3664,6 +3664,8 @@ else
 /// changes on disk. Uses a platform-specific file watcher (e.g.
 /// FileSystemWatcher on Windows). When false, config is only
 /// reloaded via explicit keybind or menu action.
+///
+/// Available since: 1.1.1
 @"auto-reload-config": bool = false,
 
 /// Enable the built-in Settings UI on Windows. On other platforms,
@@ -3671,6 +3673,8 @@ else
 /// opens the config file in the default editor (matching macOS
 /// behavior). When true, opens the built-in settings window with
 /// structured editing.
+///
+/// Available since: 1.1.1
 @"windows-settings-ui": bool = false,
 
 /// If `true` (default), applications running in the terminal can show desktop

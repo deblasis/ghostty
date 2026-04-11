@@ -5,7 +5,7 @@ using Ghostty.Core.Config;
 
 namespace Ghostty.Services;
 
-internal sealed class KeyBindingsProvider : IKeyBindingsProvider
+internal sealed class KeyBindingsProvider : IKeyBindingsProvider, IDisposable
 {
     private readonly IConfigService _configService;
     private List<BindingEntry> _bindings = new();
@@ -35,6 +35,11 @@ internal sealed class KeyBindingsProvider : IKeyBindingsProvider
             .Where(b => b.Action.Contains(query, StringComparison.OrdinalIgnoreCase)
                      || b.KeyCombo.Contains(query, StringComparison.OrdinalIgnoreCase))
             .ToList();
+    }
+
+    public void Dispose()
+    {
+        _configService.ConfigChanged -= OnConfigChanged;
     }
 
     private void OnConfigChanged(IConfigService _) => Refresh();

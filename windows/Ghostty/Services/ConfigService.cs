@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -20,6 +21,7 @@ internal sealed class ConfigService : IConfigService
     private GhosttyApp _app;
     private FileSystemWatcher? _watcher;
     private Timer? _debounceTimer;
+    private readonly Lock _timerLock = new();
     private readonly DispatcherQueue _dispatcher;
     private volatile bool _suppressWatcher;
 
@@ -70,6 +72,10 @@ internal sealed class ConfigService : IConfigService
 
     public bool Reload()
     {
+        // Don't reload before the app is created -- the initial config
+        // is the one passed to ghostty_app_new and must stay alive.
+        if (_app.Handle == IntPtr.Zero) return false;
+
         GhosttyConfig newConfig;
         try
         {
@@ -77,17 +83,20 @@ internal sealed class ConfigService : IConfigService
             NativeMethods.ConfigLoadDefaultFiles(newConfig);
             NativeMethods.ConfigFinalize(newConfig);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"[ConfigService] Reload failed to create new config: {ex.Message}");
             return false;
         }
 
         var oldConfig = _config;
 
-        if (_app.Handle != IntPtr.Zero)
-        {
-            NativeMethods.AppUpdateConfig(_app, newConfig);
-        }
+        // Suppress the watcher for the duration of the update so our
+        // own config swap doesn't trigger a redundant file-change reload.
+        var wasSuppressed = _suppressWatcher;
+        _suppressWatcher = true;
+
+        NativeMethods.AppUpdateConfig(_app, newConfig);
 
         _config = newConfig;
         CacheDiagnostics();
@@ -95,6 +104,8 @@ internal sealed class ConfigService : IConfigService
 
         if (oldConfig.Handle != IntPtr.Zero)
             NativeMethods.ConfigFree(oldConfig);
+
+        _suppressWatcher = wasSuppressed;
 
         _dispatcher.TryEnqueue(() => ConfigChanged?.Invoke(this));
         return true;
@@ -171,17 +182,23 @@ internal sealed class ConfigService : IConfigService
     private void OnFileChanged(object? sender, FileSystemEventArgs e)
     {
         if (_suppressWatcher) return;
-        _debounceTimer?.Dispose();
-        _debounceTimer = new Timer(_ =>
+        lock (_timerLock)
         {
-            _dispatcher.TryEnqueue(() => Reload());
-        }, null, 300, Timeout.Infinite);
+            _debounceTimer?.Dispose();
+            _debounceTimer = new Timer(_ =>
+            {
+                _dispatcher.TryEnqueue(() => Reload());
+            }, null, 300, Timeout.Infinite);
+        }
     }
 
     public void Dispose()
     {
         StopWatcher();
-        _debounceTimer?.Dispose();
+        lock (_timerLock)
+        {
+            _debounceTimer?.Dispose();
+        }
         if (_config.Handle != IntPtr.Zero)
             NativeMethods.ConfigFree(_config);
     }

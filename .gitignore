@@ -6,9 +6,9 @@
 .vscode/
 .vs/
 
-# .NET build output
-**/bin/
-**/obj/
+# .NET build output (scoped to windows/ to avoid masking Zig build paths)
+windows/**/bin/
+windows/**/obj/
 .direnv/
 .envrc.local
 .flatpak-builder/

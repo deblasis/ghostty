@@ -47,6 +47,6 @@ internal sealed partial class ColorsPage : Page
 
     private void SelectionColor_LostFocus(object sender, RoutedEventArgs e)
     {
-        if (sender is TextBox tb) OnValueChanged("selection-foreground", tb.Text);
+        if (sender is TextBox tb) OnValueChanged("selection-background", tb.Text);
     }
 }

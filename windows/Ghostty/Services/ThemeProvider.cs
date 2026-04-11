@@ -6,7 +6,7 @@ using Ghostty.Core.Config;
 
 namespace Ghostty.Services;
 
-internal sealed class ThemeProvider : IThemeProvider
+internal sealed class ThemeProvider : IThemeProvider, IDisposable
 {
     private readonly IConfigService _configService;
 
@@ -25,6 +25,11 @@ internal sealed class ThemeProvider : IThemeProvider
         _configService = configService;
         _configService.ConfigChanged += OnConfigChanged;
         Refresh();
+    }
+
+    public void Dispose()
+    {
+        _configService.ConfigChanged -= OnConfigChanged;
     }
 
     private void OnConfigChanged(IConfigService _) => Refresh();

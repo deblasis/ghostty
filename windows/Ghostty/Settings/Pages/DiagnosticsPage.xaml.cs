@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Ghostty.Core.Config;
 using Microsoft.UI.Xaml;
@@ -43,12 +44,16 @@ internal sealed partial class DiagnosticsPage : Page
 
     private void Refresh()
     {
-        _diagnostics.Clear();
         var count = _configService.DiagnosticsCount;
+        var items = new List<string>(count);
         for (int i = 0; i < count; i++)
-        {
-            _diagnostics.Add(_configService.GetDiagnostic(i));
-        }
+            items.Add(_configService.GetDiagnostic(i));
+
+        // Batch update: clear and repopulate in one pass to minimize
+        // per-item UI change notifications.
+        _diagnostics.Clear();
+        foreach (var item in items)
+            _diagnostics.Add(item);
 
         CountBadge.Value = count;
         StatusText.Text = count == 0

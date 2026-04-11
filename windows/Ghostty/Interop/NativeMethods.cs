@@ -250,10 +250,10 @@ internal struct GhosttyString
 {
     public IntPtr Ptr;      // const char*
     public UIntPtr Len;
-    // Zig bool is 1 byte. Under LibraryImport source generation with
-    // DisableRuntimeMarshalling, C# bool marshals as 1 byte by default
-    // so no [MarshalAs] annotation is needed.
-    public bool Sentinel;
+    // Zig c.String has a trailing bool (1 byte) for sentinel, but we
+    // only use Ptr and Len. The struct has trailing padding to pointer
+    // alignment so the bool sits in padding space on x64.
+    private byte _sentinel;
 }
 
 [StructLayout(LayoutKind.Sequential)]

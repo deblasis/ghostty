@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Ghostty.Core.Config;
@@ -155,6 +156,7 @@ internal sealed partial class AppearancePage : Page
         if (sender is TextBox tb) OnValueChanged("custom-shader", tb.Text);
     }
 
-    [DllImport("dwrite.dll", ExactSpelling = true)]
-    private static unsafe extern int DWriteCreateFactory(int factoryType, Guid* iid, IntPtr* factory);
+    [LibraryImport("dwrite.dll", EntryPoint = "DWriteCreateFactory")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static unsafe partial int DWriteCreateFactory(int factoryType, Guid* iid, IntPtr* factory);
 }

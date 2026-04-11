@@ -333,7 +333,7 @@ public sealed partial class MainWindow : Window
             }
             catch (System.Exception ex)
             {
-                Console.Error.WriteLine($"[MainWindow] Failed to open config file: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Failed to open config file: {ex.Message}");
             }
         };
 
