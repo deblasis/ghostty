@@ -15,4 +15,8 @@
   <ItemGroup>
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ghostty.IconGen.Tests" />
+  </ItemGroup>
 </Project>
