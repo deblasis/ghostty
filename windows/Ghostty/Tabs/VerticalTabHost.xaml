@@ -11,7 +11,7 @@
          title text and the switch-layout button) moved up to
          MainWindow so it can span the full window width even when
          this UserControl is constrained to the strip column. -->
-    <Grid Background="Transparent">
+    <Grid Background="Transparent" ContextRequested="OnStripContextRequested">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="StripColumn" Width="40"/>
         </Grid.ColumnDefinitions>
