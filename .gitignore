@@ -4,6 +4,11 @@
 *.log
 .DS_Store
 .vscode/
+.vs/
+
+# .NET build output
+**/bin/
+**/obj/
 .direnv/
 .envrc.local
 .flatpak-builder/
