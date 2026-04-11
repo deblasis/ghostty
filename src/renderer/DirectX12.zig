@@ -196,7 +196,10 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
             .height = w.shared_texture.height,
         } }
     else
-        return error.NoWindowsSurface;
+        // No HWND, no panel, no shared texture: composition mode.
+        // The embedder retrieves the swap chain pointer and binds it
+        // to a Windows.UI.Composition visual for per-pixel alpha.
+        .composition;
 
     const size = opts.size.screen;
     result.dev = device.Device.init(surface, .{

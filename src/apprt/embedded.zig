@@ -1834,6 +1834,20 @@ pub const CAPI = struct {
         return @ptrCast(dev.device);
     }
 
+    /// Return the IDXGISwapChain1* used by this surface's renderer.
+    /// The embedder can bind this to a Windows.UI.Composition visual
+    /// via ICompositorInterop.CreateCompositionSurfaceForSwapChain.
+    /// Returns null on non-DX12 builds or if the swap chain has not
+    /// been created yet.
+    export fn ghostty_surface_get_swap_chain(surface: *Surface) ?*anyopaque {
+        if (comptime builtin.os.tag != .windows) return null;
+        const api = surface.core_surface.renderer.api;
+        if (comptime !@hasField(@TypeOf(api), "dev")) return null;
+        const dev = api.dev orelse return null;
+        const sc = dev.swap_chain orelse return null;
+        return @ptrCast(sc);
+    }
+
     /// Mirrors ghostty_surface_shared_texture_s in include/ghostty.h.
     const SharedTextureSnapshotC = extern struct {
         resource_handle: ?*anyopaque,
