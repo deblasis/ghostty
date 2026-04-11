@@ -150,9 +150,6 @@ internal sealed partial class TabHost : UserControl, ITabHost
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
 
-    private void OnSwitchLayoutClick(object sender, RoutedEventArgs e)
-        => _router.RequestToggleTabLayout();
-
     private async void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
         if (args.Item is TabViewItem item)
