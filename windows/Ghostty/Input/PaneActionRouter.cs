@@ -99,9 +99,6 @@ internal sealed class PaneActionRouter
             case PaneAction.FocusDown:       concrete.FocusDirection(FocusDirection.Down); break;
             case PaneAction.EqualizeSplits:  concrete.EqualizeSplits(); break;
             case PaneAction.ToggleSplitZoom: concrete.ToggleSplitZoom(); break;
-            case PaneAction.ToggleFullscreen:
-                ToggleFullscreenRequested?.Invoke(this, EventArgs.Empty);
-                break;
 
             // Tabs
             case PaneAction.NewTab: _tabs.NewTab(); break;

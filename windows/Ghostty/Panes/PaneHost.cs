@@ -387,7 +387,9 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
     public void EqualizeSplits()
     {
         PaneTree.Equalize(_root);
-        if (_zoomedLeaf is not null) return; // ratios updated, visual rebuild deferred to unzoom
+        // When zoomed, only update ratios — ToggleSplitZoom.Rebuild()
+        // will apply them when the user unzooms.
+        if (_zoomedLeaf is not null) return;
         Rebuild();
         UpdateHighlightPosition();
     }
@@ -421,6 +423,7 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
             _treeRoot = _activeLeaf.Terminal();
             hostGrid.Children.Insert(0, _treeRoot);
             _highlightOverlay.Visibility = Visibility.Collapsed;
+            DispatcherQueue.TryEnqueue(() => _activeLeaf.Terminal().Focus(FocusState.Programmatic));
         }
     }
 
@@ -742,8 +745,11 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
     private static void ClearVisualTree(FrameworkElement element)
     {
         if (element is not Panel panel) return;
-        foreach (var child in panel.Children.OfType<FrameworkElement>().ToList())
-            ClearVisualTree(child);
+        for (var i = panel.Children.Count - 1; i >= 0; i--)
+        {
+            if (panel.Children[i] is FrameworkElement child)
+                ClearVisualTree(child);
+        }
         panel.Children.Clear();
     }
 

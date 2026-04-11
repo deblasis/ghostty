@@ -444,7 +444,6 @@ public sealed partial class MainWindow : Window
         _router.ToggleFullscreenRequested += (_, _) => ToggleFullscreen();
     }
 
-
     /// <summary>
     /// Toggle between fullscreen and default window presenter. Uses
     /// <see cref="Microsoft.UI.Windowing.AppWindowPresenterKind"/> so
@@ -459,6 +458,7 @@ public sealed partial class MainWindow : Window
                 ? Microsoft.UI.Windowing.AppWindowPresenterKind.Default
                 : Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
     }
+
     private void ToggleCommandPalette()
     {
         if (_commandPaletteVm is not { } vm) return;
