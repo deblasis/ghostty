@@ -757,16 +757,16 @@ public sealed partial class TerminalControl : UserControl
         // flags in ghostty_mods_e are set correctly - these matter for
         // keybinds that distinguish "right alt" (AltGr) from "left alt".
         var mods = GhosttyMods.None;
-        if ((GetKeyState(VK_LSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift;
-        if ((GetKeyState(VK_RSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift | GhosttyMods.ShiftRight;
-        if ((GetKeyState(VK_LCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl;
-        if ((GetKeyState(VK_RCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl | GhosttyMods.CtrlRight;
-        if ((GetKeyState(VK_LMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt;
-        if ((GetKeyState(VK_RMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt | GhosttyMods.AltRight;
-        if ((GetKeyState(VK_LWIN) & 0x8000) != 0) mods |= GhosttyMods.Super;
-        if ((GetKeyState(VK_RWIN) & 0x8000) != 0) mods |= GhosttyMods.Super | GhosttyMods.SuperRight;
-        if ((GetKeyState(VK_CAPITAL) & 0x0001) != 0) mods |= GhosttyMods.Caps;
-        if ((GetKeyState(VK_NUMLOCK) & 0x0001) != 0) mods |= GhosttyMods.Num;
+        if ((PInvoke.GetKeyState(VK_LSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift;
+        if ((PInvoke.GetKeyState(VK_RSHIFT) & 0x8000) != 0) mods |= GhosttyMods.Shift | GhosttyMods.ShiftRight;
+        if ((PInvoke.GetKeyState(VK_LCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl;
+        if ((PInvoke.GetKeyState(VK_RCONTROL) & 0x8000) != 0) mods |= GhosttyMods.Ctrl | GhosttyMods.CtrlRight;
+        if ((PInvoke.GetKeyState(VK_LMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt;
+        if ((PInvoke.GetKeyState(VK_RMENU) & 0x8000) != 0) mods |= GhosttyMods.Alt | GhosttyMods.AltRight;
+        if ((PInvoke.GetKeyState(VK_LWIN) & 0x8000) != 0) mods |= GhosttyMods.Super;
+        if ((PInvoke.GetKeyState(VK_RWIN) & 0x8000) != 0) mods |= GhosttyMods.Super | GhosttyMods.SuperRight;
+        if ((PInvoke.GetKeyState(VK_CAPITAL) & 0x0001) != 0) mods |= GhosttyMods.Caps;
+        if ((PInvoke.GetKeyState(VK_NUMLOCK) & 0x0001) != 0) mods |= GhosttyMods.Num;
         return mods;
     }
 
@@ -781,6 +781,4 @@ public sealed partial class TerminalControl : UserControl
     private const int VK_CAPITAL = 0x14;
     private const int VK_NUMLOCK = 0x90;
 
-    [LibraryImport("user32.dll")]
-    private static partial short GetKeyState(int vKey);
 }
