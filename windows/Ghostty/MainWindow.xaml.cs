@@ -140,14 +140,17 @@ public sealed partial class MainWindow : Window
         // App.OnAnyWindowClosedInternal handler can remove the entry on
         // Window.Closed even if Content.XamlRoot has gone null by then
         // (which WinUI 3 does during window teardown).
-        Content.Loaded += OnContentLoadedOnce;
-        void OnContentLoadedOnce(object? s, RoutedEventArgs e)
+        if (Content is FrameworkElement fe)
         {
-            Content.Loaded -= OnContentLoadedOnce;
-            RegisteredRoot = Content.XamlRoot;
-            if (RegisteredRoot != null)
+            fe.Loaded += OnContentLoadedOnce;
+            void OnContentLoadedOnce(object s, RoutedEventArgs e)
             {
-                App.WindowsByRoot[RegisteredRoot] = this;
+                fe.Loaded -= OnContentLoadedOnce;
+                RegisteredRoot = fe.XamlRoot;
+                if (RegisteredRoot != null)
+                {
+                    App.WindowsByRoot[RegisteredRoot] = this;
+                }
             }
         }
 

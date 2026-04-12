@@ -202,14 +202,14 @@ internal sealed class GhosttyHost : IDisposable
         if (surface.Handle == IntPtr.Zero) return;
         var added = _surfaces.TryAdd(surface.Handle, control);
         Debug.Assert(added, "surface handle collision in GhosttyHost registry");
-        App.RegisterSurfaceRoute(surface.Handle, this);
+        Ghostty.App.RegisterSurfaceRoute(surface.Handle, this);
     }
 
     public void Unregister(GhosttySurface surface)
     {
         if (surface.Handle == IntPtr.Zero) return;
         _surfaces.TryRemove(surface.Handle, out _);
-        App.UnregisterSurfaceRoute(surface.Handle, this);
+        Ghostty.App.UnregisterSurfaceRoute(surface.Handle, this);
     }
 
     /// <summary>
@@ -232,7 +232,7 @@ internal sealed class GhosttyHost : IDisposable
     {
         if (surface.Handle == IntPtr.Zero) return;
         _surfaces[surface.Handle] = control;
-        App.RegisterSurfaceRoute(surface.Handle, this);
+        Ghostty.App.RegisterSurfaceRoute(surface.Handle, this);
     }
 
     /// <summary>
@@ -244,7 +244,7 @@ internal sealed class GhosttyHost : IDisposable
     {
         if (surface.Handle == IntPtr.Zero) return;
         _surfaces.TryRemove(surface.Handle, out _);
-        App.UnregisterSurfaceRoute(surface.Handle, this);
+        Ghostty.App.UnregisterSurfaceRoute(surface.Handle, this);
     }
 
     /// <summary>
@@ -262,7 +262,7 @@ internal sealed class GhosttyHost : IDisposable
         _surfaces.Clear();
 
         // Remove any entries we own from the process-wide routing map.
-        App.UnregisterHostSurfaces(this);
+        Ghostty.App.UnregisterHostSurfaces(this);
 
         // Notify the supervisor. Throws on drain-last violation.
         _ownership.NotifyDisposed();
@@ -279,7 +279,7 @@ internal sealed class GhosttyHost : IDisposable
             // routing map. If this fires, some per-window host
             // leaked a Register without a matching Detach.
             Debug.Assert(
-                App.HostBySurfaceCount == 0,
+                Ghostty.App.HostBySurfaceCount == 0,
                 "Bootstrap host disposing with live routing entries.");
             NativeMethods.AppFree(_app);
         }
@@ -323,7 +323,7 @@ internal sealed class GhosttyHost : IDisposable
             return true;
 
         // Multi-window path: consult the process-wide routing map.
-        if (App.TryGetHostForSurface(surfaceHandle, out var targetHost) && targetHost is not null)
+        if (Ghostty.App.TryGetHostForSurface(surfaceHandle, out var targetHost) && targetHost is not null)
         {
             if (targetHost._surfaces.TryGetValue(surfaceHandle, out control))
                 return true;
@@ -484,7 +484,7 @@ internal sealed class GhosttyHost : IDisposable
         // Check all per-window hosts via the process-wide routing map.
         // This handles the case where a surface was moved to another
         // window's host but the callback still arrived on the bootstrap.
-        if (App.TryFindHostForControl(control, out _))
+        if (Ghostty.App.TryFindHostForControl(control, out _))
             return true;
 
         return false;
@@ -511,7 +511,7 @@ internal sealed class GhosttyHost : IDisposable
         // Check this host's own dictionary first.
         if (_surfaces.ContainsKey(surface)) return true;
         // Fall back to process-wide routing map for multi-window.
-        return App.TryGetHostForSurface(surface, out _);
+        return Ghostty.App.TryGetHostForSurface(surface, out _);
     }
 
     private XamlRoot? ResolveXamlRootForSurface(IntPtr surface)
@@ -527,7 +527,7 @@ internal sealed class GhosttyHost : IDisposable
                 if (ownerRoot is not null) return ownerRoot;
             }
             // Fall back to process-wide routing.
-            if (App.TryGetHostForSurface(surface, out var targetHost) && targetHost is not null)
+            if (Ghostty.App.TryGetHostForSurface(surface, out var targetHost) && targetHost is not null)
             {
                 if (targetHost._surfaces.TryGetValue(surface, out var remoteOwner))
                 {

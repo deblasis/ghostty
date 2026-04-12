@@ -21,7 +21,7 @@ internal static class WindowHelper
             return window;
 
         // Fallback: return the first window if available.
-        foreach (var w in App.Windows)
+        foreach (var w in App.AllWindows)
             return w;
 
         return null;

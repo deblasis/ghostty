@@ -55,7 +55,7 @@ public partial class App : Application
     /// that want to iterate all windows without caring about lookup
     /// keys.
     /// </summary>
-    internal static IEnumerable<MainWindow> Windows => WindowsByRoot.Values;
+    internal static IEnumerable<MainWindow> AllWindows => WindowsByRoot.Values;
 
     internal static GhosttyHost? BootstrapHost { get; private set; }
     internal static ConfigService? ConfigService { get; private set; }
