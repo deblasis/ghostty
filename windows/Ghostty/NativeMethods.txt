@@ -5,6 +5,10 @@
 GetKeyState
 MapVirtualKey
 MessageBeep
+SetClassLongPtr
+
+// gdi32
+CreateSolidBrush
 
 // dwmapi
 DwmSetWindowAttribute

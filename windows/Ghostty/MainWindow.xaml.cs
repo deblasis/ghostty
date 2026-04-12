@@ -20,6 +20,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.WindowsAndMessaging;
 using WinRT.Interop;
 
 namespace Ghostty;
@@ -102,13 +106,6 @@ public sealed partial class MainWindow : Window
     // visible white flash at the leading edge of the drag. Replacing the
     // class brush with a dark solid brush makes the flash invisible
     // against any dark color scheme.
-    private const int GCLP_HBRBACKGROUND = -10;
-
-    [LibraryImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
-    private static partial IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    [LibraryImport("gdi32.dll")]
-    private static partial IntPtr CreateSolidBrush(uint crColor);
 
     internal MainWindow(ConfigService configService)
     {
@@ -146,9 +143,9 @@ public sealed partial class MainWindow : Window
         };
 
         // Match the RootGrid background (#0C0C0C). Win32 COLORREF is 0x00BBGGRR.
-        var hwnd = WindowNative.GetWindowHandle(this);
-        var brush = CreateSolidBrush(0x000C0C0Cu);
-        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, brush);
+        var hwnd = new HWND(WindowNative.GetWindowHandle(this));
+        var brush = PInvoke.CreateSolidBrush(new COLORREF(0x000C0C0Cu));
+        PInvoke.SetClassLongPtr(hwnd, GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND, brush);
 
         // Mica is only available on Windows 11 22H1+ with a supported GPU.
         // Our TargetPlatformMinVersion is still 19041 (Windows 10), so a
