@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -99,15 +100,15 @@ public partial class App : Application
     /// bootstrap host's own dictionary misses (the control may have
     /// moved to a different window's host).
     /// </summary>
-    internal static bool TryFindHostForControl(TerminalControl control, out GhosttyHost? host)
+    internal static bool TryFindHostForControl(TerminalControl control, [NotNullWhen(true)] out GhosttyHost? host)
     {
-        foreach (var kv in _hostBySurface)
+        foreach (var candidate in _hostBySurface.Values.Distinct())
         {
-            // kv.Value is the per-window host. We cannot inspect its
-            // _surfaces from here (it is private), but we can check if
-            // the host reference matches any known window.
-            host = kv.Value;
-            return true;
+            if (candidate.ContainsControl(control))
+            {
+                host = candidate;
+                return true;
+            }
         }
         host = null;
         return false;

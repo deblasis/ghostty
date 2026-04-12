@@ -416,7 +416,7 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
     public void EqualizeSplits()
     {
         PaneTree.Equalize(_root);
-        // When zoomed, only update ratios � ToggleSplitZoom.Rebuild()
+        // When zoomed, only update ratios - ToggleSplitZoom.Rebuild()
         // will apply them when the user unzooms.
         if (_zoomedLeaf is not null) return;
         Rebuild();

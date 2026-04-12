@@ -253,6 +253,9 @@ internal sealed class TabManager
     /// </summary>
     public TabModel DetachTab(TabModel tab)
     {
+        if (_tabs.Count <= 1)
+            throw new InvalidOperationException("Cannot detach the last tab.");
+
         var index = _tabs.IndexOf(tab);
         if (index < 0)
             throw new InvalidOperationException(

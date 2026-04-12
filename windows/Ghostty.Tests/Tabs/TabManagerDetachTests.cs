@@ -75,18 +75,15 @@ public sealed class TabManagerDetachTests
     }
 
     [Fact]
-    public void DetachTab_LastTab_RaisesLastTabClosed()
+    public void DetachTab_LastTab_ThrowsInvalidOperation()
     {
         var src = NewManager(out _);
         Assert.Equal(1, src.Tabs.Count);
 
-        int lastTabClosed = 0;
-        src.LastTabClosed += (_, _) => lastTabClosed++;
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => src.DetachTab(src.Tabs[0]));
 
-        src.DetachTab(src.Tabs[0]);
-
-        Assert.Equal(1, lastTabClosed);
-        Assert.Equal(0, src.Tabs.Count);
+        Assert.Contains("Cannot detach the last tab", ex.Message);
     }
 
     [Fact]

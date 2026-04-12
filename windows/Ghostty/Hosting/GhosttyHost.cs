@@ -177,9 +177,8 @@ internal sealed class GhosttyHost : IDisposable
             supervisor.RegisterPerWindow(),
             supervisor);
         _app = new GhosttyApp(sharedApp);
-        // _config stays default: the shared app already carries the
-        // loaded config via App.xaml.cs's AppNew call. This host never
-        // consults _config outside the legacy ctor path.
+        // Per-window hosts do not own or read _config; the bootstrap host
+        // manages the single GhosttyConfig. Left as default intentionally.
 
         // NOTE: NO callback delegate assignments here. See the ctor
         // docstring above for the full reason. Libghostty calls the
@@ -195,6 +194,21 @@ internal sealed class GhosttyHost : IDisposable
             clipboardService,
             resolveSurface: ResolveSurfaceFromUserdata,
             isSurfaceAlive: IsSurfaceAlive);
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="control"/> is registered in this
+    /// host's per-window surface dictionary. Used by the process-wide
+    /// <see cref="App.TryFindHostForControl"/> search.
+    /// </summary>
+    internal bool ContainsControl(TerminalControl control)
+    {
+        foreach (var tc in _surfaces.Values)
+        {
+            if (ReferenceEquals(tc, control))
+                return true;
+        }
+        return false;
     }
 
     public void Register(GhosttySurface surface, TerminalControl control)
@@ -331,21 +345,6 @@ internal sealed class GhosttyHost : IDisposable
 
         control = null;
         return false;
-    }
-
-    /// <summary>
-    /// Resolve a target host for a given surface handle and dispatch
-    /// a UI-thread action on the correct host's dispatcher.
-    /// </summary>
-    private void DispatchToOwner(IntPtr surfaceHandle, Action<TerminalControl> action)
-    {
-        if (TryResolveControl(surfaceHandle, out var control) && control is not null)
-        {
-            _dispatcher.TryEnqueue(() =>
-            {
-                action(control);
-            });
-        }
     }
 
     private byte OnAction(GhosttyApp _, IntPtr targetPtr, IntPtr actionPtr)
