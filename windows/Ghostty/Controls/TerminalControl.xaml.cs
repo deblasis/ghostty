@@ -9,6 +9,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
+using Windows.Win32;
+using Windows.Win32.UI.Input.KeyboardAndMouse;
 
 namespace Ghostty.Controls;
 
@@ -690,7 +692,7 @@ public sealed partial class TerminalControl : UserControl
         {
             // Recover the OEM scancode from the VirtualKey. This handles
             // Tab and any other key WinUI 3 strips ScanCode for.
-            scancode = NativeMethods.MapVirtualKeyW((uint)e.Key, NativeMethods.MAPVK_VK_TO_VSC);
+            scancode = PInvoke.MapVirtualKey((uint)e.Key, MAP_VIRTUAL_KEY_TYPE.MAPVK_VK_TO_VSC);
         }
         if (e.KeyStatus.IsExtendedKey)
         {
