@@ -53,4 +53,49 @@ public class SnapZoneMathTests
         Assert.Equal(new SnapZoneRect(960, 0, 961, 1080), right);
         Assert.Equal(1921, left.Width + right.Width);
     }
+
+    [Fact]
+    public void TopLeftQuarter_1920x1080()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.TopLeftQuarter, 0, 0, 1920, 1080);
+        Assert.Equal(new SnapZoneRect(0, 0, 960, 540), r);
+    }
+
+    [Fact]
+    public void TopRightQuarter_1920x1080()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.TopRightQuarter, 0, 0, 1920, 1080);
+        Assert.Equal(new SnapZoneRect(960, 0, 960, 540), r);
+    }
+
+    [Fact]
+    public void BottomLeftQuarter_1920x1080()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.BottomLeftQuarter, 0, 0, 1920, 1080);
+        Assert.Equal(new SnapZoneRect(0, 540, 960, 540), r);
+    }
+
+    [Fact]
+    public void BottomRightQuarter_1920x1080()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.BottomRightQuarter, 0, 0, 1920, 1080);
+        Assert.Equal(new SnapZoneRect(960, 540, 960, 540), r);
+    }
+
+    [Fact]
+    public void Quarters_odd_dimensions_cover_input_without_seam()
+    {
+        var tl = SnapZoneMath.RectFor(SnapZone.TopLeftQuarter, 0, 0, 1921, 1081);
+        var tr = SnapZoneMath.RectFor(SnapZone.TopRightQuarter, 0, 0, 1921, 1081);
+        var bl = SnapZoneMath.RectFor(SnapZone.BottomLeftQuarter, 0, 0, 1921, 1081);
+        var br = SnapZoneMath.RectFor(SnapZone.BottomRightQuarter, 0, 0, 1921, 1081);
+
+        // Widths sum to 1921 on top row.
+        Assert.Equal(1921, tl.Width + tr.Width);
+        // Heights sum to 1081 on left column.
+        Assert.Equal(1081, tl.Height + bl.Height);
+        // BR starts exactly where TL ends.
+        Assert.Equal(tl.X + tl.Width, br.X);
+        Assert.Equal(tl.Y + tl.Height, br.Y);
+    }
 }

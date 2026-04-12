@@ -30,6 +30,11 @@ internal static class SnapZoneMath
             SnapZone.TopHalf    => new SnapZoneRect(x,         y,         w,     halfH),
             SnapZone.BottomHalf => new SnapZoneRect(x,         y + halfH, w,     restH),
 
+            SnapZone.TopLeftQuarter     => new SnapZoneRect(x,         y,         halfW, halfH),
+            SnapZone.TopRightQuarter    => new SnapZoneRect(x + halfW, y,         restW, halfH),
+            SnapZone.BottomLeftQuarter  => new SnapZoneRect(x,         y + halfH, halfW, restH),
+            SnapZone.BottomRightQuarter => new SnapZoneRect(x + halfW, y + halfH, restW, restH),
+
             _ => throw new ArgumentOutOfRangeException(nameof(zone), zone, "Unhandled zone"),
         };
     }
