@@ -575,14 +575,6 @@ public sealed partial class MainWindow : Window
                 SetTransparentChrome(hwnd);
                 break;
 
-            case "glass":
-                if (DesktopAcrylicController.IsSupported())
-                    SystemBackdrop = new AcrylicBackdrop(0.05f, 0.1f);
-                else
-                    goto case "solid";
-                SetTransparentChrome(hwnd);
-                break;
-
             case "crystal":
                 SystemBackdrop = new CrystalBackdrop(hwnd);
                 SetTransparentChrome(hwnd);

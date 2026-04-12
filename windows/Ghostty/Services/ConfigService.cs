@@ -144,7 +144,9 @@ internal sealed class ConfigService : IConfigService
         // needing their own validation. WindowTransparencyState also
         // clamps defensively as a standalone value type.
         BackgroundOpacity = Math.Clamp(GetDouble("background-opacity", 1.0), 0.0, 1.0);
-        BackgroundStyle = GetString("background-style", "frosted");
+        // background-style is a Windows-only key not in the Zig config
+        // schema, so we read it directly from the config file.
+        BackgroundStyle = GetFileValue("background-style", "frosted");
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
     }
@@ -197,6 +199,30 @@ internal sealed class ConfigService : IConfigService
             if (!found || result == IntPtr.Zero) return defaultValue;
             return Marshal.PtrToStringUTF8(result) ?? defaultValue;
         }
+    }
+
+    /// <summary>
+    /// Read a Windows-only config key directly from the config file.
+    /// Keys not in the Zig config schema cannot be read via
+    /// <c>ghostty_config_get</c>, so we parse the file ourselves.
+    /// </summary>
+    private string GetFileValue(string key, string defaultValue)
+    {
+        if (string.IsNullOrEmpty(ConfigFilePath) || !File.Exists(ConfigFilePath))
+            return defaultValue;
+
+        foreach (var line in File.ReadLines(ConfigFilePath))
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith('#')) continue;
+            var eqIndex = trimmed.IndexOf('=');
+            if (eqIndex < 0) continue;
+            var k = trimmed[..eqIndex].Trim();
+            if (k != key) continue;
+            var v = trimmed[(eqIndex + 1)..].Trim();
+            return v.Length > 0 ? v : defaultValue;
+        }
+        return defaultValue;
     }
 
     /// <summary>
