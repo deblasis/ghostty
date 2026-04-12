@@ -148,4 +148,38 @@ public class SnapZoneMathTests
         // Starts at w/3 = 1146, width = 3440 - 1146 = 2294.
         Assert.Equal(new SnapZoneRect(1146, 0, 2294, 1440), rt);
     }
+
+    [Fact]
+    public void TopThird_of_1080x1920_portrait()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.TopThird, 0, 0, 1080, 1920);
+        // 1920 / 3 = 640
+        Assert.Equal(new SnapZoneRect(0, 0, 1080, 640), r);
+    }
+
+    [Fact]
+    public void MiddleThirdHorizontal_of_1080x1920_portrait()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.MiddleThirdHorizontal, 0, 0, 1080, 1920);
+        Assert.Equal(new SnapZoneRect(0, 640, 1080, 640), r);
+    }
+
+    [Fact]
+    public void BottomThird_of_1080x1920_portrait_absorbs_remainder()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.BottomThird, 0, 0, 1080, 1920);
+        // 2*640 = 1280, remainder = 640
+        Assert.Equal(new SnapZoneRect(0, 1280, 1080, 640), r);
+    }
+
+    [Fact]
+    public void Horizontal_thirds_cover_input_without_seam()
+    {
+        var t = SnapZoneMath.RectFor(SnapZone.TopThird, 0, 0, 1080, 1921);
+        var m = SnapZoneMath.RectFor(SnapZone.MiddleThirdHorizontal, 0, 0, 1080, 1921);
+        var b = SnapZoneMath.RectFor(SnapZone.BottomThird, 0, 0, 1080, 1921);
+        Assert.Equal(1921, t.Height + m.Height + b.Height);
+        Assert.Equal(t.Y + t.Height, m.Y);
+        Assert.Equal(m.Y + m.Height, b.Y);
+    }
 }
