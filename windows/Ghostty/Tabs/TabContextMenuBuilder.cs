@@ -13,11 +13,6 @@ namespace Ghostty.Tabs;
 /// Builds the per-tab right-click menu. Attached via
 /// <see cref="TabViewItem.ContextFlyout"/> on each item, not on the
 /// parent <see cref="TabView"/>: that gives an unambiguous target.
-///
-/// "Move to New Window" is intentionally absent. It needs reparent-
-/// safe PaneHost work and a cross-window GhosttyHost handoff; that
-/// is a follow-up PR.
-/// TODO(tabs): detach-to-new-window
 /// </summary>
 internal static class TabContextMenuBuilder
 {
@@ -25,6 +20,7 @@ internal static class TabContextMenuBuilder
         TabManager manager,
         TabModel tab,
         Func<TabModel, Task> requestClose,
+        Action<TabModel> requestDetachToNewWindow,
         DialogTracker dialogs)
     {
         var flyout = new MenuFlyout();
@@ -66,6 +62,21 @@ internal static class TabContextMenuBuilder
         var dup = new MenuFlyoutItem { Text = "Duplicate Tab" };
         dup.Click += (_, _) => manager.NewTab(); // TODO(config): respect ProfileId once profiles exist
         flyout.Items.Add(dup);
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        var detach = new MenuFlyoutItem { Text = "Move Tab to New Window" };
+        detach.IsEnabled = manager.Tabs.Count > 1;
+        detach.Click += (_, _) => requestDetachToNewWindow(tab);
+        flyout.Items.Add(detach);
+
+        // Re-evaluate IsEnabled on each open so tabs closed after
+        // the flyout was built (but before the user right-clicked)
+        // are reflected in the grey state. Matches Windows Terminal.
+        flyout.Opening += (_, _) =>
+        {
+            detach.IsEnabled = manager.Tabs.Count > 1;
+        };
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 

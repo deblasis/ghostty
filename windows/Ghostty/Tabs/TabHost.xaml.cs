@@ -96,7 +96,12 @@ internal sealed partial class TabHost : UserControl, ITabHost
         {
             Header = headerPanel,
             Content = null,
-            ContextFlyout = TabContextMenuBuilder.Build(_manager, tab, RequestCloseTabAsync, _dialogs),
+            ContextFlyout = TabContextMenuBuilder.Build(
+                _manager,
+                tab,
+                RequestCloseTabAsync,
+                requestDetachToNewWindow: RequestDetachToNewWindow,
+                _dialogs),
             DataContext = tab,
         };
         tab.PropertyChanged += (_, e) =>
@@ -186,6 +191,21 @@ internal sealed partial class TabHost : UserControl, ITabHost
         var alpha = (byte)(selected ? 153 : 89); // 0.6 and 0.35 of 255
         headerPanel.Background = new SolidColorBrush(
             Windows.UI.Color.FromArgb(alpha, drawing.R, drawing.G, drawing.B));
+    }
+
+    /// <summary>
+    /// Route a per-tab "Move Tab to New Window" click back to the
+    /// owning <see cref="MainWindow"/>. TabHost is a UserControl with
+    /// no direct MainWindow reference; <see cref="App.WindowsByRoot"/>
+    /// is keyed by <see cref="XamlRoot"/>, so the lookup is O(1).
+    /// </summary>
+    private void RequestDetachToNewWindow(TabModel tab)
+    {
+        var xamlRoot = XamlRoot;
+        if (xamlRoot is null) return;
+
+        if (App.WindowsByRoot.TryGetValue(xamlRoot, out var main))
+            main.DetachTabToNewWindow(tab);
     }
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
