@@ -403,8 +403,12 @@ internal static partial class NativeMethods
 
     // MapVirtualKeyW for the keycode ScanCode==0 fallback in TerminalControl.
     // Win32 user32, not WinRT - bypasses any WinUI framework filtering.
+    // [DefaultDllImportSearchPaths(System32)] matches the
+    // SystemMenuInterop.cs hardening convention for Win32 imports so
+    // the DLL resolves from %WINDIR%\System32, not a hijacked PATH.
     internal const uint MAPVK_VK_TO_VSC = 0;
     [LibraryImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     internal static partial uint MapVirtualKeyW(uint uCode, uint uMapType);
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_set_content_scale")]
@@ -559,9 +563,13 @@ internal static partial class NativeMethods
     // MessageBeep is thread-safe and minimal-dependency. Used by the
     // action callback for RING_BELL without any dispatcher hop.
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebeep
+    //
+    // Return type is `int`, matching the Win32 BOOL = 4-byte convention
+    // used by SystemMenuInterop.cs. The sole caller at GhosttyHost.cs
+    // RingBell discards the return value.
     internal const uint MB_OK = 0x00000000;
 
     [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)] // Win32 BOOL is 4 bytes, not 1
-    internal static partial bool MessageBeep(uint uType);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    internal static partial int MessageBeep(uint uType);
 }
