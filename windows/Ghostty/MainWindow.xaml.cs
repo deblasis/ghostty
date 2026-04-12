@@ -67,9 +67,9 @@ public sealed partial class MainWindow : Window
     private readonly TaskbarHost _taskbar;
     private readonly WindowThemeManager _themeManager;
 
-    // Tracks whether we're currently in transparent mode so we can
-    // skip redundant SystemBackdrop swaps on config reload.
-    private bool _isTransparent;
+    // Tracks the currently applied backdrop style so we can skip
+    // redundant SystemBackdrop swaps on config reload.
+    private string _currentBackdropStyle = "";
 
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
@@ -152,7 +152,7 @@ public sealed partial class MainWindow : Window
         // Apply initial backdrop (Mica when opaque, transparent when
         // background-opacity < 1). Also sets the Win32 class brush
         // and RootGrid background to match.
-        ApplyTransparency();
+        ApplyBackdropStyle();
 
         // Extend content into the title bar: remove the system-drawn
         // title bar chrome and let TabHost's TabView strip render
@@ -355,7 +355,7 @@ public sealed partial class MainWindow : Window
 
         // Re-evaluate transparency state after every config reload so
         // Ctrl+Shift+Scroll and Settings UI changes take effect live.
-        _configService.ConfigChanged += _ => ApplyTransparency();
+        _configService.ConfigChanged += _ => ApplyBackdropStyle();
 
         _tabManager.LastTabClosed += (_, _) => Close();
 
@@ -548,48 +548,71 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Switch the window backdrop between Mica (opaque) and a fully
-    /// transparent acrylic backdrop based on background-opacity. Also
-    /// toggles the Win32 class brush and the XAML RootGrid background
-    /// so resize flicker matches the transparency state.
+    /// Apply the window backdrop based on background-style and
+    /// background-opacity config values. Dispatches to the correct
+    /// SystemBackdrop implementation for each preset.
     /// </summary>
-    private void ApplyTransparency()
+    private void ApplyBackdropStyle()
     {
-        var wantTransparent = _configService.BackgroundOpacity < 1.0;
-        if (wantTransparent == _isTransparent && SystemBackdrop is not null)
-            return; // no change
+        var opacity = _configService.BackgroundOpacity;
+        var style = opacity >= 1.0 ? "solid" : _configService.BackgroundStyle;
 
-        _isTransparent = wantTransparent;
+        // Skip if the effective style hasn't changed.
+        if (style == _currentBackdropStyle && SystemBackdrop is not null)
+            return;
+
+        _currentBackdropStyle = style;
 
         var hwnd = WindowNative.GetWindowHandle(this);
 
-        if (wantTransparent && DesktopAcrylicController.IsSupported())
+        switch (style)
         {
-            SystemBackdrop = new AcrylicBackdrop(0f, 0f);
+            case "frosted":
+                if (DesktopAcrylicController.IsSupported())
+                    SystemBackdrop = new AcrylicBackdrop(0.3f, 0.3f);
+                else
+                    goto case "solid";
+                SetTransparentChrome(hwnd);
+                break;
 
-            // Hollow brush so composition alpha shows through to the
-            // desktop during resize. Solid dark brush would flash opaque.
-            SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
-                Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH));
+            case "glass":
+                if (DesktopAcrylicController.IsSupported())
+                    SystemBackdrop = new AcrylicBackdrop(0.05f, 0.1f);
+                else
+                    goto case "solid";
+                SetTransparentChrome(hwnd);
+                break;
 
-            RootGrid.Background = new SolidColorBrush(
-                Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            case "crystal":
+                SystemBackdrop = new CrystalBackdrop(hwnd);
+                SetTransparentChrome(hwnd);
+                break;
+
+            case "solid":
+            default:
+                if (MicaController.IsSupported())
+                    SystemBackdrop = new MicaBackdrop();
+                else
+                    SystemBackdrop = null;
+                SetOpaqueChrome(hwnd);
+                break;
         }
-        else
-        {
-            // Opaque path: Mica if supported, otherwise XAML default.
-            if (MicaController.IsSupported())
-                SystemBackdrop = new MicaBackdrop();
-            else
-                SystemBackdrop = null;
+    }
 
-            // Dark solid brush hides white resize flicker.
-            SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
-                CreateSolidBrush(0x000C0C0Cu));
+    private void SetTransparentChrome(IntPtr hwnd)
+    {
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+            Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH));
+        RootGrid.Background = new SolidColorBrush(
+            Windows.UI.Color.FromArgb(0, 0, 0, 0));
+    }
 
-            RootGrid.Background = new SolidColorBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x0C, 0x0C, 0x0C));
-        }
+    private void SetOpaqueChrome(IntPtr hwnd)
+    {
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+            CreateSolidBrush(0x000C0C0Cu));
+        RootGrid.Background = new SolidColorBrush(
+            Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x0C, 0x0C, 0x0C));
     }
 
     /// <summary>
