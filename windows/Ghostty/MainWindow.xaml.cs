@@ -71,6 +71,8 @@ public sealed partial class MainWindow : Window
     // redundant SystemBackdrop swaps on config reload.
     private string _currentBackdropStyle = "";
 
+    private GradientTintVisual? _gradientVisual;
+
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
@@ -153,6 +155,7 @@ public sealed partial class MainWindow : Window
         // background-opacity < 1). Also sets the Win32 class brush
         // and RootGrid background to match.
         ApplyBackdropStyle();
+        ApplyGradientTint();
 
         // Extend content into the title bar: remove the system-drawn
         // title bar chrome and let TabHost's TabView strip render
@@ -359,6 +362,7 @@ public sealed partial class MainWindow : Window
         {
             ApplyBackdropStyle();
             UpdateAcrylicTuning();
+            ApplyGradientTint();
         };
 
         _tabManager.LastTabClosed += (_, _) => Close();
@@ -650,6 +654,33 @@ public sealed partial class MainWindow : Window
         }
 
         return (tintColor, tintOpacity, luminosityOpacity);
+    }
+
+    /// <summary>
+    /// Create, update, or remove the gradient tint visual based on
+    /// the current config. Called on startup and config reload.
+    /// </summary>
+    private void ApplyGradientTint()
+    {
+        var points = _configService.GradientPoints;
+
+        if (points.Count == 0)
+        {
+            _gradientVisual?.Dispose();
+            _gradientVisual = null;
+            return;
+        }
+
+        if (_gradientVisual is null)
+            _gradientVisual = new GradientTintVisual(RootGrid, points);
+        else
+            _gradientVisual.RebuildBrush(points);
+
+        // Track opacity if blur-follows-opacity is on.
+        if (_configService.BackgroundBlurFollowsOpacity)
+            _gradientVisual.SetOpacity((float)_configService.BackgroundOpacity);
+        else
+            _gradientVisual.SetOpacity(1f);
     }
 
     private void SetTransparentChrome(IntPtr hwnd)
