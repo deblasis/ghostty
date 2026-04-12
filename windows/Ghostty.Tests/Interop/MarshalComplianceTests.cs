@@ -116,12 +116,26 @@ public class MarshalComplianceTests
     // This is NOT a full C# tokenizer: it does not understand string
     // literals containing `//`, but NativeMethods.cs has no such
     // lines today and adding one would be obviously wrong anyway.
+    //
+    // PR 202 allowlist: lines that reference a Windows.Win32.* type
+    // are CsWin32-generated boundaries where BOOL is the strongly-
+    // typed Windows.Win32.Foundation.BOOL struct (4 bytes, implicit
+    // bool conversion). The two BOOL conventions coexist by scope:
+    // hand-written [LibraryImport] uses int + != 0 (PR 203), CsWin32
+    // call sites use BOOL via implicit conversion. Today this scanner
+    // only reads NativeMethods.cs (libghostty surface, no CsWin32),
+    // so the rule is a future-proofing measure for if/when the scan
+    // scope ever widens to other interop files.
+    private static bool IsCsWin32Boundary(string strippedLine)
+        => strippedLine.Contains("Windows.Win32.", StringComparison.Ordinal);
+
     private static List<(int Number, string Text)> ScanForBannedAttribute(string source, string banned)
     {
         var hits = new List<(int Number, string Text)>();
         foreach (var pair in EnumerateLines(source))
         {
             var stripped = StripLineComment(pair.Text);
+            if (IsCsWin32Boundary(stripped)) continue;
             if (stripped.Contains(banned, StringComparison.Ordinal))
             {
                 hits.Add(pair);
@@ -136,6 +150,7 @@ public class MarshalComplianceTests
         foreach (var pair in EnumerateLines(source))
         {
             var stripped = StripLineComment(pair.Text);
+            if (IsCsWin32Boundary(stripped)) continue;
             if (bannedTokens.Any(bt => stripped.Contains(bt, StringComparison.Ordinal)))
             {
                 hits.Add(pair);

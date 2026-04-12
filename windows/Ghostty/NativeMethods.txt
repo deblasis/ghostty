@@ -4,3 +4,7 @@
 // user32
 MapVirtualKey
 MessageBeep
+
+// dwmapi
+DwmSetWindowAttribute
+DWMWINDOWATTRIBUTE
