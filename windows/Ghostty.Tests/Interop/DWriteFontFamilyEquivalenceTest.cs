@@ -14,10 +14,10 @@ using Xunit;
 namespace Ghostty.Tests.Interop;
 
 // Ghostty.Tests targets plain net9.0; DWriteFontEnumerator is
-// marked [SupportedOSPlatform("windows6.1")]. This test only runs
-// on Windows hosts in CI/local, so propagate the platform gate
+// marked [SupportedOSPlatform("windows10.0.17763")]. This test only
+// runs on Windows hosts in CI/local, so propagate the platform gate
 // here too instead of suppressing CA1416 globally.
-[SupportedOSPlatform("windows6.1")]
+[SupportedOSPlatform("windows10.0.17763")]
 public sealed class DWriteFontFamilyEquivalenceTest
 {
     [Fact]

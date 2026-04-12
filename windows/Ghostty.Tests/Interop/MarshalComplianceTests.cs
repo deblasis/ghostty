@@ -109,6 +109,32 @@ public class MarshalComplianceTests
         Assert.Single(tokenHits);
     }
 
+    // Unit test: the CsWin32 boundary allowlist skips lines that
+    // reference a Windows.Win32.* type, but still flags lines that
+    // carry a [MarshalAs] with no CsWin32 marker. This pins the
+    // behavior of IsCsWin32Boundary so a future edit that loosens or
+    // tightens the rule trips this test.
+    [Fact]
+    public void Scanner_AllowsCsWin32BoundaryButFlagsBareMarshalAs()
+    {
+        const string sample =
+            "public partial struct Fake\n" +
+            "{\n" +
+            "    [MarshalAs(UnmanagedType.Bool)] public Windows.Win32.Foundation.BOOL Allowed;\n" +
+            "    [MarshalAs(UnmanagedType.Bool)] public bool Flagged;\n" +
+            "}\n";
+
+        var attrHits = ScanForBannedAttribute(sample, BannedAttribute);
+        var tokenHits = ScanForBannedTokens(sample, BannedUnmanagedTypes);
+
+        // Exactly one violation: the bare-bool line. The CsWin32
+        // boundary line is allowlisted.
+        Assert.Single(attrHits);
+        Assert.Contains("Flagged", attrHits[0].Text);
+        Assert.Single(tokenHits);
+        Assert.Contains("Flagged", tokenHits[0].Text);
+    }
+
     // Strip trailing `//` line comments from each source line before
     // searching, so commentary like `// [MarshalAs] was removed here`
     // does not trigger a false positive. The cheapest correct
