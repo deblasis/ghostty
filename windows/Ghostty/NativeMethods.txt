@@ -1,0 +1,2 @@
+// CsWin32 API list. Entries added as sites migrate. See
+// docs/superpowers/plans/2026-04-12-pr202-plan.md for the full list.
