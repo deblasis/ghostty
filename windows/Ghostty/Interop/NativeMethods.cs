@@ -182,13 +182,13 @@ internal delegate void GhosttyWakeupCb(IntPtr userdata);
 // are larger than 8 bytes, so on the Windows x64 ABI they are passed by
 // hidden pointer. We take both as IntPtr and decode the fields we need
 // with Marshal.PtrToStructure / Marshal.ReadIntPtr.
+// Returns C99 _Bool on the Zig side, exposed here as byte. The
+// managed handler on GhosttyHost returns 1 or 0 directly.
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-[return: MarshalAs(UnmanagedType.I1)]
-internal delegate bool GhosttyActionCb(GhosttyApp app, IntPtr targetPtr, IntPtr actionPtr);
+internal delegate byte GhosttyActionCb(GhosttyApp app, IntPtr targetPtr, IntPtr actionPtr);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-[return: MarshalAs(UnmanagedType.I1)]
-internal delegate bool GhosttyReadClipboardCb(IntPtr userdata, GhosttyClipboard kind, IntPtr state);
+internal delegate byte GhosttyReadClipboardCb(IntPtr userdata, GhosttyClipboard kind, IntPtr state);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void GhosttyConfirmReadClipboardCb(
@@ -203,12 +203,12 @@ internal delegate void GhosttyWriteClipboardCb(
     GhosttyClipboard kind,
     IntPtr content,  // const ghostty_clipboard_content_s*
     UIntPtr count,
-    [MarshalAs(UnmanagedType.I1)] bool confirm);
+    byte confirm);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void GhosttyCloseSurfaceCb(
     IntPtr userdata,
-    [MarshalAs(UnmanagedType.I1)] bool processAlive);
+    byte processAlive);
 
 // Mirrors ghostty_target_s in include/ghostty.h:
 //   typedef struct { ghostty_target_tag_e tag; ghostty_target_u target; }
