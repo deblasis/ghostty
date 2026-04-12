@@ -10,6 +10,15 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 namespace Ghostty.Tabs;
 
 /// <summary>
+/// Information the picker needs when "Move Tab to Zone" is clicked.
+/// Supplied by the TabHost caller so TabContextMenuBuilder does not
+/// have to reach into WinUI windowing APIs itself.
+/// </summary>
+internal readonly record struct SnapZoneSource(
+    int WorkAreaWidth,
+    int WorkAreaHeight);
+
+/// <summary>
 /// Builds the per-tab right-click menu. Attached via
 /// <see cref="TabViewItem.ContextFlyout"/> on each item, not on the
 /// parent <see cref="TabView"/>: that gives an unambiguous target.
@@ -21,7 +30,9 @@ internal static class TabContextMenuBuilder
         TabModel tab,
         Func<TabModel, Task> requestClose,
         Action<TabModel> requestDetachToNewWindow,
-        DialogTracker dialogs)
+        DialogTracker dialogs,
+        Func<SnapZoneSource>? getSnapSource = null,
+        Func<TabModel, SnapZone, Task>? detachWithZoneAsync = null)
     {
         var flyout = new MenuFlyout();
 
@@ -70,12 +81,48 @@ internal static class TabContextMenuBuilder
         detach.Click += (_, _) => requestDetachToNewWindow(tab);
         flyout.Items.Add(detach);
 
+        // "Move Tab to Zone" opens a visual picker for Snap Layouts
+        // zones. Only shown when both snap callbacks are wired and
+        // there is more than one tab (detaching the last tab is a no-op).
+        MenuFlyoutItem? moveToZone = null;
+        if (getSnapSource is not null && detachWithZoneAsync is not null)
+        {
+            moveToZone = new MenuFlyoutItem { Text = "Move Tab to Zone" };
+            moveToZone.IsEnabled = manager.Tabs.Count > 1;
+            moveToZone.Click += (_, _) =>
+            {
+                var target = flyout.Target;
+                if (target?.XamlRoot is null) return;
+
+                var source = getSnapSource();
+                var picker = new SnapZonePicker();
+                picker.Render(source.WorkAreaWidth, source.WorkAreaHeight);
+
+                var pickerFlyout = new Flyout
+                {
+                    Content = picker,
+                    Placement = FlyoutPlacementMode.Bottom,
+                };
+
+                picker.ZoneSelected += async (_, zone) =>
+                {
+                    pickerFlyout.Hide();
+                    await detachWithZoneAsync(tab, zone);
+                };
+
+                pickerFlyout.ShowAt(target);
+            };
+            flyout.Items.Add(moveToZone);
+        }
+
         // Re-evaluate IsEnabled on each open so tabs closed after
         // the flyout was built (but before the user right-clicked)
         // are reflected in the grey state. Matches Windows Terminal.
         flyout.Opening += (_, _) =>
         {
             detach.IsEnabled = manager.Tabs.Count > 1;
+            if (moveToZone is not null)
+                moveToZone.IsEnabled = manager.Tabs.Count > 1;
         };
 
         flyout.Items.Add(new MenuFlyoutSeparator());
