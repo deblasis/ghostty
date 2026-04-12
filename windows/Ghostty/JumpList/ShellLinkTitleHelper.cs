@@ -41,6 +41,16 @@ internal static class ShellLinkTitleHelper
         try
         {
             var store = (IPropertyStore)ComCreate.Wrap(unknown);
+
+            // Allocate the backing string FIRST, before the PROPVARIANT
+            // is populated. Ordering matters: if a future edit inserts
+            // a throwing call between allocation and the pwszVal
+            // assignment, the string would leak because PropVariantClear
+            // only frees what vt + pwszVal say it owns. Stage the
+            // pointer in a local so the assignment into the PROPVARIANT
+            // slot is a single move.
+            var pwsz = (char*)Marshal.StringToCoTaskMemUni(title);
+
             var pv = new PROPVARIANT();
             // PROPVARIANT union layout in CsWin32 0.3.269 (verified
             // in Windows.Win32.NativeMethods.g.cs around line 5854):
@@ -50,10 +60,12 @@ internal static class ShellLinkTitleHelper
             //                                .Anonymous -> _Anonymous_e__Union_unmanaged (typed value slots)
             //                                         .pwszVal (PWSTR)
             // The vt field is at the *_Struct level, the pwszVal slot
-            // is one nesting deeper.
+            // is one nesting deeper. Assign pwszVal and vt adjacently
+            // so the finally's PropVariantClear always sees a consistent
+            // typed slot (VT_LPWSTR + real pointer, never VT_LPWSTR +
+            // garbage).
+            pv.Anonymous.Anonymous.Anonymous.pwszVal = new PWSTR(pwsz);
             pv.Anonymous.Anonymous.vt = VARENUM.VT_LPWSTR;
-            pv.Anonymous.Anonymous.Anonymous.pwszVal =
-                new PWSTR((char*)Marshal.StringToCoTaskMemUni(title));
             try
             {
                 store.SetValue(in s_pkeyTitle, in pv);

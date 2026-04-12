@@ -26,10 +26,11 @@ namespace Ghostty.Core.DirectWrite;
 // Ghostty.Core targets plain net9.0 (no Windows-specific
 // TargetPlatformVersion) so the CA1416 platform analyzer flags
 // every CsWin32-generated DWrite call as "only supported on
-// windows6.1+". The Ghostty WinUI 3 shell is windows10.0.19041,
-// so all callers are gated. Mark the helper accordingly to silence
-// the analyzer at the helper boundary.
-[SupportedOSPlatform("windows6.1")]
+// windows6.1+". Matches the Ghostty shell's TargetPlatformMinVersion
+// floor, not DWrite 1.0's Win7 floor. Ghostty as a product never ran
+// on anything older than Win10 1809, so declaring the true floor is
+// more honest than inheriting the DWrite API metadata default.
+[SupportedOSPlatform("windows10.0.17763")]
 public static class DWriteFontEnumerator
 {
     /// <summary>
@@ -131,7 +132,7 @@ public static class DWriteFontEnumerator
     /// can call it alongside EnumerateReference without pulling in
     /// the WinUI 3 Ghostty assembly.
     /// </summary>
-    public static unsafe List<string> EnumerateMigrated()
+    public static List<string> EnumerateMigrated()
     {
         var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -139,32 +140,47 @@ public static class DWriteFontEnumerator
         // does NOT mark these methods [PreserveSig]) which preserves
         // the pre-migration semantics: the raw-vtable path bailed
         // out on non-zero hr, so the migrated path must not silently
-        // drop errors. The catch at the bottom converts the exception
-        // back into the empty-list fallback the caller expects.
+        // drop errors. We only swallow COM/cast failures here so
+        // unrelated bugs (NRE, IOE, etc.) still propagate instead of
+        // being hidden behind an empty-list result. Per-family lookup
+        // failures are skipped inside the loop, matching the reference
+        // path's `continue`-on-bad-family semantics.
+        IDWriteFactory factory;
+        IDWriteFontCollection collection;
         try
         {
             var iid = typeof(IDWriteFactory).GUID;
-            PInvoke.DWriteCreateFactory(
+            DWritePInvoke.DWriteCreateFactory(
                 DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED,
                 in iid,
                 out var factoryObj).ThrowOnFailure();
-            var factory = (IDWriteFactory)factoryObj;
-
-            factory.GetSystemFontCollection(out var collection, checkForUpdates: true);
-
-            var count = collection.GetFontFamilyCount();
-            for (uint i = 0; i < count; i++)
-            {
-                collection.GetFontFamily(i, out var family);
-                var name = GetFamilyNameMigrated(family);
-                if (name != null) families.Add(name);
-            }
+            factory = (IDWriteFactory)factoryObj;
+            factory.GetSystemFontCollection(out collection, checkForUpdates: true);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is COMException or InvalidCastException)
         {
-            // Enumeration failure is non-fatal (headless/test host);
-            // fall through to the sorted result so the caller still
-            // gets whatever we collected before the failure.
+            // Factory/collection creation failure is non-fatal on
+            // headless/test hosts; return whatever we have (empty).
+            return families.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        var count = collection.GetFontFamilyCount();
+        for (uint i = 0; i < count; i++)
+        {
+            IDWriteFontFamily family;
+            try
+            {
+                collection.GetFontFamily(i, out family);
+            }
+            catch (Exception ex) when (ex is COMException or InvalidCastException)
+            {
+                // Skip this family, matching the reference path's
+                // per-family `continue`-on-failure behavior.
+                continue;
+            }
+
+            var name = GetFamilyNameMigrated(family);
+            if (name != null) families.Add(name);
         }
 
         return families.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();

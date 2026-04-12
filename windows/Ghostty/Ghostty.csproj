@@ -23,15 +23,6 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
-    <!--
-      CS0436: CsWin32 emits Windows.Win32.PInvoke (and friends) in
-      both Ghostty.csproj and Ghostty.Core.csproj. The two emissions
-      are independent and the C# compiler picks the one from this
-      project on every callsite, so the cross-assembly conflict is
-      benign. Suppress so the analyzer noise does not drown out the
-      real warnings.
-    -->
-    <NoWarn>$(NoWarn);CS0436</NoWarn>
     <PublishAot>true</PublishAot>
     <!--
       Analyzer triad: surface AOT / trim / single-file incompatibilities
