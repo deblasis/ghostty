@@ -1820,6 +1820,17 @@ pub const CAPI = struct {
         surface.draw();
     }
 
+    /// Write raw VT bytes into the surface's terminal parser. The bytes
+    /// are processed as if they came from the PTY -- VT sequences update
+    /// the terminal grid, cursor, colors, etc. Thread-safe.
+    export fn ghostty_surface_vt_write(
+        surface: *Surface,
+        data: [*]const u8,
+        len: usize,
+    ) void {
+        surface.core_surface.writeVt(data[0..len]);
+    }
+
     /// Return the ID3D12Device* used by this surface's renderer. Shared
     /// texture consumers should call OpenSharedResource1 on this same
     /// device to avoid cross-device synchronization issues.

@@ -890,6 +890,13 @@ pub fn draw(self: *Surface) !void {
     try self.renderer.drawFrame(true);
 }
 
+/// Write raw VT bytes into this surface's terminal, as if they came
+/// from the PTY. Used by in-process features (theme picker) that
+/// render into the terminal without a subprocess.
+pub fn writeVt(self: *Surface, data: []const u8) void {
+    self.io.processOutput(data);
+}
+
 /// Activate the inspector. This will begin collecting inspection data.
 /// This will not affect the GUI. The GUI must use performAction to
 /// show/hide the inspector UI.
