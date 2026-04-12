@@ -173,6 +173,10 @@ command_timer: ?std.time.Instant = null,
 /// Search state
 search: ?Search = null,
 
+/// When set, key events are sent to this callback instead of the PTY.
+/// Used by in-process features like the theme picker.
+input_redirect: ?InputRedirect = null,
+
 /// Used to rate limit BEL handling.
 last_bell_time: ?std.time.Instant = null,
 
@@ -213,6 +217,14 @@ const Search = struct {
         // Now it is safe to deinit the state
         self.state.deinit();
     }
+};
+
+/// Input redirect for in-process features that need to intercept key events.
+pub const InputRedirect = struct {
+    /// Called with the key event. Return true if consumed.
+    /// The event pointer is only valid for the duration of the call.
+    callback: *const fn (ud: ?*anyopaque, event: *const input.KeyEvent) callconv(.c) bool,
+    userdata: ?*anyopaque,
 };
 
 /// Mouse state for the surface.
@@ -2678,6 +2690,13 @@ pub fn keyCallback(
         event,
         if (insp_ev) |*ev| ev else null,
     )) |v| return v;
+
+    // If input is redirected (e.g., theme picker active), send there.
+    if (self.input_redirect) |redirect| {
+        if (redirect.callback(redirect.userdata, &event))
+            return .consumed;
+    }
+
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
         self.renderer_state.mutex.lock();

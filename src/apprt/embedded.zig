@@ -1831,6 +1831,24 @@ pub const CAPI = struct {
         surface.core_surface.writeVt(data[0..len]);
     }
 
+    /// Set or clear an input redirect on the surface. When set, key
+    /// events are sent to the callback instead of the PTY. Pass null
+    /// callback to clear.
+    export fn ghostty_surface_set_input_redirect(
+        surface: *Surface,
+        callback: ?*const fn (?*anyopaque, *const input.KeyEvent) callconv(.c) bool,
+        userdata: ?*anyopaque,
+    ) void {
+        if (callback) |cb| {
+            surface.core_surface.input_redirect = .{
+                .callback = cb,
+                .userdata = userdata,
+            };
+        } else {
+            surface.core_surface.input_redirect = null;
+        }
+    }
+
     /// Return the ID3D12Device* used by this surface's renderer. Shared
     /// texture consumers should call OpenSharedResource1 on this same
     /// device to avoid cross-device synchronization issues.
