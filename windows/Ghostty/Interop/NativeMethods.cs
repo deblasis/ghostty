@@ -294,13 +294,14 @@ internal static partial class NativeMethods
     internal static partial int Init(UIntPtr argc, IntPtr argv);
 
     /// <summary>
-    /// Runs the CLI action parsed during <see cref="Init"/> (if any).
-    /// If an action is present, this calls ExitProcess and never returns.
-    /// If no action, returns immediately.
+    /// Runs the CLI action parsed during <see cref="Init"/> (if any)
+    /// and returns the exit code. Returns -1 if no action was specified.
+    /// Unlike ghostty_cli_try_action, this does not call ExitProcess,
+    /// avoiding DLL_PROCESS_DETACH crashes on Windows.
     /// </summary>
-    [LibraryImport(Dll, EntryPoint = "ghostty_cli_try_action")]
+    [LibraryImport(Dll, EntryPoint = "ghostty_cli_run_action")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void CliTryAction();
+    internal static partial int CliRunAction();
 
     // ---- config --------------------------------------------------------
 

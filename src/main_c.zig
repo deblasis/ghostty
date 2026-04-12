@@ -127,6 +127,19 @@ pub export fn ghostty_cli_try_action() void {
     posix.exit(0);
 }
 
+/// Runs the CLI action (if any) and returns the exit code instead of
+/// calling exit. Returns -1 if no action was specified. Lets the host
+/// (e.g. a C# WinUI app) handle process termination cleanly, avoiding
+/// DLL_PROCESS_DETACH crashes from posix.exit/ExitProcess.
+pub export fn ghostty_cli_run_action() c_int {
+    const action = state.action orelse return -1;
+    std.log.info("executing CLI action={}", .{action});
+    return @intCast(action.run(state.alloc) catch |err| {
+        std.log.err("CLI action failed error={}", .{err});
+        return 1;
+    });
+}
+
 /// Return metadata about Ghostty, such as version, build mode, etc.
 pub export fn ghostty_info() Info {
     return .{

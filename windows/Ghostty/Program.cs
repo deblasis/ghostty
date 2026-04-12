@@ -39,11 +39,16 @@ public static partial class Program
         if (args.Length > 0 && args[0].StartsWith('+'))
         {
             AttachConsole(ATTACH_PARENT_PROCESS);
+            RegisterNativeResolver();
             InitGhostty(args);
-            // If a CLI action was found, this calls ExitProcess and
-            // never returns. If it returns, no action matched -- fall
-            // through to GUI startup.
-            NativeMethods.CliTryAction();
+            // Run the CLI action if one was parsed from argv. Returns
+            // the exit code, or -1 if no action matched. We use
+            // CliRunAction (not CliTryAction) because the latter calls
+            // posix.exit/ExitProcess which triggers DLL_PROCESS_DETACH
+            // cleanup that crashes on Windows.
+            var exitCode = NativeMethods.CliRunAction();
+            if (exitCode >= 0)
+                Environment.Exit(exitCode);
         }
 
         return StartGui();
@@ -77,6 +82,24 @@ public static partial class Program
             // code logs to stderr. Exit with failure.
             Environment.Exit(1);
         }
+    }
+
+    /// <summary>
+    /// Register the native DLL resolver so LibraryImport("ghostty") finds
+    /// native/ghostty.dll. Mirrors the resolver in App.xaml.cs but runs
+    /// before WinUI is initialized, enabling CLI-path P/Invoke calls.
+    /// </summary>
+    private static void RegisterNativeResolver()
+    {
+        NativeLibrary.SetDllImportResolver(
+            typeof(Interop.NativeMethods).Assembly,
+            (name, assembly, path) =>
+            {
+                if (!string.Equals(name, "ghostty", StringComparison.OrdinalIgnoreCase))
+                    return IntPtr.Zero;
+                var candidate = Path.Combine(AppContext.BaseDirectory, "native", "ghostty.dll");
+                return NativeLibrary.Load(candidate);
+            });
     }
 
     private static int StartGui()
