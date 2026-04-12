@@ -26,6 +26,27 @@ ITaskbarList3
 TaskbarList
 TBPFLAG
 
+// shell32
+SetCurrentProcessExplicitAppUserModelID
+
+// ole32
+PropVariantClear
+
+// shell COM
+ICustomDestinationList
+IObjectArray
+IObjectCollection
+IPropertyStore
+IShellLinkW
+DestinationList
+EnumerableObjectCollection
+ShellLink
+
+// property system
+PROPERTYKEY
+PROPVARIANT
+VARENUM
+
 // Note: DWrite types are listed in windows/Ghostty.Core/NativeMethods.txt
 // (not here) because DWriteFontEnumerator.EnumerateMigrated lives in
 // Ghostty.Core so the equivalence test in Ghostty.Tests can call it
