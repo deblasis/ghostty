@@ -32,7 +32,9 @@ public static partial class Program
         {
             RegisterNativeResolver();
             InitGhostty(args);
+            RegisterThemeCallback();
             var exitCode = NativeMethods.CliRunAction();
+            CleanupThemeCallback();
             if (exitCode >= 0)
                 Environment.Exit(exitCode);
         }
@@ -73,6 +75,90 @@ public static partial class Program
             // code logs to stderr. Exit with failure.
             Environment.Exit(1);
         }
+    }
+
+    // Prevent the delegate from being GC'd while Zig holds the pointer.
+    private static ThemeCallbackDelegate? _themeCallbackDelegate;
+    private static System.IO.Pipes.NamedPipeClientStream? _themePipe;
+    private static StreamWriter? _themePipeWriter;
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void ThemeCallbackDelegate(IntPtr name, [MarshalAs(UnmanagedType.U1)] bool confirmed);
+
+    private static void RegisterThemeCallback()
+    {
+        // Find the running Ghostty app's pipe. The pipe name includes
+        // the PID, so we scan for ghostty-theme-preview-* pipes.
+        // If no running app is found, the callback is a no-op.
+        var pipeName = FindThemePreviewPipe();
+        if (pipeName is not null)
+        {
+            try
+            {
+                _themePipe = new System.IO.Pipes.NamedPipeClientStream(
+                    ".", pipeName,
+                    System.IO.Pipes.PipeDirection.Out);
+                _themePipe.Connect(1000); // 1s timeout
+                _themePipeWriter = new StreamWriter(_themePipe) { AutoFlush = true };
+            }
+            catch
+            {
+                _themePipe?.Dispose();
+                _themePipe = null;
+                _themePipeWriter = null;
+            }
+        }
+
+        _themeCallbackDelegate = OnThemeChanged;
+        var ptr = Marshal.GetFunctionPointerForDelegate(_themeCallbackDelegate);
+        NativeMethods.CliSetThemeCallback(ptr);
+    }
+
+    private static void CleanupThemeCallback()
+    {
+        NativeMethods.CliSetThemeCallback(IntPtr.Zero);
+        _themeCallbackDelegate = null;
+        // Closing the pipe without a CONFIRM message tells the server
+        // to revert to the original theme.
+        _themePipeWriter?.Dispose();
+        _themePipe?.Dispose();
+        _themePipeWriter = null;
+        _themePipe = null;
+    }
+
+    private static void OnThemeChanged(IntPtr namePtr, bool confirmed)
+    {
+        var name = Marshal.PtrToStringUTF8(namePtr);
+        if (name is null || _themePipeWriter is null) return;
+
+        try
+        {
+            _themePipeWriter.WriteLine(confirmed ? $"CONFIRM:{name}" : $"PREVIEW:{name}");
+        }
+        catch
+        {
+            // Pipe broken -- running app may have closed.
+        }
+    }
+
+    private static string? FindThemePreviewPipe()
+    {
+        // Look for a running Ghostty process and try its pipe name.
+        // The pipe is named ghostty-theme-preview-{PID}.
+        try
+        {
+            var procs = System.Diagnostics.Process.GetProcessesByName("Ghostty");
+            foreach (var proc in procs)
+            {
+                if (proc.Id == Environment.ProcessId) continue;
+                var candidate = $"ghostty-theme-preview-{proc.Id}";
+                // Check if the pipe exists by trying the well-known path.
+                if (File.Exists($@"\\.\pipe\{candidate}"))
+                    return candidate;
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>

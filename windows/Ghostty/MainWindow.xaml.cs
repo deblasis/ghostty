@@ -67,6 +67,7 @@ public sealed partial class MainWindow : Window
     private readonly TaskbarHost _taskbar;
     private readonly WindowThemeManager _themeManager;
     private readonly ShellThemeService _shellTheme;
+    private readonly ThemePreviewService _themePreview;
 
     // Tracks the currently applied backdrop style so we can skip
     // redundant SystemBackdrop swaps on config reload.
@@ -210,6 +211,7 @@ public sealed partial class MainWindow : Window
 
         _shellTheme = new ShellThemeService(configService);
         _shellTheme.ThemeChanged += ApplyShellTheme;
+        _themePreview = new ThemePreviewService(configService, DispatcherQueue);
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());

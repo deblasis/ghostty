@@ -140,6 +140,23 @@ pub export fn ghostty_cli_run_action() c_int {
     });
 }
 
+/// Set an optional callback that the +list-themes TUI invokes when the
+/// selected theme changes (preview) or is accepted (confirmed). This
+/// lets embedders update their app chrome (title bar, tabs, etc.) to
+/// match the previewed theme without writing to the config file.
+///
+/// The callback receives:
+///   - name:      null-terminated UTF-8 theme name
+///   - confirmed: false while browsing (preview), true on accept
+///
+/// Pass null to clear the callback. Must be called before
+/// ghostty_cli_run_action.
+pub export fn ghostty_cli_set_theme_callback(
+    cb: ?*const fn ([*:0]const u8, bool) callconv(.c) void,
+) void {
+    @import("cli/list_themes.zig").theme_callback = cb;
+}
+
 /// Return metadata about Ghostty, such as version, build mode, etc.
 pub export fn ghostty_info() Info {
     return .{

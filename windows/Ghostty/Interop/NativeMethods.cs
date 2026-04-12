@@ -303,6 +303,16 @@ internal static partial class NativeMethods
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     internal static partial int CliRunAction();
 
+    /// <summary>
+    /// Register a callback for theme changes in the +list-themes TUI.
+    /// Called with the theme name and whether the change is confirmed
+    /// (true = user accepted, false = preview while browsing).
+    /// Pass null to clear. Must be called before <see cref="CliRunAction"/>.
+    /// </summary>
+    [LibraryImport(Dll, EntryPoint = "ghostty_cli_set_theme_callback")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial void CliSetThemeCallback(IntPtr callback);
+
     // ---- config --------------------------------------------------------
 
     [LibraryImport(Dll, EntryPoint = "ghostty_config_new")]

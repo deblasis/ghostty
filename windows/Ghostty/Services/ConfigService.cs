@@ -216,6 +216,21 @@ internal sealed class ConfigService : IConfigService
             AnsiPalette[i] = GetPaletteColor(i);
     }
 
+    /// <summary>
+    /// Apply theme colors directly without a full config reload.
+    /// Used by <see cref="ThemePreviewService"/> for live preview
+    /// from the +list-themes TUI.
+    /// </summary>
+    internal void ApplyThemeColors(uint fg, uint bg, uint? cursor, uint[] palette)
+    {
+        ForegroundColor = fg;
+        BackgroundColor = bg;
+        CursorColor = cursor ?? fg;
+        if (palette.Length >= 16)
+            Array.Copy(palette, AnsiPalette, 16);
+        ConfigChanged?.Invoke(this);
+    }
+
     private unsafe bool GetBool(string key)
     {
         byte result = 0;
