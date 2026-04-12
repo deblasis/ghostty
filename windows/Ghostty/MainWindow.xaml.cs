@@ -487,6 +487,40 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Detach <paramref name="tab"/> into a new window and snap it to
+    /// the given <paramref name="zone"/> on the current monitor BEFORE
+    /// activation, so there is no visible placement flicker.
+    /// </summary>
+    internal void DetachTabToZone(TabModel tab, Ghostty.Core.Tabs.SnapZone zone)
+    {
+        if (_tabManager.Tabs.Count <= 1)
+            throw new InvalidOperationException(
+                "DetachTabToZone: guarded menu fired on single-tab window.");
+
+        var detached = _tabManager.DetachTab(tab);
+
+        var bootstrap = App.BootstrapHost
+            ?? throw new InvalidOperationException(
+                "DetachTabToZone: no bootstrap host; App.OnLaunched did not run.");
+        var supervisor = App.LifetimeSupervisor
+            ?? throw new InvalidOperationException(
+                "DetachTabToZone: no lifetime supervisor; App.OnLaunched did not run.");
+
+        var newWindow = MainWindow.CreateForAdoption(_configService, bootstrap, supervisor, detached);
+        var newHost = newWindow._host;
+        ((Panes.PaneHost)detached.PaneHost).RehostTo(newHost);
+
+        // Snap to zone on the source window's monitor. MoveAndResize
+        // BEFORE Activate so the window never flashes at the default
+        // origin.
+        var display = Tabs.SnapPlacement.ResolveDisplayFor(AppWindow);
+        Tabs.SnapPlacement.ApplyZone(newWindow.AppWindow, display, zone);
+
+        newWindow.Closed += ((App)Application.Current).OnAnyWindowClosedInternal;
+        newWindow.ActivateAfterPlacement();
+    }
+
+    /// <summary>
     /// Compute the cursor-anchored target rect for a newly built
     /// <see cref="MainWindow"/>. Queries <c>GetCursorPos</c> (via
     /// CsWin32), resolves the monitor the cursor is on via
