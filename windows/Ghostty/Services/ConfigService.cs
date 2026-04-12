@@ -30,6 +30,7 @@ internal sealed class ConfigService : IConfigService
     public bool AutoReloadEnabled { get; private set; }
     public bool SettingsUiEnabled { get; private set; }
     public double BackgroundOpacity { get; private set; } = 1.0;
+    public string BackgroundStyle { get; private set; } = "solid";
     public string WindowTheme { get; private set; } = "auto";
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
     public int DiagnosticsCount { get; private set; }
@@ -143,6 +144,7 @@ internal sealed class ConfigService : IConfigService
         // needing their own validation. WindowTransparencyState also
         // clamps defensively as a standalone value type.
         BackgroundOpacity = Math.Clamp(GetDouble("background-opacity", 1.0), 0.0, 1.0);
+        BackgroundStyle = GetString("background-style", "solid");
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
     }
