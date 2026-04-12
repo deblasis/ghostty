@@ -17,6 +17,11 @@
                 <ComboBoxItem Content="Dark" Tag="dark" />
             </ComboBox>
 
+            <ToggleSwitch
+                x:Name="ShellThemeToggle"
+                Header="Shell follows terminal theme"
+                Toggled="ShellTheme_Toggled" />
+
             <AutoSuggestBox
                 x:Name="FontFamilySearch"
                 Header="Font family"

@@ -4,10 +4,12 @@ using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;
 using Ghostty.Input;
 using Ghostty.Panes;
+using Ghostty.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
 namespace Ghostty.Tabs;
@@ -243,6 +245,71 @@ internal sealed partial class TabHost : UserControl, ITabHost
                     return;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Apply palette-derived colors to the tab strip.
+    /// Called by MainWindow when shell theme changes.
+    /// </summary>
+    internal void ApplyShellTheme(ShellThemeService theme)
+    {
+        if (!theme.IsEnabled) return;
+
+        var accent = Microsoft.UI.ColorHelper.FromArgb(
+            theme.AccentColor.A, theme.AccentColor.R,
+            theme.AccentColor.G, theme.AccentColor.B);
+
+        var inactiveText = Microsoft.UI.ColorHelper.FromArgb(
+            theme.InactiveTabText.A, theme.InactiveTabText.R,
+            theme.InactiveTabText.G, theme.InactiveTabText.B);
+
+        var tabBg = Microsoft.UI.ColorHelper.FromArgb(
+            theme.TabBarBackground.A, theme.TabBarBackground.R,
+            theme.TabBarBackground.G, theme.TabBarBackground.B);
+
+        TabViewControl.Resources["TabViewItemHeaderBackgroundSelected"] =
+            new SolidColorBrush(accent);
+        TabViewControl.Resources["TabViewItemHeaderForeground"] =
+            new SolidColorBrush(inactiveText);
+        TabViewControl.Resources["TabViewBackground"] =
+            new SolidColorBrush(tabBg);
+    }
+
+    /// <summary>
+    /// Remove shell theme overrides so the TabView reverts to
+    /// its default theme resources.
+    /// </summary>
+    internal void ClearShellTheme()
+    {
+        TabViewControl.Resources.Remove("TabViewItemHeaderBackgroundSelected");
+        TabViewControl.Resources.Remove("TabViewItemHeaderForeground");
+        TabViewControl.Resources.Remove("TabViewBackground");
+    }
+
+    internal void SetRequestedTheme(ElementTheme theme)
+    {
+        RequestedTheme = theme;
+    }
+
+    /// <summary>
+    /// Set the accent color used for the selected tab indicator.
+    /// Driven by cursor-color from the terminal config.
+    /// </summary>
+    internal void SetAccentColor(Windows.UI.Color color)
+    {
+        var c = Microsoft.UI.ColorHelper.FromArgb(color.A, color.R, color.G, color.B);
+        TabViewControl.Resources["TabViewItemHeaderBackgroundSelected"] =
+            new SolidColorBrush(c);
+        // Force re-apply by toggling selection so the TabView picks
+        // up the new brush. Suppress the event to avoid side effects.
+        if (TabViewControl.SelectedItem is not null)
+        {
+            _suppressSelectionEvent = true;
+            var selected = TabViewControl.SelectedItem;
+            TabViewControl.SelectedItem = null;
+            TabViewControl.SelectedItem = selected;
+            _suppressSelectionEvent = false;
         }
     }
 

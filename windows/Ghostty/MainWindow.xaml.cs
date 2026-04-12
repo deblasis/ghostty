@@ -66,12 +66,14 @@ public sealed partial class MainWindow : Window
     private readonly TitleBarCoordinator _titleBar;
     private readonly TaskbarHost _taskbar;
     private readonly WindowThemeManager _themeManager;
+    private readonly ShellThemeService _shellTheme;
 
     // Tracks the currently applied backdrop style so we can skip
     // redundant SystemBackdrop swaps on config reload.
     private string _currentBackdropStyle = "";
 
     private GradientTintVisual? _gradientVisual;
+    private Window? _settingsWindow;
 
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
@@ -109,12 +111,44 @@ public sealed partial class MainWindow : Window
     // class brush with a dark solid brush makes the flash invisible
     // against any dark color scheme.
     private const int GCLP_HBRBACKGROUND = -10;
+    private const int GWL_STYLE = -16;
+    private const int WS_MAXIMIZE = 0x01000000;
+    private const int SW_SHOWMAXIMIZED = 3;
+    private const int SW_SHOWNORMAL = 1;
 
     [LibraryImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
     private static partial IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     [LibraryImport("gdi32.dll")]
     private static partial IntPtr CreateSolidBrush(uint crColor);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static partial int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WINDOWPLACEMENT
+    {
+        public int length;
+        public int flags;
+        public int showCmd;
+        public POINT ptMinPosition;
+        public POINT ptMaxPosition;
+        public RECT rcNormalPosition;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int x, y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int left, top, right, bottom; }
 
     internal MainWindow(ConfigService configService)
     {
@@ -174,10 +208,14 @@ public sealed partial class MainWindow : Window
         ApplyTheme();
         _themeManager.ThemeChanged += _ => ApplyTheme();
 
+        _shellTheme = new ShellThemeService(configService);
+        _shellTheme.ThemeChanged += ApplyShellTheme;
+
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
         _router = new PaneActionRouter(_tabManager);
         _uiSettings = UiSettings.Load();
+        RestoreWindowPlacement();
 
         _horizontalTabHost = new TabHost(_tabManager, _router, _dialogs);
         _verticalTabHost = new VerticalTabHost(_tabManager, _router, _dialogs, _host);
@@ -205,15 +243,27 @@ public sealed partial class MainWindow : Window
         Canvas.SetZIndex(_verticalTabHost, -1);
         RootGrid.Children.Add(_verticalTabHost);
 
+        // Apply initial shell theme now that tab hosts exist.
+        ApplyShellTheme();
+
         // Parent every existing and future PaneHost into the shared
         // container declared in MainWindow.xaml. This is the single
         // owner for PaneHost lifetime in the visual tree — both tab
         // hosts read from it without ever reparenting.
         foreach (var t in _tabManager.Tabs) AddPaneHost(t);
         SwapActivePane();
-        _tabManager.TabAdded += (_, t) => { AddPaneHost(t); SwapActivePane(); };
+        _tabManager.TabAdded += (_, t) =>
+        {
+            AddPaneHost(t);
+            SwapActivePane();
+            // Apply current cursor color to new tabs' pane borders.
+            UpdateCursorAccentColors();
+        };
         _tabManager.TabRemoved += (_, t) => RemovePaneHost(t);
         _tabManager.ActiveTabChanged += (_, _) => SwapActivePane();
+
+        // Apply initial cursor-color-derived pane border.
+        UpdateCursorAccentColors();
 
         // Tooltip chord label is sourced from KeyBindings.Default so
         // the button description cannot drift from the accelerator.
@@ -318,8 +368,16 @@ public sealed partial class MainWindow : Window
                 var editor = new ConfigFileEditor(configService.ConfigFilePath);
                 var keybindings = new KeyBindingsProvider(configService);
                 var themeProvider = new ThemeProvider(configService);
+                // Reuse existing settings window if still open.
+                if (_settingsWindow is not null)
+                {
+                    _settingsWindow.Activate();
+                    return;
+                }
                 var settingsWin = new Ghostty.Settings.SettingsWindow(
                     configService, editor, keybindings, themeProvider);
+                settingsWin.Closed += (_, _) => _settingsWindow = null;
+                _settingsWindow = settingsWin;
                 settingsWin.Activate();
                 return;
             }
@@ -363,6 +421,7 @@ public sealed partial class MainWindow : Window
             ApplyBackdropStyle();
             UpdateAcrylicTuning();
             ApplyGradientTint();
+            UpdateCursorAccentColors();
         };
 
         _tabManager.LastTabClosed += (_, _) => Close();
@@ -372,6 +431,39 @@ public sealed partial class MainWindow : Window
 
     private async void OnClosedAsync(object sender, WindowEventArgs args)
     {
+        // Persist window placement for next launch. Skip when
+        // fullscreen -- restore to the normal size instead.
+        if (AppWindow.Presenter.Kind != Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen)
+        {
+            var isMaximized = GetWindowLong(WindowNative.GetWindowHandle(this), GWL_STYLE) & WS_MAXIMIZE;
+            _uiSettings.WindowMaximized = isMaximized != 0;
+
+            // Save the restored (non-maximized) bounds so we don't
+            // persist a maximized rect that fills the whole monitor.
+            if (isMaximized != 0)
+            {
+                var placement = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+                GetWindowPlacement(WindowNative.GetWindowHandle(this), ref placement);
+                var rc = placement.rcNormalPosition;
+                _uiSettings.WindowX = rc.left;
+                _uiSettings.WindowY = rc.top;
+                _uiSettings.WindowWidth = rc.right - rc.left;
+                _uiSettings.WindowHeight = rc.bottom - rc.top;
+            }
+            else
+            {
+                _uiSettings.WindowX = AppWindow.Position.X;
+                _uiSettings.WindowY = AppWindow.Position.Y;
+                _uiSettings.WindowWidth = AppWindow.Size.Width;
+                _uiSettings.WindowHeight = AppWindow.Size.Height;
+            }
+            _uiSettings.Save();
+        }
+
+        // Close settings window if open.
+        _settingsWindow?.Close();
+        _settingsWindow = null;
+
         // Let any in-flight ContentDialog complete before tearing
         // down the libghostty host. files-community/Files #17363
         // documents the COMException that fires otherwise.
@@ -555,6 +647,123 @@ public sealed partial class MainWindow : Window
         if (Content is FrameworkElement root)
             root.RequestedTheme = _themeManager.ElementTheme;
         _themeManager.ApplyToWindow(this);
+
+        // Caption button colors must be set explicitly when
+        // ExtendsContentIntoTitleBar is true, otherwise WinUI 3
+        // fills them with the system accent color.
+        var tb = AppWindow.TitleBar;
+        var fg = _themeManager.IsDarkMode
+            ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0xFF, 0x00, 0x00, 0x00);
+        var fgInactive = _themeManager.IsDarkMode
+            ? Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x66, 0x00, 0x00, 0x00);
+        tb.ButtonBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
+        tb.ButtonInactiveBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
+        tb.ButtonForegroundColor = fg;
+        tb.ButtonInactiveForegroundColor = fgInactive;
+        tb.ButtonHoverBackgroundColor = _themeManager.IsDarkMode
+            ? Windows.UI.Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x33, 0x00, 0x00, 0x00);
+        tb.ButtonHoverForegroundColor = fg;
+        tb.ButtonPressedBackgroundColor = _themeManager.IsDarkMode
+            ? Windows.UI.Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x22, 0x00, 0x00, 0x00);
+        tb.ButtonPressedForegroundColor = fg;
+
+        // Propagate theme to tab hosts so their text/icons adapt.
+        // Guard: tab hosts are created after the first ApplyTheme call.
+        if (_horizontalTabHost is not null)
+        {
+            _horizontalTabHost.SetRequestedTheme(_themeManager.ElementTheme);
+            _verticalTabHost.SetRequestedTheme(_themeManager.ElementTheme);
+        }
+    }
+
+    /// <summary>
+    /// Apply palette-derived colors to the window chrome when
+    /// windows-shell-theme is enabled.
+    /// </summary>
+    private void ApplyShellTheme()
+    {
+        if (!_shellTheme.IsEnabled)
+        {
+            // Revert to standard chrome. Clear custom title bar
+            // button colors back to null (system default).
+            var titleBar = AppWindow.TitleBar;
+            titleBar.ButtonBackgroundColor = null;
+            titleBar.ButtonForegroundColor = null;
+            titleBar.ButtonInactiveBackgroundColor = null;
+            titleBar.ButtonInactiveForegroundColor = null;
+            titleBar.ButtonHoverBackgroundColor = null;
+            titleBar.ButtonHoverForegroundColor = null;
+
+            // Reset VerticalTitleText to theme default.
+            VerticalTitleText.ClearValue(TextBlock.ForegroundProperty);
+
+            // Force ApplyBackdropStyle to re-run by clearing its
+            // cache. It sets RootGrid.Background via
+            // SetTransparentChrome/SetOpaqueChrome.
+            _currentBackdropStyle = "";
+            ApplyBackdropStyle();
+            ApplyTheme();
+
+            _horizontalTabHost.ClearShellTheme();
+            _verticalTabHost.ClearShellTheme();
+            return;
+        }
+
+        var tb = AppWindow.TitleBar;
+        // Transparent backgrounds let the caption buttons blend
+        // with whatever backdrop (Mica/Acrylic) is behind them.
+        tb.ButtonBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
+        tb.ButtonForegroundColor = _shellTheme.TitleBarForeground;
+        tb.ButtonInactiveBackgroundColor = Windows.UI.Color.FromArgb(0, 0, 0, 0);
+        tb.ButtonInactiveForegroundColor = Windows.UI.Color.FromArgb(
+            128, _shellTheme.TitleBarForeground.R,
+            _shellTheme.TitleBarForeground.G,
+            _shellTheme.TitleBarForeground.B);
+        tb.ButtonHoverBackgroundColor = _shellTheme.TabBarBackground;
+        tb.ButtonHoverForegroundColor = _shellTheme.TitleBarForeground;
+
+        RootGrid.Background = new SolidColorBrush(
+            Microsoft.UI.ColorHelper.FromArgb(
+                _shellTheme.TitleBarBackground.A,
+                _shellTheme.TitleBarBackground.R,
+                _shellTheme.TitleBarBackground.G,
+                _shellTheme.TitleBarBackground.B));
+
+        VerticalTitleText.Foreground = new SolidColorBrush(
+            Microsoft.UI.ColorHelper.FromArgb(
+                _shellTheme.TitleBarForeground.A,
+                _shellTheme.TitleBarForeground.R,
+                _shellTheme.TitleBarForeground.G,
+                _shellTheme.TitleBarForeground.B));
+
+        // Push theme to both tab hosts.
+        _horizontalTabHost.ApplyShellTheme(_shellTheme);
+        _verticalTabHost.ApplyShellTheme(_shellTheme);
+    }
+
+    /// <summary>
+    /// Update all accent-colored UI from the cursor color in config:
+    /// pane border, selected tab indicator, vertical tab accent bar.
+    /// Called on every config reload so theme changes take effect.
+    /// </summary>
+    private void UpdateCursorAccentColors()
+    {
+        var cc = _configService.CursorColor ?? _configService.ForegroundColor;
+        var wuiColor = Windows.UI.Color.FromArgb(0xFF,
+            (byte)(cc >> 16), (byte)(cc >> 8), (byte)cc);
+        var muiColor = Microsoft.UI.ColorHelper.FromArgb(0xFF,
+            (byte)(cc >> 16), (byte)(cc >> 8), (byte)cc);
+        var brush = new SolidColorBrush(muiColor);
+
+        foreach (var t in _tabManager.Tabs)
+            ((PaneHost)t.PaneHost).SetActiveBorderBrush(brush);
+
+        _horizontalTabHost.SetAccentColor(wuiColor);
+        _verticalTabHost.SetAccentColor(wuiColor);
     }
 
     /// <summary>
@@ -726,6 +935,44 @@ public sealed partial class MainWindow : Window
             kind == Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen
                 ? Microsoft.UI.Windowing.AppWindowPresenterKind.Default
                 : Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
+    }
+
+    /// <summary>
+    /// Restore the window position and size from the previous session.
+    /// Validates that at least part of the window is visible on a
+    /// current monitor (handles monitor disconnects, DPI changes).
+    /// </summary>
+    private void RestoreWindowPlacement()
+    {
+        var w = _uiSettings.WindowWidth;
+        var h = _uiSettings.WindowHeight;
+        if (w is null || h is null || w < 200 || h < 150) return;
+
+        var x = _uiSettings.WindowX ?? 0;
+        var y = _uiSettings.WindowY ?? 0;
+
+        // Ensure the window's top-left quadrant is on a live monitor.
+        // DisplayArea.GetFromPoint returns the nearest display if the
+        // point is off-screen, but we check explicitly so we don't
+        // place the window somewhere invisible.
+        var checkPoint = new Windows.Graphics.PointInt32(
+            x + Math.Min(100, w.Value / 2),
+            y + Math.Min(50, h.Value / 2));
+        var display = Microsoft.UI.Windowing.DisplayArea.GetFromPoint(
+            checkPoint, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
+
+        // If the saved position is completely outside any display's
+        // work area, let the OS pick a default position.
+        var work = display.WorkArea;
+        if (x + w.Value < work.X || x > work.X + work.Width ||
+            y + h.Value < work.Y || y > work.Y + work.Height)
+            return;
+
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(w.Value, h.Value));
+        AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+
+        if (_uiSettings.WindowMaximized)
+            ShowWindow(WindowNative.GetWindowHandle(this), SW_SHOWMAXIMIZED);
     }
 
     /// <summary>

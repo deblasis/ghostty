@@ -48,7 +48,11 @@ internal sealed class ConfigService : IConfigService
     public string GradientBlend { get; private set; } = "overlay";
     public float GradientOpacity { get; private set; } = 0.05f;
     public string WindowTheme { get; private set; } = "auto";
+    public uint ForegroundColor { get; private set; } = 0x00FFFFFF;
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
+    public uint? CursorColor { get; private set; }
+    public uint[] AnsiPalette { get; private set; } = new uint[16];
+    public bool ShellThemeEnabled { get; private set; }
     public int DiagnosticsCount { get; private set; }
 
     /// <summary>
@@ -184,6 +188,30 @@ internal sealed class ConfigService : IConfigService
         GradientOpacity = ParseFloat(GetFileValue("background-gradient-opacity", "")) ?? 0.05f;
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
+        ForegroundColor = GetColor("foreground", 0x00FFFFFF);
+
+        // cursor-color is a TerminalColor (tagged union) in the Zig
+        // config, so it can't be read via ghostty_config_get as a
+        // simple color. Read from the resolved config files instead.
+        var cursorHex = GetThemeValue("cursor-color");
+        if (!string.IsNullOrEmpty(cursorHex))
+        {
+            var parsed = ParseHexColor(cursorHex);
+            CursorColor = parsed is not null
+                ? ((uint)parsed.Value.R << 16) | ((uint)parsed.Value.G << 8) | parsed.Value.B
+                : ForegroundColor;
+        }
+        else
+        {
+            CursorColor = ForegroundColor;
+        }
+
+        ShellThemeEnabled = string.Equals(
+            GetFileValue("windows-shell-theme", "false"),
+            "true", StringComparison.OrdinalIgnoreCase);
+
+        for (int i = 0; i < 16; i++)
+            AnsiPalette[i] = GetPaletteColor(i);
     }
 
     private unsafe bool GetBool(string key)
@@ -234,6 +262,42 @@ internal sealed class ConfigService : IConfigService
             if (!found || result == IntPtr.Zero) return defaultValue;
             return Marshal.PtrToStringUTF8(result) ?? defaultValue;
         }
+    }
+
+    /// <summary>
+    /// Read a config key from the config file and then the active
+    /// theme file. The config file takes priority (user overrides).
+    /// Used for keys like cursor-color that are set by themes and
+    /// can't be read via ghostty_config_get due to complex Zig types.
+    /// </summary>
+    private string? GetThemeValue(string key)
+    {
+        // Check user config first.
+        var userVal = GetFileValue(key, "");
+        if (!string.IsNullOrEmpty(userVal)) return userVal;
+
+        // Check the active theme file.
+        var theme = GetFileValue("theme", "");
+        if (string.IsNullOrEmpty(theme)) return null;
+
+        var configDir = Path.GetDirectoryName(ConfigFilePath);
+        if (string.IsNullOrEmpty(configDir)) return null;
+
+        var themePath = Path.Combine(configDir, "themes", theme);
+        if (!File.Exists(themePath)) return null;
+
+        foreach (var line in File.ReadLines(themePath))
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith('#')) continue;
+            var eqIndex = trimmed.IndexOf('=');
+            if (eqIndex < 0) continue;
+            var k = trimmed[..eqIndex].Trim();
+            if (k != key) continue;
+            var v = trimmed[(eqIndex + 1)..].Trim();
+            if (v.Length > 0) return v;
+        }
+        return null;
     }
 
     /// <summary>
@@ -310,6 +374,59 @@ internal sealed class ConfigService : IConfigService
             b = colorBuf[2];
         }
         return ((uint)r << 16) | ((uint)g << 8) | b;
+    }
+
+    /// <summary>
+    /// Like <see cref="GetColor"/> but returns null when the key is
+    /// not found or not a simple color.
+    /// </summary>
+    private unsafe uint? GetColorOrNull(string key)
+    {
+        byte* colorBuf = stackalloc byte[3];
+        var keyBytes = System.Text.Encoding.UTF8.GetBytes(key);
+        fixed (byte* keyPtr = keyBytes)
+        {
+            var found = NativeMethods.ConfigGet(
+                _config,
+                (IntPtr)colorBuf,
+                (IntPtr)keyPtr,
+                (UIntPtr)keyBytes.Length);
+            if (!found) return null;
+        }
+        return ((uint)colorBuf[0] << 16) | ((uint)colorBuf[1] << 8) | colorBuf[2];
+    }
+
+    /// <summary>
+    /// Read a single palette color by index. Tries the config file
+    /// first ("palette = N=#COLOR"), falls back to xterm defaults.
+    /// </summary>
+    private uint GetPaletteColor(int index)
+    {
+        ReadOnlySpan<uint> defaults =
+        [
+            0x000000, 0xCC0000, 0x00CC00, 0xCCCC00,
+            0x0000CC, 0xCC00CC, 0x00CCCC, 0xCCCCCC,
+            0x666666, 0xFF0000, 0x00FF00, 0xFFFF00,
+            0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ];
+
+        var allPalette = GetAllFileValues("palette");
+        foreach (var entry in allPalette)
+        {
+            var eqIdx = entry.IndexOf('=');
+            if (eqIdx < 0) continue;
+            var idxStr = entry[..eqIdx].Trim();
+            if (!int.TryParse(idxStr, out var parsedIdx)) continue;
+            if (parsedIdx != index) continue;
+            var colorStr = entry[(eqIdx + 1)..].Trim();
+            var parsed = ParseHexColor(colorStr);
+            if (parsed is not null)
+                return ((uint)parsed.Value.R << 16)
+                     | ((uint)parsed.Value.G << 8)
+                     | parsed.Value.B;
+        }
+
+        return index < defaults.Length ? defaults[index] : 0x000000;
     }
 
     /// <summary>
