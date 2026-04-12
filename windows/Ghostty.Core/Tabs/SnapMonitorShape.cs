@@ -34,4 +34,42 @@ internal static partial class SnapZoneCatalog
         if (ratio >= UltraWideAspect) return SnapMonitorShape.UltraWideLandscape;
         return SnapMonitorShape.StandardLandscape;
     }
+
+    // Cached arrays returned via IReadOnlyList so no allocation on
+    // every call (the picker opens on every right-click).
+    private static readonly SnapZone[] StandardLandscapeZones =
+    {
+        SnapZone.LeftHalf, SnapZone.RightHalf,
+        SnapZone.TopHalf, SnapZone.BottomHalf,
+        SnapZone.TopLeftQuarter, SnapZone.TopRightQuarter,
+        SnapZone.BottomLeftQuarter, SnapZone.BottomRightQuarter,
+        SnapZone.Maximize,
+    };
+
+    private static readonly SnapZone[] UltraWideZones =
+    {
+        SnapZone.LeftHalf, SnapZone.RightHalf,
+        SnapZone.LeftThird, SnapZone.MiddleThird, SnapZone.RightThird,
+        SnapZone.LeftTwoThirds, SnapZone.RightTwoThirds,
+        SnapZone.TopLeftQuarter, SnapZone.TopRightQuarter,
+        SnapZone.BottomLeftQuarter, SnapZone.BottomRightQuarter,
+        SnapZone.Maximize,
+    };
+
+    private static readonly SnapZone[] PortraitZones =
+    {
+        SnapZone.TopHalf, SnapZone.BottomHalf,
+        SnapZone.TopThird, SnapZone.MiddleThirdHorizontal, SnapZone.BottomThird,
+        SnapZone.Maximize,
+    };
+
+    public static System.Collections.Generic.IReadOnlyList<SnapZone> ZonesFor(int width, int height)
+    {
+        return Classify(width, height) switch
+        {
+            SnapMonitorShape.UltraWideLandscape => UltraWideZones,
+            SnapMonitorShape.Portrait => PortraitZones,
+            _ => StandardLandscapeZones,
+        };
+    }
 }

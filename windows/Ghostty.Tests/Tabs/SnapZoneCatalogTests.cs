@@ -32,4 +32,45 @@ public class SnapZoneCatalogTests
         // 2099 x 1000 = 2.099 -> standard
         Assert.Equal(SnapMonitorShape.StandardLandscape, SnapZoneCatalog.Classify(2099, 1000));
     }
+
+    [Fact]
+    public void ZonesFor_standard_landscape_returns_halves_quarters_plus_maximize()
+    {
+        var zones = SnapZoneCatalog.ZonesFor(1920, 1080);
+        Assert.Equal(new[]
+        {
+            SnapZone.LeftHalf, SnapZone.RightHalf,
+            SnapZone.TopHalf, SnapZone.BottomHalf,
+            SnapZone.TopLeftQuarter, SnapZone.TopRightQuarter,
+            SnapZone.BottomLeftQuarter, SnapZone.BottomRightQuarter,
+            SnapZone.Maximize,
+        }, zones);
+    }
+
+    [Fact]
+    public void ZonesFor_ultrawide_returns_halves_thirds_quarters_plus_maximize()
+    {
+        var zones = SnapZoneCatalog.ZonesFor(3440, 1440);
+        Assert.Equal(new[]
+        {
+            SnapZone.LeftHalf, SnapZone.RightHalf,
+            SnapZone.LeftThird, SnapZone.MiddleThird, SnapZone.RightThird,
+            SnapZone.LeftTwoThirds, SnapZone.RightTwoThirds,
+            SnapZone.TopLeftQuarter, SnapZone.TopRightQuarter,
+            SnapZone.BottomLeftQuarter, SnapZone.BottomRightQuarter,
+            SnapZone.Maximize,
+        }, zones);
+    }
+
+    [Fact]
+    public void ZonesFor_portrait_returns_halves_horizontal_thirds_plus_maximize()
+    {
+        var zones = SnapZoneCatalog.ZonesFor(1080, 1920);
+        Assert.Equal(new[]
+        {
+            SnapZone.TopHalf, SnapZone.BottomHalf,
+            SnapZone.TopThird, SnapZone.MiddleThirdHorizontal, SnapZone.BottomThird,
+            SnapZone.Maximize,
+        }, zones);
+    }
 }
