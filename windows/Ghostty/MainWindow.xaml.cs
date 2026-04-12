@@ -429,6 +429,15 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Pre-activation hook for Snap Layouts placement. PR 199's
+    /// detach flow constructs a MainWindow but MUST NOT call
+    /// Activate until any snap target has been applied, otherwise
+    /// the window flashes at the wrong origin. Call this once
+    /// placement is done.
+    /// </summary>
+    internal void ActivateAfterPlacement() => Activate();
+
+    /// <summary>
     /// Move <paramref name="tab"/> out of this window into a brand
     /// new <see cref="MainWindow"/>. The new window is positioned
     /// near the current mouse cursor on the monitor the cursor is
