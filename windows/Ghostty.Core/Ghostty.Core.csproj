@@ -25,5 +25,12 @@
     -->
     <IsAotCompatible>true</IsAotCompatible>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!--
+      Required by Ghostty.Core.DirectWrite.DWriteFontEnumerator's
+      raw-vtable reference path. The migrated CsWin32 path also uses
+      stackalloc + PWSTR in unsafe blocks, so this applies to both
+      enumeration helpers.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 </Project>
