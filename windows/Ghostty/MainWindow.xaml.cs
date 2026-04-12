@@ -355,7 +355,11 @@ public sealed partial class MainWindow : Window
 
         // Re-evaluate transparency state after every config reload so
         // Ctrl+Shift+Scroll and Settings UI changes take effect live.
-        _configService.ConfigChanged += _ => ApplyBackdropStyle();
+        _configService.ConfigChanged += _ =>
+        {
+            ApplyBackdropStyle();
+            UpdateAcrylicTuning();
+        };
 
         _tabManager.LastTabClosed += (_, _) => Close();
 
@@ -555,7 +559,14 @@ public sealed partial class MainWindow : Window
     private void ApplyBackdropStyle()
     {
         var opacity = _configService.BackgroundOpacity;
-        var style = opacity >= 1.0 ? "solid" : _configService.BackgroundStyle;
+        var configStyle = _configService.BackgroundStyle;
+
+        // If the user's configured style is acrylic-based, keep the
+        // acrylic backdrop alive even at opacity=1.0 so Ctrl+Shift+Scroll
+        // doesn't flash between Mica and acrylic at the boundary.
+        var style = (opacity >= 1.0 && configStyle != "frosted")
+            ? "solid"
+            : configStyle;
 
         // Skip if the effective style hasn't changed.
         if (style == _currentBackdropStyle && SystemBackdrop is not null)
@@ -565,11 +576,14 @@ public sealed partial class MainWindow : Window
 
         var hwnd = WindowNative.GetWindowHandle(this);
 
+        var (tintColor, tintOpacity, luminosityOpacity) = ResolveAcrylicTuning();
+
         switch (style)
         {
             case "frosted":
                 if (DesktopAcrylicController.IsSupported())
-                    SystemBackdrop = new AcrylicBackdrop(0.3f, 0.3f);
+                    SystemBackdrop = new AcrylicBackdrop(
+                        tintColor, tintOpacity, luminosityOpacity);
                 else
                     goto case "solid";
                 SetTransparentChrome(hwnd);
@@ -589,6 +603,53 @@ public sealed partial class MainWindow : Window
                 SetOpaqueChrome(hwnd);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Re-apply acrylic tuning knobs without recreating the backdrop.
+    /// Called from config reload when only the tuning values changed
+    /// but the backdrop type stays the same.
+    /// </summary>
+    private void UpdateAcrylicTuning()
+    {
+        if (_currentBackdropStyle != "frosted") return;
+        if (SystemBackdrop is not AcrylicBackdrop current) return;
+
+        var (tintColor, tintOpacity, luminosityOpacity) = ResolveAcrylicTuning();
+        current.UpdateTuning(tintColor, tintOpacity, luminosityOpacity);
+    }
+
+    /// <summary>
+    /// Resolve effective acrylic tuning values from config, applying
+    /// blur-follows-opacity scaling when enabled.
+    /// </summary>
+    private (Windows.UI.Color tintColor, float tintOpacity, float luminosityOpacity)
+        ResolveAcrylicTuning()
+    {
+        var tintColor = _configService.BackgroundTintColor
+            ?? Windows.UI.Color.FromArgb(0, 0, 0, 0);
+        var tintOpacity = _configService.BackgroundTintOpacity ?? 0.3f;
+        var luminosityOpacity = _configService.BackgroundLuminosityOpacity ?? 0.3f;
+
+        // When enabled, tint and luminosity track opacity directly:
+        // 1.0 = fully opaque (solid-looking), 0.0 = fully see-through.
+        // Uses the terminal background color as tint so at full opacity
+        // the acrylic blends into the terminal background.
+        if (_configService.BackgroundBlurFollowsOpacity)
+        {
+            var opacity = (float)_configService.BackgroundOpacity;
+            tintOpacity = opacity;
+            luminosityOpacity = opacity;
+
+            if (_configService.BackgroundTintColor is null)
+            {
+                var bg = _configService.BackgroundColor;
+                tintColor = Windows.UI.Color.FromArgb(0xFF,
+                    (byte)(bg >> 16), (byte)(bg >> 8), (byte)bg);
+            }
+        }
+
+        return (tintColor, tintOpacity, luminosityOpacity);
     }
 
     private void SetTransparentChrome(IntPtr hwnd)

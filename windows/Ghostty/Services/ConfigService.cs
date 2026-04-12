@@ -31,6 +31,10 @@ internal sealed class ConfigService : IConfigService
     public bool SettingsUiEnabled { get; private set; }
     public double BackgroundOpacity { get; private set; } = 1.0;
     public string BackgroundStyle { get; private set; } = "frosted";
+    public Windows.UI.Color? BackgroundTintColor { get; private set; }
+    public float? BackgroundTintOpacity { get; private set; }
+    public float? BackgroundLuminosityOpacity { get; private set; }
+    public bool BackgroundBlurFollowsOpacity { get; private set; }
     public string WindowTheme { get; private set; } = "auto";
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
     public int DiagnosticsCount { get; private set; }
@@ -147,6 +151,12 @@ internal sealed class ConfigService : IConfigService
         // background-style is a Windows-only key not in the Zig config
         // schema, so we read it directly from the config file.
         BackgroundStyle = GetFileValue("background-style", "frosted");
+        BackgroundTintColor = ParseHexColor(GetFileValue("background-tint-color", ""));
+        BackgroundTintOpacity = ParseFloat(GetFileValue("background-tint-opacity", ""));
+        BackgroundLuminosityOpacity = ParseFloat(GetFileValue("background-luminosity-opacity", ""));
+        BackgroundBlurFollowsOpacity = string.Equals(
+            GetFileValue("background-blur-follows-opacity", "false"),
+            "true", StringComparison.OrdinalIgnoreCase);
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
     }
@@ -250,6 +260,49 @@ internal sealed class ConfigService : IConfigService
             b = colorBuf[2];
         }
         return ((uint)r << 16) | ((uint)g << 8) | b;
+    }
+
+    /// <summary>
+    /// Parse a hex color string (#RGB, #RRGGBB, or #AARRGGBB) into
+    /// a <see cref="Windows.UI.Color"/>. Returns null if the string
+    /// is empty or not a valid hex color.
+    /// </summary>
+    private static Windows.UI.Color? ParseHexColor(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        var hex = value.TrimStart('#');
+        try
+        {
+            return hex.Length switch
+            {
+                // #RGB -> expand to #RRGGBB
+                3 => Windows.UI.Color.FromArgb(0xFF,
+                    byte.Parse(new string(hex[0], 2), System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(new string(hex[1], 2), System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(new string(hex[2], 2), System.Globalization.NumberStyles.HexNumber)),
+                // #RRGGBB
+                6 => Windows.UI.Color.FromArgb(0xFF,
+                    byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber)),
+                // #AARRGGBB
+                8 => Windows.UI.Color.FromArgb(
+                    byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber),
+                    byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber)),
+                _ => null,
+            };
+        }
+        catch (FormatException) { return null; }
+    }
+
+    private static float? ParseFloat(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return float.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var result)
+            ? Math.Clamp(result, 0f, 1f)
+            : null;
     }
 
     private void StartWatcher()
