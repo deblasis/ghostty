@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -8,6 +9,12 @@ using Ghostty.Interop;
 using Microsoft.UI.Dispatching;
 
 namespace Ghostty.Services;
+
+/// <summary>
+/// A single gradient color point with normalized position, color, and radius.
+/// </summary>
+internal readonly record struct GradientPoint(
+    float X, float Y, Windows.UI.Color Color, float Radius);
 
 /// <summary>
 /// Owns the libghostty config lifecycle: init, load from disk,
@@ -35,6 +42,9 @@ internal sealed class ConfigService : IConfigService
     public float? BackgroundTintOpacity { get; private set; }
     public float? BackgroundLuminosityOpacity { get; private set; }
     public bool BackgroundBlurFollowsOpacity { get; private set; }
+    public IReadOnlyList<GradientPoint> GradientPoints { get; private set; } = [];
+    public string GradientAnimation { get; private set; } = "static";
+    public float GradientSpeed { get; private set; } = 1.0f;
     public string WindowTheme { get; private set; } = "auto";
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
     public int DiagnosticsCount { get; private set; }
@@ -157,6 +167,17 @@ internal sealed class ConfigService : IConfigService
         BackgroundBlurFollowsOpacity = string.Equals(
             GetFileValue("background-blur-follows-opacity", "false"),
             "true", StringComparison.OrdinalIgnoreCase);
+        var rawPoints = GetAllFileValues("background-gradient-point");
+        var points = new List<GradientPoint>();
+        foreach (var raw in rawPoints)
+        {
+            if (points.Count >= 5) break;
+            var pt = ParseGradientPoint(raw);
+            if (pt is not null) points.Add(pt.Value);
+        }
+        GradientPoints = points;
+        GradientAnimation = GetFileValue("background-gradient-animation", "static");
+        GradientSpeed = ParseFloat(GetFileValue("background-gradient-speed", "")) ?? 1.0f;
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
     }
@@ -236,6 +257,31 @@ internal sealed class ConfigService : IConfigService
     }
 
     /// <summary>
+    /// Read all values for a repeatable Windows-only config key.
+    /// Returns every matching line's value in order. Keys not in
+    /// the Zig config schema are parsed from the file directly.
+    /// </summary>
+    private List<string> GetAllFileValues(string key)
+    {
+        var results = new List<string>();
+        if (string.IsNullOrEmpty(ConfigFilePath) || !File.Exists(ConfigFilePath))
+            return results;
+
+        foreach (var line in File.ReadLines(ConfigFilePath))
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith('#')) continue;
+            var eqIndex = trimmed.IndexOf('=');
+            if (eqIndex < 0) continue;
+            var k = trimmed[..eqIndex].Trim();
+            if (k != key) continue;
+            var v = trimmed[(eqIndex + 1)..].Trim();
+            if (v.Length > 0) results.Add(v);
+        }
+        return results;
+    }
+
+    /// <summary>
     /// Read a color config value. libghostty returns colors as
     /// <c>ghostty_config_color_s { r: u8, g: u8, b: u8 }</c>.
     /// We pack it into 0x00RRGGBB for easy consumption.
@@ -303,6 +349,31 @@ internal sealed class ConfigService : IConfigService
         return float.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var result)
             ? Math.Clamp(result, 0f, 1f)
             : null;
+    }
+
+    /// <summary>
+    /// Parse a gradient point string: "x,y,#color,radius".
+    /// Returns null if the format is invalid.
+    /// </summary>
+    private static GradientPoint? ParseGradientPoint(string value)
+    {
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 4) return null;
+
+        if (!float.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out var x))
+            return null;
+        if (!float.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var y))
+            return null;
+        var color = ParseHexColor(parts[2]);
+        if (color is null) return null;
+        if (!float.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out var radius))
+            return null;
+
+        return new GradientPoint(
+            Math.Clamp(x, 0f, 1f),
+            Math.Clamp(y, 0f, 1f),
+            color.Value,
+            Math.Clamp(radius, 0f, 1f));
     }
 
     private void StartWatcher()
