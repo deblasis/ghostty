@@ -48,6 +48,84 @@
                 Header="Custom shader path"
                 PlaceholderText="Path to .glsl shader file"
                 LostFocus="ShaderPath_LostFocus" />
+
+            <TextBlock Text="Background Style" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,24,0,8" />
+
+            <ComboBox x:Name="BackgroundStyleCombo" Header="Backdrop preset"
+                      SelectionChanged="BackgroundStyle_SelectionChanged">
+                <ComboBoxItem Content="Solid (Mica)" Tag="solid" />
+                <ComboBoxItem Content="Frosted (Acrylic)" Tag="frosted" />
+                <ComboBoxItem Content="Crystal (Zero blur)" Tag="crystal" />
+            </ComboBox>
+
+            <ToggleSwitch
+                x:Name="BlurFollowsOpacityToggle"
+                Header="Background blur follows opacity"
+                Toggled="BlurFollowsOpacity_Toggled" />
+
+            <TextBox
+                x:Name="TintColorBox"
+                Header="Acrylic tint color"
+                PlaceholderText="#RRGGBB"
+                LostFocus="TintColor_LostFocus" />
+
+            <Slider
+                x:Name="TintOpacitySlider"
+                Header="Acrylic tint opacity"
+                Minimum="0"
+                Maximum="1"
+                StepFrequency="0.05"
+                TickFrequency="0.1"
+                TickPlacement="BottomRight"
+                Value="0.3"
+                ValueChanged="TintOpacity_ValueChanged" />
+
+            <Slider
+                x:Name="LuminosityOpacitySlider"
+                Header="Acrylic luminosity opacity"
+                Minimum="0"
+                Maximum="1"
+                StepFrequency="0.05"
+                TickFrequency="0.1"
+                TickPlacement="BottomRight"
+                Value="0.3"
+                ValueChanged="LuminosityOpacity_ValueChanged" />
+
+            <TextBlock Text="Gradient Tint" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,24,0,8" />
+
+            <ComboBox x:Name="GradientBlendCombo" Header="Gradient blend mode"
+                      SelectionChanged="GradientBlend_SelectionChanged">
+                <ComboBoxItem Content="Overlay" Tag="overlay" />
+                <ComboBoxItem Content="Underlay" Tag="underlay" />
+            </ComboBox>
+
+            <Slider
+                x:Name="GradientOpacitySlider"
+                Header="Gradient opacity"
+                Minimum="0"
+                Maximum="1"
+                StepFrequency="0.01"
+                TickFrequency="0.1"
+                TickPlacement="BottomRight"
+                Value="0.05"
+                ValueChanged="GradientOpacity_ValueChanged" />
+
+            <TextBox
+                x:Name="GradientAnimationBox"
+                Header="Gradient animation"
+                PlaceholderText="drift,breathe,color-cycle"
+                LostFocus="GradientAnimation_LostFocus" />
+
+            <Slider
+                x:Name="GradientSpeedSlider"
+                Header="Gradient speed"
+                Minimum="0.1"
+                Maximum="3.0"
+                StepFrequency="0.1"
+                TickFrequency="0.5"
+                TickPlacement="BottomRight"
+                Value="1.0"
+                ValueChanged="GradientSpeed_ValueChanged" />
         </StackPanel>
     </ScrollViewer>
 </Page>

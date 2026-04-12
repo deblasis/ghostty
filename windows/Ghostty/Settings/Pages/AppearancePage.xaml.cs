@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Ghostty.Core.Config;
+using Ghostty.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -25,6 +26,32 @@ internal sealed partial class AppearancePage : Page
         _fontList = new SearchableList(FontFamilySearch, chosen => OnValueChanged("font-family", chosen));
         OpacitySlider.Value = configService.BackgroundOpacity;
         SelectWindowTheme(configService.WindowTheme);
+
+        // Windows-only properties are on the concrete ConfigService, not IConfigService.
+        // Cast to read current values for initialization; fall back to defaults if the
+        // runtime type is different (e.g. in tests).
+        if (configService is ConfigService cs)
+        {
+            SelectComboByTag(BackgroundStyleCombo, cs.BackgroundStyle);
+            BlurFollowsOpacityToggle.IsOn = cs.BackgroundBlurFollowsOpacity;
+            if (cs.BackgroundTintColor.HasValue)
+            {
+                var c = cs.BackgroundTintColor.Value;
+                TintColorBox.Text = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+            }
+            TintOpacitySlider.Value = cs.BackgroundTintOpacity ?? 0.3;
+            LuminosityOpacitySlider.Value = cs.BackgroundLuminosityOpacity ?? 0.3;
+            SelectComboByTag(GradientBlendCombo, cs.GradientBlend);
+            GradientOpacitySlider.Value = cs.GradientOpacity;
+            GradientAnimationBox.Text = cs.GradientAnimation == "static" ? string.Empty : cs.GradientAnimation;
+            GradientSpeedSlider.Value = cs.GradientSpeed;
+        }
+        else
+        {
+            SelectComboByTag(BackgroundStyleCombo, "frosted");
+            SelectComboByTag(GradientBlendCombo, "overlay");
+        }
+
         _loading = false;
         LoadFontsAsync();
     }
@@ -41,6 +68,19 @@ internal sealed partial class AppearancePage : Page
         }
         // Default to "auto" if the value is unrecognized.
         WindowThemeCombo.SelectedIndex = 0;
+    }
+
+    private static void SelectComboByTag(ComboBox combo, string tag)
+    {
+        foreach (ComboBoxItem item in combo.Items)
+        {
+            if (string.Equals(item.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+            {
+                combo.SelectedItem = item;
+                return;
+            }
+        }
+        combo.SelectedIndex = 0;
     }
 
     private void LoadFontsAsync()
@@ -181,6 +221,58 @@ internal sealed partial class AppearancePage : Page
     private void ShaderPath_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb) OnValueChanged("custom-shader", tb.Text);
+    }
+
+    private void BackgroundStyle_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item)
+            OnValueChanged("background-style", item.Tag?.ToString() ?? "frosted");
+    }
+
+    private void BlurFollowsOpacity_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleSwitch ts)
+            OnValueChanged("background-blur-follows-opacity", ts.IsOn ? "true" : "false");
+    }
+
+    private void TintColor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) OnValueChanged("background-tint-color", tb.Text);
+    }
+
+    private void TintOpacity_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        OnValueChanged("background-tint-opacity", e.NewValue.ToString("F2"));
+    }
+
+    private void LuminosityOpacity_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        OnValueChanged("background-luminosity-opacity", e.NewValue.ToString("F2"));
+    }
+
+    private void GradientBlend_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item)
+            OnValueChanged("background-gradient-blend", item.Tag?.ToString() ?? "overlay");
+    }
+
+    private void GradientOpacity_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        OnValueChanged("background-gradient-opacity", e.NewValue.ToString("F2"));
+    }
+
+    private void GradientAnimation_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb)
+        {
+            var value = string.IsNullOrWhiteSpace(tb.Text) ? "static" : tb.Text.Trim();
+            OnValueChanged("background-gradient-animation", value);
+        }
+    }
+
+    private void GradientSpeed_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        OnValueChanged("background-gradient-speed", e.NewValue.ToString("F1"));
     }
 
     [LibraryImport("dwrite.dll", EntryPoint = "DWriteCreateFactory")]
