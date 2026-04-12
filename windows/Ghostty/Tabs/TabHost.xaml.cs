@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
 namespace Ghostty.Tabs;
@@ -84,6 +85,13 @@ internal sealed partial class TabHost : UserControl, ITabHost
         headerPanel.Children.Add(headerText);
         headerPanel.Children.Add(headerBar);
 
+        // Tab color tint. We paint headerPanel.Background, not
+        // TabViewItem.Background: the WinUI 3 TabView template layers
+        // its own brushes over the item background and the tint gets
+        // composited away on 1.6. The header panel is our own XAML so
+        // we own the paint surface outright.
+        ApplyTabColor(headerPanel, tab.Color, selected: false);
+
         var item = new TabViewItem
         {
             Header = headerPanel,
@@ -108,6 +116,11 @@ internal sealed partial class TabHost : UserControl, ITabHost
                 headerBar.IsIndeterminate = p.State == TabProgressState.Kind.Indeterminate;
                 if (p.State != TabProgressState.Kind.Indeterminate)
                     headerBar.Value = p.Percent;
+            }
+            else if (e.PropertyName == nameof(TabModel.Color))
+            {
+                var selected = ReferenceEquals(_manager.ActiveTab, tab);
+                ApplyTabColor(headerPanel, tab.Color, selected);
             }
         };
         _itemByModel[tab] = item;
@@ -137,10 +150,42 @@ internal sealed partial class TabHost : UserControl, ITabHost
         // shared container (see #171). This method only syncs the
         // TabView strip selection.
         if (!_itemByModel.TryGetValue(_manager.ActiveTab, out var item)) return;
+
+        // Re-apply tab color tints so the selected tab gets the
+        // stronger alpha (0.6) and the others get 0.35. The previous
+        // selected tab's header will flip from 0.6 to 0.35 here.
+        foreach (var (model, viewItem) in _itemByModel)
+        {
+            if (viewItem.Header is StackPanel headerPanel)
+            {
+                var isSelected = ReferenceEquals(model, _manager.ActiveTab);
+                ApplyTabColor(headerPanel, model.Color, isSelected);
+            }
+        }
+
         if (ReferenceEquals(TabViewControl.SelectedItem, item)) return;
         _suppressSelectionEvent = true;
         TabViewControl.SelectedItem = item;
         _suppressSelectionEvent = false;
+    }
+
+    /// <summary>
+    /// Paint the tab header background from a <see cref="TabColor"/>.
+    /// None clears to transparent. Non-None uses fixed sRGB at alpha
+    /// 0.35 unselected / 0.6 selected so Mica/acrylic shows through
+    /// and the text foreground stays readable on both themes.
+    /// </summary>
+    private static void ApplyTabColor(StackPanel headerPanel, TabColor color, bool selected)
+    {
+        if (color == TabColor.None)
+        {
+            headerPanel.Background = null;
+            return;
+        }
+        var drawing = TabColorPalette.Colors[color];
+        var alpha = (byte)(selected ? 153 : 89); // 0.6 and 0.35 of 255
+        headerPanel.Background = new SolidColorBrush(
+            Windows.UI.Color.FromArgb(alpha, drawing.R, drawing.G, drawing.B));
     }
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();
