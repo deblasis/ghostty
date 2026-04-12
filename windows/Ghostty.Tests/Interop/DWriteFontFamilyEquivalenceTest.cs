@@ -7,30 +7,33 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Versioning;
 using Ghostty.Core.DirectWrite;
 using Xunit;
 
 namespace Ghostty.Tests.Interop;
 
+// Ghostty.Tests targets plain net9.0; DWriteFontEnumerator is
+// marked [SupportedOSPlatform("windows6.1")]. This test only runs
+// on Windows hosts in CI/local, so propagate the platform gate
+// here too instead of suppressing CA1416 globally.
+[SupportedOSPlatform("windows6.1")]
 public sealed class DWriteFontFamilyEquivalenceTest
 {
-    // Skipped until Task 7 Step 3 lands EnumerateMigrated. The
-    // migrated call below is commented out so this file compiles
-    // against the Task 1 scaffold (reference path only).
-    [Fact(Skip = "migrated path lands in Task 7")]
+    [Fact]
     public void ReferenceAndMigratedMatch()
     {
         var reference = DWriteFontEnumerator.EnumerateReference();
-        // var migrated = DWriteFontEnumerator.EnumerateMigrated();
+        var migrated = DWriteFontEnumerator.EnumerateMigrated();
 
         // Both paths must see Segoe UI on any Windows 10/11 host.
         Assert.Contains("Segoe UI", reference, StringComparer.OrdinalIgnoreCase);
-        // Assert.Contains("Segoe UI", migrated, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Segoe UI", migrated, StringComparer.OrdinalIgnoreCase);
 
         // Hard equivalence: any divergence is a migration regression.
-        // Assert.True(
-        //     reference.SequenceEqual(migrated, StringComparer.OrdinalIgnoreCase),
-        //     BuildDiffMessage(reference, migrated));
+        Assert.True(
+            reference.SequenceEqual(migrated, StringComparer.OrdinalIgnoreCase),
+            BuildDiffMessage(reference, migrated));
     }
 
     private static string BuildDiffMessage(IList<string> a, IList<string> b)
