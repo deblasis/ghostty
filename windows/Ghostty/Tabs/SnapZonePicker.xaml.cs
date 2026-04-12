@@ -120,6 +120,6 @@ internal sealed partial class SnapZonePicker : UserControl
         SnapZone.TopThird => "Top third",
         SnapZone.MiddleThirdHorizontal => "Middle third",
         SnapZone.BottomThird => "Bottom third",
-        _ => zone.ToString(),
+        _ => throw new ArgumentOutOfRangeException(nameof(zone), zone, null),
     };
 }

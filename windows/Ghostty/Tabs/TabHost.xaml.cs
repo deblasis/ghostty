@@ -103,7 +103,7 @@ internal sealed partial class TabHost : UserControl, ITabHost
                 requestDetachToNewWindow: RequestDetachToNewWindow,
                 _dialogs,
                 getSnapSource: GetSnapSource,
-                detachWithZoneAsync: DetachWithZoneAsync),
+                detachWithZone: DetachWithZone),
             DataContext = tab,
         };
         tab.PropertyChanged += (_, e) =>
@@ -230,12 +230,11 @@ internal sealed partial class TabHost : UserControl, ITabHost
     /// <summary>
     /// Detach a tab into a new window snapped to the chosen zone.
     /// </summary>
-    private Task DetachWithZoneAsync(TabModel tab, Ghostty.Core.Tabs.SnapZone zone)
+    private void DetachWithZone(TabModel tab, Ghostty.Core.Tabs.SnapZone zone)
     {
         var xamlRoot = XamlRoot;
         if (xamlRoot is not null && App.WindowsByRoot.TryGetValue(xamlRoot, out var main))
             main.DetachTabToZone(tab, zone);
-        return Task.CompletedTask;
     }
 
     private void OnAddTabButtonClick(TabView sender, object args) => _manager.NewTab();

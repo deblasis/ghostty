@@ -32,7 +32,7 @@ internal static class TabContextMenuBuilder
         Action<TabModel> requestDetachToNewWindow,
         DialogTracker dialogs,
         Func<SnapZoneSource>? getSnapSource = null,
-        Func<TabModel, SnapZone, Task>? detachWithZoneAsync = null)
+        Action<TabModel, SnapZone>? detachWithZone = null)
     {
         var flyout = new MenuFlyout();
 
@@ -85,7 +85,7 @@ internal static class TabContextMenuBuilder
         // zones. Only shown when both snap callbacks are wired and
         // there is more than one tab (detaching the last tab is a no-op).
         MenuFlyoutItem? moveToZone = null;
-        if (getSnapSource is not null && detachWithZoneAsync is not null)
+        if (getSnapSource is not null && detachWithZone is not null)
         {
             moveToZone = new MenuFlyoutItem { Text = "Move Tab to Zone" };
             moveToZone.IsEnabled = manager.Tabs.Count > 1;
@@ -104,10 +104,10 @@ internal static class TabContextMenuBuilder
                     Placement = FlyoutPlacementMode.Bottom,
                 };
 
-                picker.ZoneSelected += async (_, zone) =>
+                picker.ZoneSelected += (_, zone) =>
                 {
                     pickerFlyout.Hide();
-                    await detachWithZoneAsync(tab, zone);
+                    detachWithZone(tab, zone);
                 };
 
                 pickerFlyout.ShowAt(target);

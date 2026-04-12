@@ -25,9 +25,9 @@ internal static class SnapPlacement
     {
         var work = display.WorkArea; // RectInt32
         var rect = SnapZoneMath.RectFor(zone, work.X, work.Y, work.Width, work.Height);
-        // Two-argument MoveAndResize: rect is interpreted as offsets
-        // inside the given DisplayArea, which avoids coordinate-space
-        // confusion when the source monitor has negative screen origin.
+        // Two-argument MoveAndResize takes absolute screen coordinates.
+        // SnapZoneMath.RectFor already produces absolute coords because
+        // we pass the work area's origin (work.X, work.Y) above.
         target.MoveAndResize(rect.ToRectInt32(), display);
     }
 }

@@ -447,43 +447,15 @@ public sealed partial class MainWindow : Window
     /// </summary>
     internal void DetachTabToNewWindow(TabModel tab)
     {
-        if (_tabManager.Tabs.Count <= 1)
-            throw new InvalidOperationException(
-                "DetachTabToNewWindow: guarded menu fired on single-tab window.");
-
-        // Source-side: detach the model. The manager's TabRemoved
-        // subscribers already drain visual state (RemovePaneHost in
-        // this MainWindow, RemoveItem in each tab host).
-        var detached = _tabManager.DetachTab(tab);
-
-        var bootstrap = App.BootstrapHost
-            ?? throw new InvalidOperationException(
-                "DetachTabToNewWindow: no bootstrap host; App.OnLaunched did not run.");
-        var supervisor = App.LifetimeSupervisor
-            ?? throw new InvalidOperationException(
-                "DetachTabToNewWindow: no lifetime supervisor; App.OnLaunched did not run.");
-
-        // Rehost the pane tree's terminals to a fresh per-window host
-        // built inside the new window. RehostTo is what actually moves
-        // the surface entries out of this window's _surfaces into the
-        // new window's _surfaces AND rewrites App._hostBySurface.
-        var newWindow = MainWindow.CreateForAdoption(_configService, bootstrap, supervisor, detached);
-        var newHost = newWindow._host;
-        ((Panes.PaneHost)detached.PaneHost).RehostTo(newHost);
-
-        // Cursor-anchored placement. Size = this window's current size
-        // so there is no jarring resize.
-        var placement = ComputeCursorAnchoredPlacement(newWindow);
-        var rect = new Windows.Graphics.RectInt32(
-            placement.X, placement.Y, placement.Width, placement.Height);
-        newWindow.AppWindow.MoveAndResize(rect);
-
-        // Subscribe the new window to the process-wide last-window-exit
-        // handler. WindowsByRoot insertion happens inside the new
-        // window's own Content.Loaded handler.
-        newWindow.Closed += ((App)Application.Current).OnAnyWindowClosedInternal;
-
-        newWindow.Activate();
+        DetachTabToWindow(tab, newWindow =>
+        {
+            // Cursor-anchored placement. Size = this window's current size
+            // so there is no jarring resize.
+            var placement = ComputeCursorAnchoredPlacement(newWindow);
+            var rect = new Windows.Graphics.RectInt32(
+                placement.X, placement.Y, placement.Width, placement.Height);
+            newWindow.AppWindow.MoveAndResize(rect);
+        });
     }
 
     /// <summary>
@@ -493,31 +465,56 @@ public sealed partial class MainWindow : Window
     /// </summary>
     internal void DetachTabToZone(TabModel tab, Ghostty.Core.Tabs.SnapZone zone)
     {
+        DetachTabToWindow(tab, newWindow =>
+        {
+            // Snap to zone on the source window's monitor. MoveAndResize
+            // BEFORE Activate so the window never flashes at the default
+            // origin.
+            var display = Tabs.SnapPlacement.ResolveDisplayFor(AppWindow);
+            Tabs.SnapPlacement.ApplyZone(newWindow.AppWindow, display, zone);
+        });
+    }
+
+    /// <summary>
+    /// Shared detach-rehost-activate logic. Detaches <paramref name="tab"/>
+    /// from this window, creates a new <see cref="MainWindow"/>, rehosts
+    /// the pane tree, runs <paramref name="placementAction"/> for
+    /// positioning, then activates the new window.
+    /// </summary>
+    private void DetachTabToWindow(TabModel tab, Action<MainWindow> placementAction)
+    {
         if (_tabManager.Tabs.Count <= 1)
             throw new InvalidOperationException(
-                "DetachTabToZone: guarded menu fired on single-tab window.");
+                "DetachTabToWindow: guarded menu fired on single-tab window.");
 
+        // Source-side: detach the model. The manager's TabRemoved
+        // subscribers already drain visual state (RemovePaneHost in
+        // this MainWindow, RemoveItem in each tab host).
         var detached = _tabManager.DetachTab(tab);
 
         var bootstrap = App.BootstrapHost
             ?? throw new InvalidOperationException(
-                "DetachTabToZone: no bootstrap host; App.OnLaunched did not run.");
+                "DetachTabToWindow: no bootstrap host; App.OnLaunched did not run.");
         var supervisor = App.LifetimeSupervisor
             ?? throw new InvalidOperationException(
-                "DetachTabToZone: no lifetime supervisor; App.OnLaunched did not run.");
+                "DetachTabToWindow: no lifetime supervisor; App.OnLaunched did not run.");
 
+        // Rehost the pane tree's terminals to a fresh per-window host
+        // built inside the new window. RehostTo is what actually moves
+        // the surface entries out of this window's _surfaces into the
+        // new window's _surfaces AND rewrites App._hostBySurface.
         var newWindow = MainWindow.CreateForAdoption(_configService, bootstrap, supervisor, detached);
         var newHost = newWindow._host;
         ((Panes.PaneHost)detached.PaneHost).RehostTo(newHost);
 
-        // Snap to zone on the source window's monitor. MoveAndResize
-        // BEFORE Activate so the window never flashes at the default
-        // origin.
-        var display = Tabs.SnapPlacement.ResolveDisplayFor(AppWindow);
-        Tabs.SnapPlacement.ApplyZone(newWindow.AppWindow, display, zone);
+        placementAction(newWindow);
 
+        // Subscribe the new window to the process-wide last-window-exit
+        // handler. WindowsByRoot insertion happens inside the new
+        // window's own Content.Loaded handler.
         newWindow.Closed += ((App)Application.Current).OnAnyWindowClosedInternal;
-        newWindow.ActivateAfterPlacement();
+
+        newWindow.Activate();
     }
 
     /// <summary>
