@@ -360,7 +360,10 @@ internal static partial class NativeMethods
 
     [LibraryImport(Dll, EntryPoint = "ghostty_app_set_focus")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void AppSetFocus(GhosttyApp app, [MarshalAs(UnmanagedType.I1)] bool focused);
+    private static partial void AppSetFocusNative(GhosttyApp app, byte focused);
+
+    internal static void AppSetFocus(GhosttyApp app, bool focused)
+        => AppSetFocusNative(app, focused ? (byte)1 : (byte)0);
 
     [LibraryImport(Dll, EntryPoint = "ghostty_app_set_color_scheme")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -410,11 +413,17 @@ internal static partial class NativeMethods
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_set_focus")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void SurfaceSetFocus(GhosttySurface surface, [MarshalAs(UnmanagedType.I1)] bool focused);
+    private static partial void SurfaceSetFocusNative(GhosttySurface surface, byte focused);
+
+    internal static void SurfaceSetFocus(GhosttySurface surface, bool focused)
+        => SurfaceSetFocusNative(surface, focused ? (byte)1 : (byte)0);
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_set_occlusion")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void SurfaceSetOcclusion(GhosttySurface surface, [MarshalAs(UnmanagedType.I1)] bool occluded);
+    private static partial void SurfaceSetOcclusionNative(GhosttySurface surface, byte occluded);
+
+    internal static void SurfaceSetOcclusion(GhosttySurface surface, bool occluded)
+        => SurfaceSetOcclusionNative(surface, occluded ? (byte)1 : (byte)0);
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_size")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -509,14 +518,24 @@ internal static partial class NativeMethods
     // Called once per read/confirm request to return clipboard text to libghostty
     // and release its internal request state. Must be called exactly once even on
     // error paths -- skipping it leaks state inside libghostty.
+    // StringMarshalling.Utf8 is a first-class [LibraryImport] option and
+    // is NOT a [MarshalAs] attribute, so it coexists cleanly with
+    // DisableRuntimeMarshalling. Only `confirmed` needed the fix.
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_complete_clipboard_request",
         StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void SurfaceCompleteClipboardRequest(
+    private static partial void SurfaceCompleteClipboardRequestNative(
         IntPtr surface,
         string text,
         IntPtr state,
-        [MarshalAs(UnmanagedType.I1)] bool confirmed);
+        byte confirmed);
+
+    internal static void SurfaceCompleteClipboardRequest(
+        IntPtr surface,
+        string text,
+        IntPtr state,
+        bool confirmed)
+        => SurfaceCompleteClipboardRequestNative(surface, text, state, confirmed ? (byte)1 : (byte)0);
 
     // ---- user32 --------------------------------------------------------
 
