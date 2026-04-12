@@ -22,6 +22,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.WindowsAndMessaging;
 using WinRT.Interop;
 
 namespace Ghostty;
@@ -113,17 +117,10 @@ public sealed partial class MainWindow : Window
     // visible white flash at the leading edge of the drag. Replacing the
     // class brush with a dark solid brush makes the flash invisible
     // against any dark color scheme.
-    private const int GCLP_HBRBACKGROUND = -10;
     private const int GWL_STYLE = -16;
     private const int WS_MAXIMIZE = 0x01000000;
     private const int SW_SHOWMAXIMIZED = 3;
     private const int SW_SHOWNORMAL = 1;
-
-    [LibraryImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
-    private static partial IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    [LibraryImport("gdi32.dll")]
-    private static partial IntPtr CreateSolidBrush(uint crColor);
 
     [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
     private static partial int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -917,7 +914,7 @@ public sealed partial class MainWindow : Window
 
     private void SetTransparentChrome(IntPtr hwnd)
     {
-        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+        PInvoke.SetClassLongPtr(new HWND(hwnd), GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND,
             Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH));
         RootGrid.Background = new SolidColorBrush(
             Windows.UI.Color.FromArgb(0, 0, 0, 0));
@@ -925,8 +922,8 @@ public sealed partial class MainWindow : Window
 
     private void SetOpaqueChrome(IntPtr hwnd)
     {
-        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
-            CreateSolidBrush(0x000C0C0Cu));
+        PInvoke.SetClassLongPtr(new HWND(hwnd), GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND,
+            PInvoke.CreateSolidBrush(new COLORREF(0x000C0C0Cu)));
         RootGrid.Background = new SolidColorBrush(
             Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x0C, 0x0C, 0x0C));
     }
