@@ -13,3 +13,9 @@ CreateSolidBrush
 // dwmapi
 DwmSetWindowAttribute
 DWMWINDOWATTRIBUTE
+
+// Note: DWrite types are listed in windows/Ghostty.Core/NativeMethods.txt
+// (not here) because DWriteFontEnumerator.EnumerateMigrated lives in
+// Ghostty.Core so the equivalence test in Ghostty.Tests can call it
+// without pulling in the WinUI 3 Ghostty assembly. AppearancePage
+// delegates to Ghostty.Core.

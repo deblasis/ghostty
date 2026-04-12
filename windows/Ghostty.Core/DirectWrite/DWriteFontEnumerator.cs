@@ -16,9 +16,20 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.DirectWrite;
 
 namespace Ghostty.Core.DirectWrite;
 
+// Ghostty.Core targets plain net9.0 (no Windows-specific
+// TargetPlatformVersion) so the CA1416 platform analyzer flags
+// every CsWin32-generated DWrite call as "only supported on
+// windows6.1+". The Ghostty WinUI 3 shell is windows10.0.19041,
+// so all callers are gated. Mark the helper accordingly to silence
+// the analyzer at the helper boundary.
+[SupportedOSPlatform("windows6.1")]
 public static class DWriteFontEnumerator
 {
     /// <summary>
@@ -113,4 +124,69 @@ public static class DWriteFontEnumerator
 
     [DllImport("dwrite.dll", EntryPoint = "DWriteCreateFactory")]
     private static extern unsafe int DWriteCreateFactory(int factoryType, Guid* iid, IntPtr* factory);
+
+    /// <summary>
+    /// CsWin32-generated IDWrite* path. Production AppearancePage
+    /// delegates here. Exists in Ghostty.Core so the equivalence test
+    /// can call it alongside EnumerateReference without pulling in
+    /// the WinUI 3 Ghostty assembly.
+    /// </summary>
+    public static unsafe List<string> EnumerateMigrated()
+    {
+        var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Each HRESULT-returning call throws on failure (CsWin32
+        // does NOT mark these methods [PreserveSig]) which preserves
+        // the pre-migration semantics: the raw-vtable path bailed
+        // out on non-zero hr, so the migrated path must not silently
+        // drop errors. The catch at the bottom converts the exception
+        // back into the empty-list fallback the caller expects.
+        try
+        {
+            var iid = typeof(IDWriteFactory).GUID;
+            PInvoke.DWriteCreateFactory(
+                DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED,
+                in iid,
+                out var factoryObj).ThrowOnFailure();
+            var factory = (IDWriteFactory)factoryObj;
+
+            factory.GetSystemFontCollection(out var collection, checkForUpdates: true);
+
+            var count = collection.GetFontFamilyCount();
+            for (uint i = 0; i < count; i++)
+            {
+                collection.GetFontFamily(i, out var family);
+                var name = GetFamilyNameMigrated(family);
+                if (name != null) families.Add(name);
+            }
+        }
+        catch (Exception)
+        {
+            // Enumeration failure is non-fatal (headless/test host);
+            // fall through to the sorted result so the caller still
+            // gets whatever we collected before the failure.
+        }
+
+        return families.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static unsafe string? GetFamilyNameMigrated(IDWriteFontFamily family)
+    {
+        family.GetFamilyNames(out var names);
+        if (names.GetCount() == 0) return null;
+
+        // Preserve pre-migration behavior: always read locale index 0,
+        // not the UI language. Matches EnumerateReference and the
+        // equivalence test baseline.
+        const uint localeIndex = 0;
+        names.GetStringLength(localeIndex, out uint len);
+
+        // GetString writes (len + 1) chars including the terminator.
+        Span<char> buf = stackalloc char[(int)len + 1];
+        fixed (char* p = buf)
+        {
+            names.GetString(localeIndex, new PWSTR(p), len + 1);
+        }
+        return new string(buf[..(int)len]);
+    }
 }
