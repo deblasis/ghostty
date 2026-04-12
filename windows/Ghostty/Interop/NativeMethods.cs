@@ -106,14 +106,12 @@ internal struct GhosttyInputKey
     public uint Keycode;
     public IntPtr Text;              // const char*
     public uint UnshiftedCodepoint;
-    // Zig bool is 1 byte; use byte to avoid SYSLIB1051 without
-    // assembly-wide DisableRuntimeMarshalling.
-    private byte _composing;
-    public bool Composing
-    {
-        readonly get => _composing != 0;
-        set => _composing = value ? (byte)1 : (byte)0;
-    }
+    // libghostty types this as C99 _Bool (1 byte). byte + IsComposing
+    // helper matches GhosttySharedTextureConfig.Enabled + IsEnabled
+    // under [assembly: DisableRuntimeMarshalling].
+    public byte Composing;
+
+    public bool IsComposing => Composing != 0;
 }
 
 // GhosttySharedTextureConfig and GhosttySharedTextureSnapshot live in
@@ -158,12 +156,8 @@ internal struct GhosttySurfaceConfig
     public IntPtr EnvVars;          // ghostty_env_var_s*
     public UIntPtr EnvVarCount;
     public IntPtr InitialInput;     // const char*
-    private byte _waitAfterCommand; // Zig bool → byte (see GhosttyInputKey)
-    public bool WaitAfterCommand
-    {
-        readonly get => _waitAfterCommand != 0;
-        set => _waitAfterCommand = value ? (byte)1 : (byte)0;
-    }
+    // C99 _Bool on the C side; byte on the managed side.
+    public byte WaitAfterCommand;
     public GhosttySurfaceContext Context;
 }
 
@@ -278,12 +272,8 @@ internal struct GhosttyInputTrigger
 internal struct GhosttyRuntimeConfig
 {
     public IntPtr Userdata;
-    private byte _supportsSelectionClipboard; // Zig bool → byte (see GhosttyInputKey)
-    public bool SupportsSelectionClipboard
-    {
-        readonly get => _supportsSelectionClipboard != 0;
-        set => _supportsSelectionClipboard = value ? (byte)1 : (byte)0;
-    }
+    // C99 _Bool on the C side; byte on the managed side.
+    public byte SupportsSelectionClipboard;
     public IntPtr WakeupCb;              // function pointers held as IntPtr
     public IntPtr ActionCb;              // so we control the lifetime of the
     public IntPtr ReadClipboardCb;       // managed delegates they point at.

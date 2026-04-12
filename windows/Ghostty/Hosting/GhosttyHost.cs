@@ -113,7 +113,7 @@ internal sealed class GhosttyHost : IDisposable
         var runtime = new GhosttyRuntimeConfig
         {
             Userdata = IntPtr.Zero,
-            SupportsSelectionClipboard = false,
+            SupportsSelectionClipboard = 0,
             WakeupCb = Marshal.GetFunctionPointerForDelegate(_wakeupCb),
             ActionCb = Marshal.GetFunctionPointerForDelegate(_actionCb),
             ReadClipboardCb = Marshal.GetFunctionPointerForDelegate(_readClipboardCb),
