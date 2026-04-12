@@ -13,12 +13,6 @@ namespace Ghostty;
 /// </summary>
 public static partial class Program
 {
-    private const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
-
-    [LibraryImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AttachConsole(uint dwProcessId);
-
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool FreeConsole();
@@ -27,29 +21,26 @@ public static partial class Program
     static int Main(string[] args)
     {
         // CLI actions are delegated to libghostty, matching the macOS
-        // architecture: ghostty_init parses argv, ghostty_cli_try_action
-        // runs the action (if any) and calls ExitProcess. If no action,
-        // it returns and we start the WinUI app.
+        // architecture: ghostty_init parses argv, ghostty_cli_run_action
+        // runs the action (if any). If no action, we start the WinUI app.
         //
-        // For CLI mode we need a console. WinExe processes don't inherit
-        // one, so AttachConsole gives us the parent's console (or the
-        // ConPTY pseudoconsole when launched from a terminal). This makes
-        // isTty() return true in the Zig code, enabling the interactive
-        // Vaxis TUI for +list-themes.
+        // The project uses Exe (console) subsystem so that CLI actions
+        // inherit the terminal's console handles natively. This lets
+        // Zig's isTty() return true and the Vaxis interactive TUI work.
+        // For GUI mode we detach from the console immediately.
         if (args.Length > 0 && args[0].StartsWith('+'))
         {
-            AttachConsole(ATTACH_PARENT_PROCESS);
             RegisterNativeResolver();
             InitGhostty(args);
-            // Run the CLI action if one was parsed from argv. Returns
-            // the exit code, or -1 if no action matched. We use
-            // CliRunAction (not CliTryAction) because the latter calls
-            // posix.exit/ExitProcess which triggers DLL_PROCESS_DETACH
-            // cleanup that crashes on Windows.
             var exitCode = NativeMethods.CliRunAction();
             if (exitCode >= 0)
                 Environment.Exit(exitCode);
         }
+
+        // Detach from the console before starting WinUI. Without this,
+        // a console window would stay visible when launched from Explorer
+        // or Start Menu, and cmd.exe would block until we exit.
+        FreeConsole();
 
         return StartGui();
     }
@@ -60,7 +51,7 @@ public static partial class Program
     /// prepended as argv[0] since .NET's args array omits it.
     ///
     /// The allocated argv is intentionally not freed: ghostty_init stores
-    /// the pointers in std.os.argv, and ghostty_cli_try_action reads them
+    /// the pointers in std.os.argv, and ghostty_cli_run_action reads them
     /// later. The OS reclaims everything on process exit.
     /// </summary>
     private static void InitGhostty(string[] args)
