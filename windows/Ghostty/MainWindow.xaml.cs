@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Ghostty.Commands;
 using Ghostty.Controls;
+using Ghostty.Core.Hosting;
 using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;
 using Ghostty.Hosting;
@@ -86,42 +87,72 @@ public sealed partial class MainWindow : Window
     // fires accelerator Invoked twice for a single key event when the
     // accelerator is registered on a parent of the focused element,
     // even with args.Handled = true and ScopeOwner explicitly set.
-    //
-    // Workaround: remember which action just fired and swallow any
-    // subsequent Invoked for the same action until the next KeyUp
-    // resets the flag. Framework dupes arrive inside the same physical
-    // keypress (no KeyUp between them) so they are filtered, while
-    // legitimate user repeats (KeyDown -> KeyUp -> KeyDown) come
-    // through unmodified. This replaces an earlier 150 ms wall-clock
-    // window that ate muscle-memory double-splits.
-    //
-    // Tracked in https://github.com/deblasis/ghostty/issues/165
     private PaneAction? _acceleratorFiredThisKeyDown;
 
-    // Win32 interop for the window class background brush. WinUI 3 hosts
-    // the XAML island inside a Win32 HWND whose WNDCLASS hbrBackground
-    // defaults to white. During an interactive drag-resize, DWM paints
-    // any uncovered window pixels with that brush BEFORE WinUI 3 gets a
-    // chance to extend its XAML content into the new area, producing a
-    // visible white flash at the leading edge of the drag. Replacing the
-    // class brush with a dark solid brush makes the flash invisible
-    // against any dark color scheme.
+    // Win32 interop for the window class background brush.
 
-    internal MainWindow(ConfigService configService)
+    // Captured from Content.XamlRoot at registration time (in the
+    // one-shot Content.Loaded handler). Read by App.OnAnyWindowClosedInternal
+    // on Window.Closed to remove the WindowsByRoot entry; reading
+    // Content.XamlRoot directly at Closed time can return null because
+    // WinUI 3 tears Content down before Closed fires.
+    internal XamlRoot? RegisteredRoot { get; private set; }
+
+    internal MainWindow(ConfigService configService, GhosttyHost bootstrapHost, HostLifetimeSupervisor supervisor)
+        : this(configService, bootstrapHost, supervisor, seedTab: null)
+    {
+    }
+
+    /// <summary>
+    /// Full ctor. <paramref name="seedTab"/>, when non-null, is
+    /// adopted as the sole initial tab (used by Move Tab to New
+    /// Window); when null, the normal "create a fresh tab via the
+    /// factory" path runs. <paramref name="bootstrapHost"/> is the
+    /// app-owning GhosttyHost built once in App.xaml.cs; this window
+    /// constructs its OWN per-window GhosttyHost from it using the
+    /// shared-app ctor.
+    /// </summary>
+    private MainWindow(
+        ConfigService configService,
+        GhosttyHost bootstrapHost,
+        HostLifetimeSupervisor supervisor,
+        TabModel? seedTab)
     {
         InitializeComponent();
 
         _configService = configService;
         _configEditor = new ConfigFileEditor(configService.ConfigFilePath);
 
-        _host = new GhosttyHost(DispatcherQueue, configService.ConfigHandle);
-        configService.SetApp(_host.App);
+        // Build this window's per-window GhosttyHost around the shared
+        // app. Each per-window host has its OWN per-window surface
+        // dictionary; routing to this host from the bootstrap host's
+        // libghostty callbacks happens via App._hostBySurface (populated
+        // by the per-window host's Register / Adopt paths).
+        _host = new GhosttyHost(
+            DispatcherQueue,
+            bootstrapHost.App.Handle,
+            supervisor);
+        // NOTE: configService.SetApp is already done by App.xaml.cs on
+        // the bootstrap host. We do NOT call it again here.
+
+        // Register with App.WindowsByRoot once the XamlRoot is live.
+        // We capture the XamlRoot into RegisteredRoot so the
+        // App.OnAnyWindowClosedInternal handler can remove the entry on
+        // Window.Closed even if Content.XamlRoot has gone null by then
+        // (which WinUI 3 does during window teardown).
+        Content.Loaded += OnContentLoadedOnce;
+        void OnContentLoadedOnce(object? s, RoutedEventArgs e)
+        {
+            Content.Loaded -= OnContentLoadedOnce;
+            RegisteredRoot = Content.XamlRoot;
+            if (RegisteredRoot != null)
+            {
+                App.WindowsByRoot[RegisteredRoot] = this;
+            }
+        }
 
         // Detect initial system theme and notify libghostty so conditional
         // config blocks (e.g. palette dark/light) take effect immediately.
-        // UISettings.Foreground is white in dark mode and black in light mode,
-        // so R > 128 reliably distinguishes the two without needing the UWP
-        // ApplicationTheme enum (which isn't available outside a UWP package).
         _systemUiSettings = new Windows.UI.ViewManagement.UISettings();
         var initialFg = _systemUiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
         var initialDark = initialFg.R > 128;
@@ -129,9 +160,7 @@ public sealed partial class MainWindow : Window
             _host.App,
             initialDark ? Ghostty.Interop.GhosttyColorScheme.Dark : Ghostty.Interop.GhosttyColorScheme.Light);
 
-        // Subscribe to runtime theme changes. ColorValuesChanged fires on a
-        // background thread, so dispatch back to the UI thread before calling
-        // into libghostty (which expects UI-thread callers for App-level ops).
+        // Subscribe to runtime theme changes.
         _systemUiSettings.ColorValuesChanged += (s, _) =>
         {
             var fg = s.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
@@ -147,50 +176,25 @@ public sealed partial class MainWindow : Window
         var brush = PInvoke.CreateSolidBrush(new COLORREF(0x000C0C0Cu));
         PInvoke.SetClassLongPtr(hwnd, GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND, brush);
 
-        // Mica is only available on Windows 11 22H1+ with a supported GPU.
-        // Our TargetPlatformMinVersion is still 19041 (Windows 10), so a
-        // bare `new MicaBackdrop()` would silently fail on older systems
-        // and leave the window with a transparent black backdrop. Probe
-        // MicaController.IsSupported() and skip the backdrop on unsupported
-        // hosts; XAML's default Window background takes over.
         if (MicaController.IsSupported())
             SystemBackdrop = new MicaBackdrop();
 
-        // Extend content into the title bar: remove the system-drawn
-        // title bar chrome and let TabHost's TabView strip render
-        // where the title bar used to be. Must be set before the
-        // TabHost is parented so the content area is sized without
-        // the default title bar row.
         ExtendsContentIntoTitleBar = true;
 
-        // Apply window-theme from config. The manager resolves the
-        // config value ("light"/"dark"/"system"/"auto") to a concrete
-        // dark/light choice and sets both ElementTheme on the XAML root
-        // and the DWM immersive dark mode attribute for the title bar
-        // caption buttons (which XAML cannot control when
-        // ExtendsContentIntoTitleBar is true).
         _themeManager = new WindowThemeManager(configService, DispatcherQueue);
         ApplyTheme();
         _themeManager.ThemeChanged += _ => ApplyTheme();
 
         _factory = new PaneHostFactory(_host);
-        _tabManager = new TabManager(() => _factory.Create());
+        _tabManager = new TabManager(
+            () => _factory.Create(),
+            seed: seedTab);
         _router = new PaneActionRouter(_tabManager);
         _uiSettings = UiSettings.Load();
 
         _horizontalTabHost = new TabHost(_tabManager, _router, _dialogs);
         _verticalTabHost = new VerticalTabHost(_tabManager, _router, _dialogs, _host);
 
-        // Place both tab hosts in their RootGrid slots. The
-        // horizontal host spans both columns in row 0 so its TabView
-        // strip can grow under the title bar area; the vertical host
-        // anchors at col 0 and spans both rows.
-        // Both tab hosts are inserted at the back of the Z-order so
-        // the XAML-declared VerticalTitleBar stays on top in the Row 0
-        // overlap region. Without this, the expanded vertical strip
-        // covers the layout-switch button in the title bar. The
-        // VerticalTitleBar's Background="Transparent" already enables
-        // hit-testing for its drag region and switch button.
         var hostElement = (FrameworkElement)_horizontalTabHost.HostElement;
         Grid.SetRow(hostElement, 0);
         Grid.SetColumn(hostElement, 0);
@@ -204,18 +208,12 @@ public sealed partial class MainWindow : Window
         Canvas.SetZIndex(_verticalTabHost, -1);
         RootGrid.Children.Add(_verticalTabHost);
 
-        // Parent every existing and future PaneHost into the shared
-        // container declared in MainWindow.xaml. This is the single
-        // owner for PaneHost lifetime in the visual tree — both tab
-        // hosts read from it without ever reparenting.
         foreach (var t in _tabManager.Tabs) AddPaneHost(t);
         SwapActivePane();
         _tabManager.TabAdded += (_, t) => { AddPaneHost(t); SwapActivePane(); };
         _tabManager.TabRemoved += (_, t) => RemovePaneHost(t);
         _tabManager.ActiveTabChanged += (_, _) => SwapActivePane();
 
-        // Tooltip chord label is sourced from KeyBindings.Default so
-        // the button description cannot drift from the accelerator.
         var chord = KeyBindings.Default.Label(PaneAction.ToggleTabLayout);
         ToolTipService.SetToolTip(
             VerticalSwitchButton,
@@ -259,8 +257,6 @@ public sealed partial class MainWindow : Window
         CommandPaletteUI.Bind(_commandPaletteVm);
         CommandPaletteUI.ApplySettings(_uiSettings.CommandPaletteBackground);
 
-        // When the ViewModel closes itself (e.g. after executing a command),
-        // sync the Popup and focus state.
         _commandPaletteVm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(CommandPaletteViewModel.IsOpen)) return;
@@ -273,10 +269,6 @@ public sealed partial class MainWindow : Window
                 CommandPalettePopup.IsOpen = false;
                 SetCommandPaletteOpenOnAllTerminals(false);
                 _frecencyStore?.Save();
-
-                // Don't focus a surface that may have just been disposed
-                // by the command we executed (e.g. close pane).
-                // Let the tab/pane system handle focus naturally.
             }
             finally
             {
@@ -284,7 +276,6 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        // When the Popup is light-dismissed (click outside), sync the ViewModel.
         CommandPalettePopup.Closed += (_, _) =>
         {
             if (_paletteCloseState != PaletteCloseState.Idle) return;
@@ -295,9 +286,6 @@ public sealed partial class MainWindow : Window
                 var wasOpen = _commandPaletteVm.IsOpen;
                 _commandPaletteVm.Close();
                 SetCommandPaletteOpenOnAllTerminals(false);
-                // Only restore previous focus for light-dismiss (Escape, click outside).
-                // For command execution, let the command's own focus handling win
-                // (e.g., PaneHost focuses the new split pane).
                 if (wasOpen)
                     _previousFocusSurface?.Focus(FocusState.Programmatic);
             }
@@ -327,10 +315,6 @@ public sealed partial class MainWindow : Window
             if (string.IsNullOrEmpty(path)) return;
             try
             {
-                // The config file has no extension so UseShellExecute
-                // may fail to find an associated program. Try shell
-                // execute first (respects user file associations), then
-                // fall back to notepad which can always open text files.
                 try
                 {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -352,7 +336,6 @@ public sealed partial class MainWindow : Window
 
         _host.ReloadConfigRequested += (_, _) => configService.Reload();
 
-        // Ctrl+Shift+Scroll wheel opacity adjustment from any terminal surface.
         _host.OpacityAdjustRequested += (_, direction) => AdjustOpacity(direction);
 
         _tabManager.LastTabClosed += (_, _) => Close();
@@ -360,11 +343,116 @@ public sealed partial class MainWindow : Window
         Closed += OnClosedAsync;
     }
 
+    /// <summary>
+    /// Build a <see cref="MainWindow"/> that adopts an existing
+    /// <see cref="TabModel"/> as its sole initial tab, WITHOUT
+    /// activating. Caller is responsible for positioning the window
+    /// (via <see cref="Microsoft.UI.Windowing.AppWindow.MoveAndResize"/>
+    /// or the like) and then calling <see cref="Window.Activate"/>.
+    ///
+    /// Used today by <see cref="DetachTabToNewWindow"/> for cursor-
+    /// anchored placement. PR 201 Snap Layouts will call this same
+    /// factory to install a snap rect before first activation so there
+    /// is no visible placement flicker.
+    /// </summary>
+    internal static MainWindow CreateForAdoption(
+        ConfigService configService,
+        GhosttyHost bootstrapHost,
+        HostLifetimeSupervisor supervisor,
+        TabModel adoptedTab)
+    {
+        return new MainWindow(configService, bootstrapHost, supervisor, seedTab: adoptedTab);
+    }
+
+    /// <summary>
+    /// Move <paramref name="tab"/> out of this window into a brand
+    /// new <see cref="MainWindow"/>. The new window is positioned
+    /// near the current mouse cursor on the monitor the cursor is
+    /// currently on. Disabled (via the menu <c>IsEnabled</c> guard)
+    /// when this window has only one tab, because moving the sole
+    /// tab into a new window would be a no-op.
+    /// </summary>
+    internal void DetachTabToNewWindow(TabModel tab)
+    {
+        if (_tabManager.Tabs.Count <= 1)
+            throw new InvalidOperationException(
+                "DetachTabToNewWindow: guarded menu fired on single-tab window.");
+
+        // Source-side: detach the model. The manager's TabRemoved
+        // subscribers already drain visual state (RemovePaneHost in
+        // this MainWindow, RemoveItem in each tab host).
+        var detached = _tabManager.DetachTab(tab);
+
+        var bootstrap = App.BootstrapHost
+            ?? throw new InvalidOperationException(
+                "DetachTabToNewWindow: no bootstrap host; App.OnLaunched did not run.");
+        var supervisor = App.LifetimeSupervisor
+            ?? throw new InvalidOperationException(
+                "DetachTabToNewWindow: no lifetime supervisor; App.OnLaunched did not run.");
+
+        // Rehost the pane tree's terminals to a fresh per-window host
+        // built inside the new window. RehostTo is what actually moves
+        // the surface entries out of this window's _surfaces into the
+        // new window's _surfaces AND rewrites App._hostBySurface.
+        var newWindow = MainWindow.CreateForAdoption(_configService, bootstrap, supervisor, detached);
+        var newHost = newWindow._host;
+        ((Panes.PaneHost)detached.PaneHost).RehostTo(newHost);
+
+        // Cursor-anchored placement. Size = this window's current size
+        // so there is no jarring resize.
+        var placement = ComputeCursorAnchoredPlacement(newWindow);
+        var rect = new Windows.Graphics.RectInt32(
+            placement.X, placement.Y, placement.Width, placement.Height);
+        newWindow.AppWindow.MoveAndResize(rect);
+
+        // Subscribe the new window to the process-wide last-window-exit
+        // handler. WindowsByRoot insertion happens inside the new
+        // window's own Content.Loaded handler.
+        newWindow.Closed += ((App)Application.Current).OnAnyWindowClosedInternal;
+
+        newWindow.Activate();
+    }
+
+    /// <summary>
+    /// Compute the cursor-anchored target rect for a newly built
+    /// <see cref="MainWindow"/>. Queries <c>GetCursorPos</c> (via
+    /// CsWin32), resolves the monitor the cursor is on via
+    /// <see cref="Microsoft.UI.Windowing.DisplayArea.GetFromPoint"/>,
+    /// and delegates the clamping math to
+    /// <see cref="Ghostty.Core.Windows.CursorWindowPlacement.Compute"/>.
+    ///
+    /// DPI contract: <c>GetCursorPos</c> returns physical pixel
+    /// coordinates in virtual desktop space. <c>DisplayArea.GetFromPoint</c>
+    /// consumes physical pixels. The two line up without scaling.
+    /// </summary>
+    private Ghostty.Core.Windows.PlacementRect ComputeCursorAnchoredPlacement(MainWindow target)
+    {
+        PInvoke.GetCursorPos(out var pt);
+
+        var cursorPoint = new Windows.Graphics.PointInt32(pt.X, pt.Y);
+        var display = Microsoft.UI.Windowing.DisplayArea.GetFromPoint(
+            cursorPoint,
+            Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
+
+        var work = display?.WorkArea
+            ?? new Windows.Graphics.RectInt32(0, 0, 1920, 1080);
+
+        // Inherit the source window's current size.
+        var size = AppWindow.Size;
+
+        return Ghostty.Core.Windows.CursorWindowPlacement.Compute(
+            cursorX: pt.X,
+            cursorY: pt.Y,
+            windowWidth: size.Width,
+            windowHeight: size.Height,
+            workArea: new Ghostty.Core.Windows.WorkAreaRect(
+                work.X, work.Y, work.Width, work.Height));
+    }
+
     private async void OnClosedAsync(object sender, WindowEventArgs args)
     {
         // Let any in-flight ContentDialog complete before tearing
-        // down the libghostty host. files-community/Files #17363
-        // documents the COMException that fires otherwise.
+        // down the libghostty host.
         try
         {
             if (_dialogs.PendingCount > 0)
@@ -415,12 +503,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Toggle between horizontal and vertical tab layouts at runtime.
-    /// Triggered by Ctrl+Shift+, (comma), the title-bar icon button, and
-    /// the strip context menu. Persists the choice via
-    /// <see cref="UiSettings"/> so it survives the next launch.
-    /// </summary>
     internal void ToggleTabLayout()
     {
         if (_layout.IsSwitching) return;
@@ -429,16 +511,6 @@ public sealed partial class MainWindow : Window
         _uiSettings.Save();
         _tabHost = toVertical ? _verticalTabHost : _horizontalTabHost;
 
-        // SetTitleBar requires the target element to be visible and
-        // in the visual tree. Calling it mid-animation hits
-        // COMException 0x800F1000 because the incoming host is still
-        // at opacity 0 / translated off-screen. Defer to the
-        // Completed callback where Snap() has finalized visibility.
-        //
-        // The crossfade changes tab-host visibility, which causes
-        // WinUI 3's focus manager to move focus away from the
-        // terminal pane. Restore focus to the active terminal after
-        // the animation settles.
         _layout.Animate(toVertical, onCompleted: () =>
         {
             _titleBar.ApplyForCurrentMode();
@@ -448,40 +520,8 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    /// <summary>
-    /// Install one <see cref="KeyboardAccelerator"/> per binding from
-    /// <see cref="KeyBindings.Default"/>. Each accelerator dispatches
-    /// through <see cref="PaneActionRouter.Invoke"/>, so adding a new
-    /// pane chord is one line in <see cref="KeyBindings.Default"/> and
-    /// one case in <see cref="PaneActionRouter.Invoke"/>.
-    ///
-    /// Why KeyboardAccelerators rather than KeyDown / PreviewKeyDown:
-    /// WinUI 3 routed key events ALL bubble (despite the "Preview"
-    /// naming inherited from WPF, PreviewKeyDown does not tunnel). The
-    /// focused TerminalControl receives KeyDown first, and would
-    /// forward the chord to libghostty if we did nothing. Accelerators
-    /// fire AFTER routed key events but BEFORE the framework gives up,
-    /// AND only when the focused element has not marked the event
-    /// handled - so TerminalControl actively short-circuits known
-    /// chords (it asks the same KeyBindings registry) to let the
-    /// accelerator fire.
-    ///
-    /// Router events are instance-scoped (no static subscriptions),
-    /// so MainWindow can be closed and garbage-collected cleanly once
-    /// the last tab closes.
-    /// </summary>
     private void InstallPaneAccelerators()
     {
-        // Accelerators live on RootGrid (the common ancestor of both
-        // tab hosts and PaneHostContainer) so the focused
-        // TerminalControl -- which is a child of PaneHostContainer,
-        // NOT a descendant of any tab host -- is within scope.
-        // ScopeOwner is intentionally left unset. Double-dispatch is
-        // prevented by the _acceleratorFiredThisKeyDown guard below,
-        // not by ScopeOwner (which would over-constrain the scope
-        // and prevent the accelerator from firing at all when focus
-        // is inside PaneHostContainer).
-        // See https://github.com/deblasis/ghostty/issues/165.
         foreach (var binding in KeyBindings.Default.All)
         {
             var captured = binding;
@@ -503,41 +543,24 @@ public sealed partial class MainWindow : Window
         RootGrid.KeyUp += (_, _) => _acceleratorFiredThisKeyDown = null;
         RootGrid.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
 
-        // Listen for keyboard-driven full-tab close. Route through
-        // TabHost.RequestCloseTabAsync so the confirmation dialog
-        // is the same code path as the per-tab X button and the
-        // context-menu Close item — single source of truth for
-        // close confirmation lives in TabHost, which has XamlRoot.
         _router.TabCloseRequestedFromKeyboard += async (_, _) =>
         {
             await _tabHost.RequestCloseTabAsync(_tabManager.ActiveTab);
         };
 
-        // Vertical-tabs pinned toggle via Ctrl+Shift+Space. No-op
-        // when the layout is horizontal (TabHost) — the chord is
-        // registered globally but only VerticalTabHost responds.
         _router.ToggleVerticalTabsPinnedRequested += (_, _) =>
         {
             if (_tabHost is VerticalTabHost vth)
                 vth.TogglePinnedFromKeyboard();
         };
 
-        // Runtime tab-layout switch via Ctrl+Shift+, (and the strip
-        // context menu's "Switch to vertical/horizontal tabs" item,
-        // which share the same event path through PaneActionRouter).
         _router.ToggleTabLayoutRequested += (_, _) => ToggleTabLayout();
 
         _router.CommandPaletteToggleRequested += (_, _) => ToggleCommandPalette();
 
-        // Fullscreen toggle via F11.
         _router.ToggleFullscreenRequested += (_, _) => ToggleFullscreen();
     }
 
-    /// <summary>
-    /// Apply the resolved window theme to the XAML visual tree and the
-    /// DWM non-client area. Called once at startup and again whenever
-    /// the <see cref="WindowThemeManager"/> detects a change.
-    /// </summary>
     private void ApplyTheme()
     {
         if (Content is FrameworkElement root)
@@ -545,12 +568,6 @@ public sealed partial class MainWindow : Window
         _themeManager.ApplyToWindow(this);
     }
 
-    /// <summary>
-    /// Toggle between fullscreen and default window presenter. Uses
-    /// <see cref="Microsoft.UI.Windowing.AppWindowPresenterKind"/> so
-    /// the window chrome (title bar, borders) is hidden in fullscreen
-    /// and restored on exit.
-    /// </summary>
     private void ToggleFullscreen()
     {
         var kind = AppWindow.Presenter.Kind;
@@ -560,12 +577,6 @@ public sealed partial class MainWindow : Window
                 : Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen);
     }
 
-    /// <summary>
-    /// Adjust background opacity by a step. Direction: +1 = increase,
-    /// -1 = decrease, 0 = reset to 1.0. Writes the new value to the
-    /// config file and triggers a reload so all surfaces pick it up.
-    /// Step size matches the Settings UI slider (0.05).
-    /// </summary>
     private void AdjustOpacity(int direction)
     {
         const double step = 0.05;
@@ -576,7 +587,6 @@ public sealed partial class MainWindow : Window
             _ => Math.Clamp(current + direction * step, 0.0, 1.0),
         };
 
-        // Skip the write+reload round-trip when nothing changed.
         if (Math.Abs(next - current) < 0.001) return;
 
         _configService.SuppressWatcher(true);
@@ -615,8 +625,6 @@ public sealed partial class MainWindow : Window
             CommandPalettePopup.IsOpen = true;
             SetCommandPaletteOpenOnAllTerminals(true);
 
-            // WinUI Popups don't auto-focus their content. Dispatch the
-            // focus call so it runs after the Popup finishes layout.
             DispatcherQueue.TryEnqueue(() => CommandPaletteUI.FocusSearchBox());
         }
     }
@@ -636,9 +644,6 @@ public sealed partial class MainWindow : Window
         _frecencyStore = FrecencyStore.Load();
         var frecency = _frecencyStore;
 
-        // Defer command execution to the next dispatcher tick so the
-        // palette closes first, avoiding visual tree contention between
-        // Popup teardown and PaneHost Rebuild (e.g. close-pane).
         var builtIn = new BuiltInCommandSource(
             paneActionFactory: action => _ => DispatcherQueue.TryEnqueue(() => _router.Invoke(action)),
             bindingActionFactory: actionKey => _ => DispatcherQueue.TryEnqueue(() => ExecuteBindingAction(actionKey)),
@@ -652,7 +657,6 @@ public sealed partial class MainWindow : Window
 
         var sources = new List<ICommandSource> { builtIn, jump, config };
 
-        // Build the action autocompleter with a minimal set of action schemas.
         var schemas = new Dictionary<string, ActionSchema>
         {
             ["reset"] = new() { Name = "reset", Description = "Reset the terminal", RequiresParameter = false },
