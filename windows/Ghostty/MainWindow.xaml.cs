@@ -681,6 +681,10 @@ public sealed partial class MainWindow : Window
             _gradientVisual.SetOpacity((float)_configService.BackgroundOpacity);
         else
             _gradientVisual.SetOpacity(1f);
+
+        _gradientVisual.ApplyAnimation(
+            _configService.GradientAnimation,
+            _configService.GradientSpeed);
     }
 
     private void SetTransparentChrome(IntPtr hwnd)

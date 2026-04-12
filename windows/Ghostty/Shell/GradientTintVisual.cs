@@ -18,6 +18,7 @@ internal sealed class GradientTintVisual : IDisposable
     private readonly Compositor _compositor;
     private readonly SpriteVisual _rootVisual;
     private readonly ContainerVisual _hostVisual;
+    private readonly List<CompositionAnimation> _animations = [];
 
     internal GradientTintVisual(UIElement host, IReadOnlyList<GradientPoint> points)
     {
@@ -102,6 +103,152 @@ internal sealed class GradientTintVisual : IDisposable
     internal void SetOpacity(float opacity)
     {
         _rootVisual.Opacity = opacity;
+    }
+
+    /// <summary>
+    /// Apply animation to the gradient based on the configured mode.
+    /// </summary>
+    internal void ApplyAnimation(string mode, float speed)
+    {
+        StopAnimations();
+
+        if (mode is "static" or "") return;
+        if (_rootVisual.Children.Count == 0) return;
+
+        var duration = TimeSpan.FromSeconds(8.0 / Math.Max(speed, 0.01f));
+
+        if (mode is "drift" or "drift-color-cycle")
+            ApplyDrift(duration);
+
+        if (mode is "color-cycle" or "drift-color-cycle")
+            ApplyColorCycle(duration);
+    }
+
+    private void ApplyDrift(TimeSpan duration)
+    {
+        var rng = new Random(42);
+        var index = 0;
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+
+            var center = brush.EllipseCenter;
+            // Drift radius: 5% of window in each direction.
+            var dx = 0.05f * (float)(rng.NextDouble() * 2 - 1);
+            var dy = 0.05f * (float)(rng.NextDouble() * 2 - 1);
+            // Phase offset per point so they don't all move in sync.
+            var phase = (float)index / _rootVisual.Children.Count;
+
+            var anim = _compositor.CreateVector2KeyFrameAnimation();
+            anim.InsertKeyFrame(0f, center);
+            anim.InsertKeyFrame(0.25f + phase * 0.1f,
+                new Vector2(center.X + dx, center.Y + dy));
+            anim.InsertKeyFrame(0.5f, center);
+            anim.InsertKeyFrame(0.75f - phase * 0.1f,
+                new Vector2(center.X - dx, center.Y - dy));
+            anim.InsertKeyFrame(1f, center);
+            anim.Duration = duration;
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            brush.StartAnimation("EllipseCenter", anim);
+            _animations.Add(anim);
+            index++;
+        }
+    }
+
+    private void ApplyColorCycle(TimeSpan duration)
+    {
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+            if (brush.ColorStops.Count < 1) continue;
+
+            var stop = brush.ColorStops[0];
+            var baseColor = stop.Color;
+
+            // Rotate hue by cycling through HSL space.
+            // We approximate with 6 keyframes at 60-degree hue intervals.
+            var anim = _compositor.CreateColorKeyFrameAnimation();
+            for (int i = 0; i <= 6; i++)
+            {
+                var hueShift = i * 60f;
+                var shifted = ShiftHue(baseColor, hueShift);
+                anim.InsertKeyFrame(i / 6f, shifted);
+            }
+            anim.Duration = duration;
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            stop.StartAnimation("Color", anim);
+            _animations.Add(anim);
+        }
+    }
+
+    private void StopAnimations()
+    {
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+            brush.StopAnimation("EllipseCenter");
+            foreach (var stop in brush.ColorStops)
+                stop.StopAnimation("Color");
+        }
+        _animations.Clear();
+    }
+
+    /// <summary>
+    /// Shift the hue of an RGB color by the given degrees.
+    /// </summary>
+    private static Windows.UI.Color ShiftHue(Windows.UI.Color color, float degrees)
+    {
+        float r = color.R / 255f;
+        float g = color.G / 255f;
+        float b = color.B / 255f;
+
+        float max = Math.Max(r, Math.Max(g, b));
+        float min = Math.Min(r, Math.Min(g, b));
+        float l = (max + min) / 2f;
+
+        if (max == min)
+            return color;
+
+        float d = max - min;
+        float s = l > 0.5f ? d / (2f - max - min) : d / (max + min);
+        float h;
+
+        if (max == r)
+            h = ((g - b) / d + (g < b ? 6f : 0f)) * 60f;
+        else if (max == g)
+            h = ((b - r) / d + 2f) * 60f;
+        else
+            h = ((r - g) / d + 4f) * 60f;
+
+        h = (h + degrees) % 360f;
+        if (h < 0) h += 360f;
+
+        return HslToColor(color.A, h, s, l);
+    }
+
+    private static Windows.UI.Color HslToColor(byte a, float h, float s, float l)
+    {
+        float c = (1f - Math.Abs(2f * l - 1f)) * s;
+        float x = c * (1f - Math.Abs(h / 60f % 2f - 1f));
+        float m = l - c / 2f;
+
+        float r, g, b;
+        if (h < 60) { r = c; g = x; b = 0; }
+        else if (h < 120) { r = x; g = c; b = 0; }
+        else if (h < 180) { r = 0; g = c; b = x; }
+        else if (h < 240) { r = 0; g = x; b = c; }
+        else if (h < 300) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+
+        return Windows.UI.Color.FromArgb(a,
+            (byte)((r + m) * 255f),
+            (byte)((g + m) * 255f),
+            (byte)((b + m) * 255f));
     }
 
     public void Dispose()
