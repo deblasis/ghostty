@@ -319,10 +319,14 @@ internal static partial class NativeMethods
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     internal static partial GhosttyConfig ConfigClone(GhosttyConfig config);
 
+    // Raw P/Invoke returns byte (C99 _Bool). The internal wrapper below
+    // converts to bool so call sites in ConfigService stay idiomatic.
     [LibraryImport(Dll, EntryPoint = "ghostty_config_get")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static partial bool ConfigGet(GhosttyConfig config, IntPtr output, IntPtr key, UIntPtr keyLen);
+    private static partial byte ConfigGetNative(GhosttyConfig config, IntPtr output, IntPtr key, UIntPtr keyLen);
+
+    internal static bool ConfigGet(GhosttyConfig config, IntPtr output, IntPtr key, UIntPtr keyLen)
+        => ConfigGetNative(config, output, key, keyLen) != 0;
 
     [LibraryImport(Dll, EntryPoint = "ghostty_config_trigger")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -418,23 +422,21 @@ internal static partial class NativeMethods
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_shared_texture")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static partial bool SurfaceSharedTexture(
+    private static partial byte SurfaceSharedTextureNative(
         GhosttySurface surface,
         out GhosttySharedTextureSnapshot snapshot);
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ghostty_surface_shared_texture")]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static extern bool SurfaceSharedTexture(
-        GhosttySurface surface,
-        out GhosttySharedTextureSnapshot snapshot);
+    internal static bool SurfaceSharedTexture(GhosttySurface surface, out GhosttySharedTextureSnapshot snapshot)
+        => SurfaceSharedTextureNative(surface, out snapshot) != 0;
 
     // ---- surface input -------------------------------------------------
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_key")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static partial bool SurfaceKey(GhosttySurface surface, GhosttyInputKey key);
+    private static partial byte SurfaceKeyNative(GhosttySurface surface, GhosttyInputKey key);
+
+    internal static bool SurfaceKey(GhosttySurface surface, GhosttyInputKey key)
+        => SurfaceKeyNative(surface, key) != 0;
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_text")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -446,12 +448,18 @@ internal static partial class NativeMethods
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_mouse_button")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static partial bool SurfaceMouseButton(
+    private static partial byte SurfaceMouseButtonNative(
         GhosttySurface surface,
         GhosttyMouseState state,
         GhosttyMouseButton button,
         GhosttyMods mods);
+
+    internal static bool SurfaceMouseButton(
+        GhosttySurface surface,
+        GhosttyMouseState state,
+        GhosttyMouseButton button,
+        GhosttyMods mods)
+        => SurfaceMouseButtonNative(surface, state, button, mods) != 0;
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_mouse_pos")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -473,11 +481,16 @@ internal static partial class NativeMethods
     // side — libghostty takes (ptr, len).
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_binding_action")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static unsafe partial bool SurfaceBindingAction(
+    private static unsafe partial byte SurfaceBindingActionNative(
         GhosttySurface surface,
         byte* action,
         UIntPtr actionLen);
+
+    internal static unsafe bool SurfaceBindingAction(
+        GhosttySurface surface,
+        byte* action,
+        UIntPtr actionLen)
+        => SurfaceBindingActionNative(surface, action, actionLen) != 0;
 
     // ---- surface misc --------------------------------------------------
 
@@ -487,8 +500,10 @@ internal static partial class NativeMethods
 
     [LibraryImport(Dll, EntryPoint = "ghostty_surface_process_exited")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    [return: MarshalAs(UnmanagedType.I1)]
-    internal static partial bool SurfaceProcessExited(GhosttySurface surface);
+    private static partial byte SurfaceProcessExitedNative(GhosttySurface surface);
+
+    internal static bool SurfaceProcessExited(GhosttySurface surface)
+        => SurfaceProcessExitedNative(surface) != 0;
 
     // ghostty_surface_complete_clipboard_request(surface, text, state, confirmed)
     // Called once per read/confirm request to return clipboard text to libghostty
