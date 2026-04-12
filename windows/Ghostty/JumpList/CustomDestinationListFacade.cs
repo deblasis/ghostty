@@ -117,7 +117,7 @@ internal sealed class CustomDestinationListFacade : ICustomDestinationListFacade
     /// </summary>
     private static IObjectArray QueryAsObjectArray(IObjectCollection collection)
     {
-        var unknown = ComCreate.GetIUnknown(collection);
+        var unknown = ComCreate.GetComInterfaceForObject(collection);
         try
         {
             return (IObjectArray)ComCreate.Wrap(unknown);

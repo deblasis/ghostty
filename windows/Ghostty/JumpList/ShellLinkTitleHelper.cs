@@ -29,15 +29,15 @@ internal static class ShellLinkTitleHelper
         // strategy. Reach a raw COM interface pointer and wrap it
         // for the IPropertyStore facet. Marshal.GetIUnknownForObject
         // is runtime-only and SYSLIB1099 against [GeneratedComInterface]
-        // types, which is why ComCreate.GetIUnknown exists.
+        // types, which is why ComCreate.GetComInterfaceForObject exists.
         //
-        // Ownership: ComCreate.GetIUnknown returns an
+        // Ownership: ComCreate.GetComInterfaceForObject returns an
         // AddRef'd pointer that this method owns. The finally block
         // Releases it after the Wrap + SetValue + Commit sequence.
         // ComCreate.Wrap internally AddRefs during the RCW creation,
         // so we still MUST release this raw pointer here (Wrap does
         // not take ownership - see ComCreate.cs doc comment).
-        var unknown = ComCreate.GetIUnknown(link);
+        var unknown = ComCreate.GetComInterfaceForObject(link);
         try
         {
             var store = (IPropertyStore)ComCreate.Wrap(unknown);
@@ -66,9 +66,9 @@ internal static class ShellLinkTitleHelper
         }
         finally
         {
-            // Release the raw pointer we own from GetIUnknown. Wrap
-            // AddRef'd internally so the RCW's lifetime is unaffected
-            // by this Release.
+            // Release the raw pointer we own from
+            // GetComInterfaceForObject. Wrap AddRef'd internally so
+            // the RCW's lifetime is unaffected by this Release.
             Marshal.Release(unknown);
         }
     }
