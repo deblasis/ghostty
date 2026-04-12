@@ -51,14 +51,6 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!--
-      Allow [GeneratedComInterface] types to interop with the few
-      remaining [ComImport] surfaces (e.g. WinRT projections, the
-      ISwapChainPanelNative shim) during the transition to fully
-      AOT-safe COM. The interop shim is on by default in .NET 9 but
-      we set it explicitly so the contract is documented in the csproj.
-    -->
-    <EnableGeneratedComInterfaceComImportInterop>true</EnableGeneratedComInterfaceComImportInterop>
-    <!--
       Channel selects the app icon variant at build time. Debug builds
       default to Nightly so local dev is always visually distinguishable
       from a stable build; Release defaults to Stable. Override with
