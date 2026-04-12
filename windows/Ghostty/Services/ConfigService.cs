@@ -45,6 +45,8 @@ internal sealed class ConfigService : IConfigService
     public IReadOnlyList<GradientPoint> GradientPoints { get; private set; } = [];
     public string GradientAnimation { get; private set; } = "static";
     public float GradientSpeed { get; private set; } = 1.0f;
+    public string GradientBlend { get; private set; } = "overlay";
+    public float GradientOpacity { get; private set; } = 0.05f;
     public string WindowTheme { get; private set; } = "auto";
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
     public int DiagnosticsCount { get; private set; }
@@ -178,6 +180,8 @@ internal sealed class ConfigService : IConfigService
         GradientPoints = points;
         GradientAnimation = GetFileValue("background-gradient-animation", "static");
         GradientSpeed = ParseFloat(GetFileValue("background-gradient-speed", "")) ?? 1.0f;
+        GradientBlend = GetFileValue("background-gradient-blend", "overlay");
+        GradientOpacity = ParseFloat(GetFileValue("background-gradient-opacity", "")) ?? 0.05f;
         WindowTheme = GetString("window-theme", "auto");
         BackgroundColor = GetColor("background", 0x001E1E2E);
     }

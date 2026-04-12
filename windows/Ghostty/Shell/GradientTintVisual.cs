@@ -10,8 +10,10 @@ namespace Ghostty.Shell;
 
 /// <summary>
 /// Full-window composition visual that renders a multi-point radial
-/// gradient tint. Inserted between the SystemBackdrop and RootGrid
-/// so the gradient is visible through transparent UI content.
+/// gradient tint. In underlay mode, sits between the SystemBackdrop
+/// and RootGrid (visible through transparent terminal areas). In
+/// overlay mode, sits on top of all content as a semi-transparent
+/// tint layer (always visible regardless of terminal opacity).
 /// </summary>
 internal sealed class GradientTintVisual : IDisposable
 {
@@ -19,9 +21,22 @@ internal sealed class GradientTintVisual : IDisposable
     private readonly SpriteVisual _rootVisual;
     private readonly ContainerVisual _hostVisual;
     private readonly List<CompositionAnimation> _animations = [];
+    private readonly bool _isOverlay;
+    // Overlay host element added to the XAML tree on top of content.
+    private readonly Microsoft.UI.Xaml.Controls.Canvas? _overlayCanvas;
 
-    internal GradientTintVisual(UIElement host, IReadOnlyList<GradientPoint> points)
+    /// <param name="host">The root Grid element to attach to.</param>
+    /// <param name="points">Gradient color points.</param>
+    /// <param name="overlay">True for overlay (on top), false for underlay (behind).</param>
+    /// <param name="overlayOpacity">Opacity for overlay mode (0.0-1.0).</param>
+    internal GradientTintVisual(
+        Microsoft.UI.Xaml.Controls.Grid host,
+        IReadOnlyList<GradientPoint> points,
+        bool overlay = false,
+        float overlayOpacity = 0.3f)
     {
+        _isOverlay = overlay;
+
         var hostVisual = ElementCompositionPreview.GetElementVisual(host);
         _compositor = hostVisual.Compositor;
         _hostVisual = hostVisual as ContainerVisual
@@ -32,9 +47,29 @@ internal sealed class GradientTintVisual : IDisposable
 
         RebuildBrush(points);
 
-        // Insert behind all XAML content so the gradient sits
-        // between the SystemBackdrop and the RootGrid.
-        ElementCompositionPreview.SetElementChildVisual(host, _rootVisual);
+        if (overlay)
+        {
+            // Create a transparent Canvas on top of all XAML content,
+            // then attach our visual to it so the gradient overlays
+            // everything including the terminal.
+            _overlayCanvas = new Microsoft.UI.Xaml.Controls.Canvas
+            {
+                IsHitTestVisible = false,
+                Opacity = overlayOpacity,
+            };
+            // Span the entire grid.
+            Microsoft.UI.Xaml.Controls.Grid.SetRowSpan(_overlayCanvas, 10);
+            Microsoft.UI.Xaml.Controls.Grid.SetColumnSpan(_overlayCanvas, 10);
+            host.Children.Add(_overlayCanvas);
+            ElementCompositionPreview.SetElementChildVisual(
+                _overlayCanvas, _rootVisual);
+        }
+        else
+        {
+            // Insert behind all XAML content so the gradient sits
+            // between the SystemBackdrop and the RootGrid.
+            ElementCompositionPreview.SetElementChildVisual(host, _rootVisual);
+        }
     }
 
     /// <summary>
@@ -99,14 +134,32 @@ internal sealed class GradientTintVisual : IDisposable
 
     /// <summary>
     /// Update the visual opacity to track background-opacity.
+    /// For overlay mode, this scales the overlay canvas opacity.
     /// </summary>
     internal void SetOpacity(float opacity)
     {
-        _rootVisual.Opacity = opacity;
+        if (_isOverlay && _overlayCanvas is not null)
+            _overlayCanvas.Opacity = opacity;
+        else
+            _rootVisual.Opacity = opacity;
     }
 
     /// <summary>
-    /// Apply animation to the gradient based on the configured mode.
+    /// Set the overlay strength (only applies in overlay mode).
+    /// </summary>
+    internal void SetOverlayOpacity(float opacity)
+    {
+        if (_overlayCanvas is not null)
+            _overlayCanvas.Opacity = opacity;
+    }
+
+    /// <summary>
+    /// Apply composable animation effects. The mode string is a
+    /// comma-separated list of effects:
+    ///   Position (pick one): drift, orbit, wander, bounce
+    ///   Modifiers (stackable): breathe, color-cycle
+    /// Example: "orbit,breathe,color-cycle"
+    /// Legacy single values like "drift-color-cycle" still work.
     /// </summary>
     internal void ApplyAnimation(string mode, float speed)
     {
@@ -117,10 +170,32 @@ internal sealed class GradientTintVisual : IDisposable
 
         var duration = TimeSpan.FromSeconds(8.0 / Math.Max(speed, 0.01f));
 
-        if (mode is "drift" or "drift-color-cycle")
+        // Parse comma-separated effects, also support legacy combined values.
+        var effects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in mode.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            effects.Add(part);
+
+        // Expand legacy combined values.
+        if (effects.Remove("drift-color-cycle"))
+        {
+            effects.Add("drift");
+            effects.Add("color-cycle");
+        }
+
+        // Position effects (mutually exclusive, last wins).
+        if (effects.Contains("bounce"))
+            ApplyBounce(duration);
+        else if (effects.Contains("wander"))
+            ApplyWander(duration);
+        else if (effects.Contains("orbit"))
+            ApplyOrbit(duration);
+        else if (effects.Contains("drift"))
             ApplyDrift(duration);
 
-        if (mode is "color-cycle" or "drift-color-cycle")
+        // Modifier effects (stackable).
+        if (effects.Contains("breathe"))
+            ApplyBreathe(duration);
+        if (effects.Contains("color-cycle"))
             ApplyColorCycle(duration);
     }
 
@@ -134,10 +209,8 @@ internal sealed class GradientTintVisual : IDisposable
             if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
 
             var center = brush.EllipseCenter;
-            // Drift radius: 5% of window in each direction.
             var dx = 0.05f * (float)(rng.NextDouble() * 2 - 1);
             var dy = 0.05f * (float)(rng.NextDouble() * 2 - 1);
-            // Phase offset per point so they don't all move in sync.
             var phase = (float)index / _rootVisual.Children.Count;
 
             var anim = _compositor.CreateVector2KeyFrameAnimation();
@@ -157,6 +230,141 @@ internal sealed class GradientTintVisual : IDisposable
         }
     }
 
+    private void ApplyOrbit(TimeSpan duration)
+    {
+        var index = 0;
+        var count = _rootVisual.Children.Count;
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+
+            var center = brush.EllipseCenter;
+            // Orbit radius: 15% of window, each point at a different
+            // phase around the circle for organic motion.
+            var orbitR = 0.15f;
+            var phaseOffset = (float)index / count * MathF.PI * 2f;
+
+            var anim = _compositor.CreateVector2KeyFrameAnimation();
+            // 12 keyframes around a circle for smooth motion.
+            for (int i = 0; i <= 12; i++)
+            {
+                var t = (float)i / 12f;
+                var angle = t * MathF.PI * 2f + phaseOffset;
+                var pos = new Vector2(
+                    center.X + MathF.Cos(angle) * orbitR,
+                    center.Y + MathF.Sin(angle) * orbitR);
+                anim.InsertKeyFrame(t, pos);
+            }
+            anim.Duration = duration;
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            brush.StartAnimation("EllipseCenter", anim);
+            _animations.Add(anim);
+            index++;
+        }
+    }
+
+    private void ApplyWander(TimeSpan duration)
+    {
+        var rng = new Random(42);
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+
+            var center = brush.EllipseCenter;
+
+            // Generate 8 random waypoints clamped to [0,1], then
+            // return to start for seamless looping.
+            var anim = _compositor.CreateVector2KeyFrameAnimation();
+            anim.InsertKeyFrame(0f, center);
+            for (int i = 1; i <= 8; i++)
+            {
+                var wx = Math.Clamp(center.X + (float)(rng.NextDouble() - 0.5) * 0.6f, 0f, 1f);
+                var wy = Math.Clamp(center.Y + (float)(rng.NextDouble() - 0.5) * 0.6f, 0f, 1f);
+                anim.InsertKeyFrame(i / 9f, new Vector2(wx, wy));
+            }
+            anim.InsertKeyFrame(1f, center);
+            anim.Duration = duration * 2; // slower for large movements
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            brush.StartAnimation("EllipseCenter", anim);
+            _animations.Add(anim);
+        }
+    }
+
+    private void ApplyBounce(TimeSpan duration)
+    {
+        var rng = new Random(42);
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+
+            var center = brush.EllipseCenter;
+
+            // Simulate bouncing: pick a velocity direction, generate
+            // keyframes that reflect off [0,1] boundaries.
+            var vx = (float)(rng.NextDouble() - 0.5) * 0.4f;
+            var vy = (float)(rng.NextDouble() - 0.5) * 0.4f;
+
+            var anim = _compositor.CreateVector2KeyFrameAnimation();
+            var px = center.X;
+            var py = center.Y;
+            var steps = 16;
+
+            for (int i = 0; i <= steps; i++)
+            {
+                anim.InsertKeyFrame((float)i / steps, new Vector2(px, py));
+                px += vx;
+                py += vy;
+                // Reflect off edges.
+                if (px < 0f) { px = -px; vx = -vx; }
+                if (px > 1f) { px = 2f - px; vx = -vx; }
+                if (py < 0f) { py = -py; vy = -vy; }
+                if (py > 1f) { py = 2f - py; vy = -vy; }
+            }
+            anim.Duration = duration * 2;
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            brush.StartAnimation("EllipseCenter", anim);
+            _animations.Add(anim);
+        }
+    }
+
+    private void ApplyBreathe(TimeSpan duration)
+    {
+        var index = 0;
+        var count = _rootVisual.Children.Count;
+        foreach (var child in _rootVisual.Children)
+        {
+            if (child is not SpriteVisual sprite) continue;
+            if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
+
+            var baseRadius = brush.EllipseRadius;
+            // Pulse between 80% and 120% of the base radius.
+            var small = baseRadius * 0.8f;
+            var large = baseRadius * 1.2f;
+            // Phase offset so points don't all breathe in sync.
+            var phase = (float)index / count;
+
+            var anim = _compositor.CreateVector2KeyFrameAnimation();
+            // Offset the start point based on phase.
+            anim.InsertKeyFrame(0f, Vector2.Lerp(small, large, phase));
+            anim.InsertKeyFrame(0.25f, large);
+            anim.InsertKeyFrame(0.5f, Vector2.Lerp(large, small, phase));
+            anim.InsertKeyFrame(0.75f, small);
+            anim.InsertKeyFrame(1f, Vector2.Lerp(small, large, phase));
+            anim.Duration = duration;
+            anim.IterationBehavior = AnimationIterationBehavior.Forever;
+
+            brush.StartAnimation("EllipseRadius", anim);
+            _animations.Add(anim);
+            index++;
+        }
+    }
+
     private void ApplyColorCycle(TimeSpan duration)
     {
         foreach (var child in _rootVisual.Children)
@@ -168,8 +376,6 @@ internal sealed class GradientTintVisual : IDisposable
             var stop = brush.ColorStops[0];
             var baseColor = stop.Color;
 
-            // Rotate hue by cycling through HSL space.
-            // We approximate with 6 keyframes at 60-degree hue intervals.
             var anim = _compositor.CreateColorKeyFrameAnimation();
             for (int i = 0; i <= 6; i++)
             {
@@ -192,6 +398,7 @@ internal sealed class GradientTintVisual : IDisposable
             if (child is not SpriteVisual sprite) continue;
             if (sprite.Brush is not CompositionRadialGradientBrush brush) continue;
             brush.StopAnimation("EllipseCenter");
+            brush.StopAnimation("EllipseRadius");
             foreach (var stop in brush.ColorStops)
                 stop.StopAnimation("Color");
         }
@@ -253,8 +460,13 @@ internal sealed class GradientTintVisual : IDisposable
 
     public void Dispose()
     {
+        StopAnimations();
         _rootVisual.Children.RemoveAll();
         _rootVisual.Brush?.Dispose();
         _rootVisual.Dispose();
+
+        // Remove the overlay canvas from the XAML tree.
+        if (_overlayCanvas?.Parent is Microsoft.UI.Xaml.Controls.Grid parent)
+            parent.Children.Remove(_overlayCanvas);
     }
 }

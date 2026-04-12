@@ -673,15 +673,23 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (_gradientVisual is null)
-            _gradientVisual = new GradientTintVisual(RootGrid, points);
-        else
-            _gradientVisual.RebuildBrush(points);
+        var isOverlay = _configService.GradientBlend == "overlay";
+        var gradientOpacity = _configService.GradientOpacity;
+
+        // Recreate if blend mode changed.
+        if (_gradientVisual is not null)
+        {
+            _gradientVisual.Dispose();
+            _gradientVisual = null;
+        }
+
+        _gradientVisual = new GradientTintVisual(
+            RootGrid, points, isOverlay, gradientOpacity);
 
         // Track opacity if blur-follows-opacity is on.
         if (_configService.BackgroundBlurFollowsOpacity)
             _gradientVisual.SetOpacity((float)_configService.BackgroundOpacity);
-        else
+        else if (!isOverlay)
             _gradientVisual.SetOpacity(1f);
 
         _gradientVisual.ApplyAnimation(
