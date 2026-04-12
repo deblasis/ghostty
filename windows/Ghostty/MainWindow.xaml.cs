@@ -385,6 +385,8 @@ public sealed partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"DialogTracker drain failed: {ex.Message}");
         }
 
+        _gradientVisual?.Dispose();
+        _gradientVisual = null;
         _taskbar.Dispose();
         _themeManager.Dispose();
 
