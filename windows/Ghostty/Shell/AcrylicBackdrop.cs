@@ -6,18 +6,24 @@ using Microsoft.UI.Xaml.Media;
 namespace Ghostty.Shell;
 
 /// <summary>
-/// A fully transparent window backdrop for use when background-opacity
-/// is less than 1.0. Uses <see cref="DesktopAcrylicController"/> with
-/// zero tint and zero luminosity so the DX12 swap chain's premultiplied
-/// alpha shows through to the desktop.
-///
-/// Requires Windows 11 Build 22000+. Call
-/// <see cref="DesktopAcrylicController.IsSupported"/> before assigning.
+/// Acrylic window backdrop with configurable tint and luminosity.
+/// Used for the "frosted" and "glass" background styles.
 /// </summary>
-internal sealed partial class TransparentBackdrop : SystemBackdrop
+internal sealed partial class AcrylicBackdrop : SystemBackdrop
 {
+    private readonly float _tintOpacity;
+    private readonly float _luminosityOpacity;
+
     private DesktopAcrylicController? _controller;
     private SystemBackdropConfiguration? _config;
+
+    /// <param name="tintOpacity">0.0 = no tint, 1.0 = full tint color.</param>
+    /// <param name="luminosityOpacity">0.0 = no luminosity, 1.0 = full luminosity layer.</param>
+    internal AcrylicBackdrop(float tintOpacity, float luminosityOpacity)
+    {
+        _tintOpacity = tintOpacity;
+        _luminosityOpacity = luminosityOpacity;
+    }
 
     protected override void OnTargetConnected(
         ICompositionSupportsSystemBackdrop target,
@@ -27,18 +33,13 @@ internal sealed partial class TransparentBackdrop : SystemBackdrop
 
         _controller = new DesktopAcrylicController
         {
-            // Zero tint + zero luminosity = fully transparent backdrop.
-            // The swap chain's premultiplied alpha blends directly with
-            // whatever is behind the window (desktop, other apps).
             TintColor = Windows.UI.Color.FromArgb(0, 0, 0, 0),
-            TintOpacity = 0f,
-            LuminosityOpacity = 0f,
+            TintOpacity = _tintOpacity,
+            LuminosityOpacity = _luminosityOpacity,
             FallbackColor = Windows.UI.Color.FromArgb(0, 0, 0, 0),
         };
 
-        // Force the backdrop to stay active even when the window loses
-        // focus. The default config switches to FallbackColor on
-        // deactivation, which makes the window flash opaque.
+        // Keep the backdrop active even when the window loses focus.
         _config = new SystemBackdropConfiguration
         {
             IsInputActive = true,

@@ -565,7 +565,7 @@ public sealed partial class MainWindow : Window
 
         if (wantTransparent && DesktopAcrylicController.IsSupported())
         {
-            SystemBackdrop = new TransparentBackdrop();
+            SystemBackdrop = new AcrylicBackdrop(0f, 0f);
 
             // Hollow brush so composition alpha shows through to the
             // desktop during resize. Solid dark brush would flash opaque.
