@@ -21,6 +21,10 @@ internal static class SnapZoneMath
         int restW = w - halfW; // remainder lives in the right/bottom
         int restH = h - halfH;
 
+        int thirdW = w / 3;
+        int twoThirdW = 2 * thirdW;
+        int restThirdW = w - twoThirdW; // remainder for right third
+
         return zone switch
         {
             SnapZone.Maximize => new SnapZoneRect(x, y, w, h),
@@ -34,6 +38,12 @@ internal static class SnapZoneMath
             SnapZone.TopRightQuarter    => new SnapZoneRect(x + halfW, y,         restW, halfH),
             SnapZone.BottomLeftQuarter  => new SnapZoneRect(x,         y + halfH, halfW, restH),
             SnapZone.BottomRightQuarter => new SnapZoneRect(x + halfW, y + halfH, restW, restH),
+
+            SnapZone.LeftThird      => new SnapZoneRect(x,              y, thirdW,     h),
+            SnapZone.MiddleThird    => new SnapZoneRect(x + thirdW,     y, thirdW,     h),
+            SnapZone.RightThird     => new SnapZoneRect(x + twoThirdW,  y, restThirdW, h),
+            SnapZone.LeftTwoThirds  => new SnapZoneRect(x,              y, twoThirdW,  h),
+            SnapZone.RightTwoThirds => new SnapZoneRect(x + thirdW,     y, w - thirdW, h),
 
             _ => throw new ArgumentOutOfRangeException(nameof(zone), zone, "Unhandled zone"),
         };

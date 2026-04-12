@@ -98,4 +98,54 @@ public class SnapZoneMathTests
         Assert.Equal(tl.X + tl.Width, br.X);
         Assert.Equal(tl.Y + tl.Height, br.Y);
     }
+
+    [Fact]
+    public void LeftThird_of_3440_wide()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.LeftThird, 0, 0, 3440, 1440);
+        // 3440 / 3 = 1146 (int)
+        Assert.Equal(new SnapZoneRect(0, 0, 1146, 1440), r);
+    }
+
+    [Fact]
+    public void MiddleThird_of_3440_wide()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.MiddleThird, 0, 0, 3440, 1440);
+        Assert.Equal(new SnapZoneRect(1146, 0, 1146, 1440), r);
+    }
+
+    [Fact]
+    public void RightThird_of_3440_wide_absorbs_remainder()
+    {
+        var r = SnapZoneMath.RectFor(SnapZone.RightThird, 0, 0, 3440, 1440);
+        // Starts at 2*1146 = 2292, width = 3440 - 2292 = 1148.
+        Assert.Equal(new SnapZoneRect(2292, 0, 1148, 1440), r);
+    }
+
+    [Fact]
+    public void Thirds_cover_input_without_seam()
+    {
+        var l = SnapZoneMath.RectFor(SnapZone.LeftThird, 0, 0, 3440, 1440);
+        var m = SnapZoneMath.RectFor(SnapZone.MiddleThird, 0, 0, 3440, 1440);
+        var r = SnapZoneMath.RectFor(SnapZone.RightThird, 0, 0, 3440, 1440);
+        Assert.Equal(3440, l.Width + m.Width + r.Width);
+        Assert.Equal(l.X + l.Width, m.X);
+        Assert.Equal(m.X + m.Width, r.X);
+    }
+
+    [Fact]
+    public void LeftTwoThirds_matches_LeftThird_plus_MiddleThird()
+    {
+        var lt = SnapZoneMath.RectFor(SnapZone.LeftTwoThirds, 0, 0, 3440, 1440);
+        // 2 * (3440/3) = 2292
+        Assert.Equal(new SnapZoneRect(0, 0, 2292, 1440), lt);
+    }
+
+    [Fact]
+    public void RightTwoThirds_matches_MiddleThird_plus_RightThird()
+    {
+        var rt = SnapZoneMath.RectFor(SnapZone.RightTwoThirds, 0, 0, 3440, 1440);
+        // Starts at w/3 = 1146, width = 3440 - 1146 = 2294.
+        Assert.Equal(new SnapZoneRect(1146, 0, 2294, 1440), rt);
+    }
 }
