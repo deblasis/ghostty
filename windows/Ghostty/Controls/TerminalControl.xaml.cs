@@ -705,7 +705,7 @@ public sealed partial class TerminalControl : UserControl
             Keycode = scancode,
             Text = IntPtr.Zero,
             UnshiftedCodepoint = 0,
-            Composing = false,
+            Composing = 0,
         };
         var handled = NativeMethods.SurfaceKey(_surface, key);
         if (handled) e.Handled = true;

@@ -106,8 +106,12 @@ internal struct GhosttyInputKey
     public uint Keycode;
     public IntPtr Text;              // const char*
     public uint UnshiftedCodepoint;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool Composing;
+    // libghostty types this as C99 _Bool (1 byte). byte + IsComposing
+    // helper matches GhosttySharedTextureConfig.Enabled + IsEnabled
+    // under [assembly: DisableRuntimeMarshalling].
+    public byte Composing;
+
+    public bool IsComposing => Composing != 0;
 }
 
 // GhosttySharedTextureConfig and GhosttySharedTextureSnapshot live in
@@ -152,8 +156,8 @@ internal struct GhosttySurfaceConfig
     public IntPtr EnvVars;          // ghostty_env_var_s*
     public UIntPtr EnvVarCount;
     public IntPtr InitialInput;     // const char*
-    [MarshalAs(UnmanagedType.I1)]
-    public bool WaitAfterCommand;
+    // C99 _Bool on the C side; byte on the managed side.
+    public byte WaitAfterCommand;
     public GhosttySurfaceContext Context;
 }
 
@@ -268,8 +272,8 @@ internal struct GhosttyInputTrigger
 internal struct GhosttyRuntimeConfig
 {
     public IntPtr Userdata;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool SupportsSelectionClipboard;
+    // C99 _Bool on the C side; byte on the managed side.
+    public byte SupportsSelectionClipboard;
     public IntPtr WakeupCb;              // function pointers held as IntPtr
     public IntPtr ActionCb;              // so we control the lifetime of the
     public IntPtr ReadClipboardCb;       // managed delegates they point at.
