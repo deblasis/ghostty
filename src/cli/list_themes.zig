@@ -18,11 +18,16 @@ const SMALL_LIST_THRESHOLD = 10;
 
 const ColorScheme = enum { all, dark, light };
 
-/// Optional callback set by the embedder via ghostty_cli_set_theme_callback.
-/// Called with the theme name and whether the selection is confirmed (accept)
-/// or just a preview (browsing). Lets embedders update their app chrome
-/// without touching the config file.
-pub var theme_callback: ?*const fn ([*:0]const u8, bool) callconv(.c) void = null;
+/// Theme change callback type. Called with the theme name and whether the
+/// selection is confirmed (accept) or just a preview (browsing).
+pub const ThemeCallback = *const fn ([*:0]const u8, bool) callconv(.c) void;
+
+/// Set by the embedder via setThemeCallback before run().
+var theme_callback: ?ThemeCallback = null;
+
+pub fn setThemeCallback(cb: ?ThemeCallback) void {
+    theme_callback = cb;
+}
 
 pub const Options = struct {
     /// If true, print the full path to the theme.

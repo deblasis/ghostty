@@ -154,7 +154,7 @@ pub export fn ghostty_cli_run_action() c_int {
 pub export fn ghostty_cli_set_theme_callback(
     cb: ?*const fn ([*:0]const u8, bool) callconv(.c) void,
 ) void {
-    @import("cli/list_themes.zig").theme_callback = cb;
+    @import("cli/list_themes.zig").setThemeCallback(cb);
 }
 
 /// Return metadata about Ghostty, such as version, build mode, etc.
