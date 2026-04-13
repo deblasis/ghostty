@@ -177,6 +177,10 @@ search: ?Search = null,
 /// Used by in-process features like the theme picker.
 input_redirect: ?InputRedirect = null,
 
+/// When set, mouse scroll events are sent to this callback instead of
+/// the normal scroll handling. Used by in-process features.
+scroll_redirect: ?ScrollRedirect = null,
+
 /// Used to rate limit BEL handling.
 last_bell_time: ?std.time.Instant = null,
 
@@ -224,6 +228,15 @@ pub const InputRedirect = struct {
     /// Called with the key event. Return true if consumed.
     /// The event pointer is only valid for the duration of the call.
     callback: *const fn (ud: ?*anyopaque, event: *const input.KeyEvent) callconv(.c) bool,
+    userdata: ?*anyopaque,
+};
+
+/// Scroll redirect for in-process features that need to intercept
+/// mouse scroll events. yoff is positive for scroll-up, negative
+/// for scroll-down (same convention as scrollCallback).
+pub const ScrollRedirect = struct {
+    /// Called with the scroll delta. Return true if consumed.
+    callback: *const fn (ud: ?*anyopaque, yoff: f64) callconv(.c) bool,
     userdata: ?*anyopaque,
 };
 
@@ -907,6 +920,25 @@ pub fn draw(self: *Surface) !void {
 /// render into the terminal without a subprocess.
 pub fn writeVt(self: *Surface, data: []const u8) void {
     self.io.processOutput(data);
+}
+
+/// Write bytes to the PTY input (the subprocess stdin). Used by
+/// in-process features to nudge the shell after restoring the
+/// terminal (e.g. send a newline so cmd.exe redraws its prompt).
+pub fn writePtyInput(self: *Surface, data: []const u8) void {
+    if (data.len == 0) return;
+    const small_cap = @typeInfo(termio.Message.WriteReq.Small.Array).array.len;
+    if (data.len <= small_cap) {
+        var arr: termio.Message.WriteReq.Small.Array = undefined;
+        @memcpy(arr[0..data.len], data);
+        self.queueIo(.{ .write_small = .{
+            .data = arr,
+            .len = @intCast(data.len),
+        } }, .unlocked);
+    } else {
+        const msg = termio.Message.writeReq(self.alloc, data) catch return;
+        self.queueIo(msg, .unlocked);
+    }
 }
 
 /// Activate the inspector. This will begin collecting inspection data.
@@ -3428,6 +3460,12 @@ pub fn scrollCallback(
     scroll_mods: input.ScrollMods,
 ) !void {
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
+
+    // If scroll is redirected (e.g., theme picker active), send there.
+    if (self.scroll_redirect) |redirect| {
+        if (redirect.callback(redirect.userdata, yoff))
+            return;
+    }
 
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();

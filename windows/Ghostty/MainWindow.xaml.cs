@@ -211,7 +211,7 @@ public sealed partial class MainWindow : Window
         ApplyTheme();
         _themeManager.ThemeChanged += _ => ApplyTheme();
 
-        _shellTheme = new ShellThemeService(configService);
+        _shellTheme = new ShellThemeService(configService, DispatcherQueue);
         _shellTheme.ThemeChanged += ApplyShellTheme;
         _themePreview = new ThemePreviewService(configService, DispatcherQueue);
         _themePreview.ListThemesRequested += OnListThemesRequested;
@@ -1121,9 +1121,10 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Prevent the theme callback delegate from being GC'd while
-    // the picker holds a pointer to it.
+    // Prevent the delegates from being GC'd while the picker holds pointers.
     private NativeMethods.InlineThemeCallback? _inlineThemeCb;
+    private GhosttySurface _pickerSurface;
+    private IntPtr _pickerHandle;
 
     private void OnListThemesRequested(object? sender, EventArgs e)
     {
@@ -1134,7 +1135,7 @@ public sealed partial class MainWindow : Window
         var surfaceHandle = terminal.SurfaceHandle;
         if (surfaceHandle == IntPtr.Zero) return;
 
-        var surface = new GhosttySurface(surfaceHandle);
+        _pickerSurface = new GhosttySurface(surfaceHandle);
 
         // Theme callback: apply preview/confirm colors on the UI thread.
         _inlineThemeCb = (namePtr, confirmed) =>
@@ -1148,18 +1149,31 @@ public sealed partial class MainWindow : Window
         };
         var cbPtr = Marshal.GetFunctionPointerForDelegate(_inlineThemeCb);
 
-        // Run picker on a background thread so the UI stays responsive.
-        _ = Task.Run(() =>
+        _pickerHandle = NativeMethods.SurfaceListThemes(_pickerSurface, cbPtr);
+        // Picker is now active. handleKey fires on each key event and
+        // sets should_quit when the user confirms/cancels. We poll on
+        // a timer to clean up, avoiding a thread that races with the
+        // input redirect callback.
+        if (_pickerHandle != IntPtr.Zero)
+            StartPickerPoll();
+    }
+
+    private void StartPickerPoll()
+    {
+        // Use a DispatcherQueue timer so cleanup runs on the UI thread
+        // with no race against the apprt thread's input redirect.
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(50);
+        timer.Tick += (_, _) =>
         {
-            var picker = NativeMethods.SurfaceListThemes(surface, cbPtr);
-            if (picker == IntPtr.Zero) return;
+            if (!NativeMethods.SurfaceListThemesShouldQuit(_pickerHandle))
+                return;
 
-            // The picker renders on each key event via the input redirect.
-            // Poll until the user confirms or cancels.
-            while (!NativeMethods.SurfaceListThemesShouldQuit(picker))
-                Thread.Sleep(16);
-
-            NativeMethods.SurfaceListThemesDeinit(surface, picker);
-        });
+            timer.Stop();
+            NativeMethods.SurfaceListThemesDeinit(_pickerSurface, _pickerHandle);
+            _pickerHandle = IntPtr.Zero;
+            _inlineThemeCb = null;
+        };
+        timer.Start();
     }
 }

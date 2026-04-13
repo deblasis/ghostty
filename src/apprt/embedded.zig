@@ -1914,6 +1914,19 @@ pub const CAPI = struct {
             .userdata = @ptrCast(picker),
         };
 
+        // Set up scroll redirect so mouse wheel goes to the picker.
+        const scroll_cb = struct {
+            fn handle(ud: ?*anyopaque, yoff: f64) callconv(.c) bool {
+                const p: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(ud));
+                return p.handleScroll(yoff);
+            }
+        }.handle;
+
+        surface.core_surface.scroll_redirect = .{
+            .callback = scroll_cb,
+            .userdata = @ptrCast(picker),
+        };
+
         // Enter alt screen and render initial frame.
         picker.enter();
 
@@ -1937,11 +1950,17 @@ pub const CAPI = struct {
         const picker_mod = @import("../cli/inline_theme_picker.zig");
         const picker: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(picker_ptr orelse return));
 
-        // Clear input redirect.
+        // Clear input and scroll redirects.
         surface.core_surface.input_redirect = null;
+        surface.core_surface.scroll_redirect = null;
 
         // Exit alt screen and restore terminal.
         picker.exit();
+
+        // Send a newline to the shell's stdin so it redraws its
+        // prompt. The picker ran in-process while the shell was
+        // waiting for input -- it needs this nudge.
+        surface.core_surface.writePtyInput("\r");
 
         picker.deinit();
     }

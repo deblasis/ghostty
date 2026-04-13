@@ -210,6 +210,9 @@ pub const InlineThemePicker = struct {
     /// Process a key event from the surface input redirect.
     /// Returns true if the event was consumed.
     pub fn handleKey(self: *InlineThemePicker, event: *const input.KeyEvent) bool {
+        // Already done -- consume but ignore.
+        if (self.should_quit) return true;
+
         // Only handle press and repeat
         if (event.action == .release) return true;
 
@@ -301,6 +304,25 @@ pub const InlineThemePicker = struct {
             },
         }
 
+        return true;
+    }
+
+    /// Process a mouse scroll event. Positive yoff = scroll up,
+    /// negative = scroll down. Returns true if consumed.
+    pub fn handleScroll(self: *InlineThemePicker, yoff: f64) bool {
+        if (self.should_quit) return true;
+        if (self.mode != .normal) return true;
+
+        if (yoff > 0) {
+            self.moveUp(1);
+        } else if (yoff < 0) {
+            self.moveDown(1);
+        } else {
+            return true;
+        }
+
+        self.notifyThemeChange();
+        self.draw();
         return true;
     }
 
