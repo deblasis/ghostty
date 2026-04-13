@@ -53,7 +53,6 @@ internal sealed class ConfigService : IConfigService
     public uint? CursorColor { get; private set; }
     public uint? CursorTextColor { get; private set; }
     public uint[] AnsiPalette { get; private set; } = new uint[16];
-    public bool ShellThemeEnabled { get; private set; }
     public string CurrentTheme { get; private set; } = "";
     public int DiagnosticsCount { get; private set; }
 
@@ -225,9 +224,6 @@ internal sealed class ConfigService : IConfigService
             CursorTextColor = BackgroundColor;
         }
 
-        ShellThemeEnabled = string.Equals(
-            GetFileValue("windows-shell-theme", "false"),
-            "true", StringComparison.OrdinalIgnoreCase);
         CurrentTheme = GetFileValue("theme", "");
 
         AnsiPalette = GetAllPaletteColors();

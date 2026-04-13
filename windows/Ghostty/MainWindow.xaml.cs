@@ -882,7 +882,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Apply palette-derived colors to the window chrome when
-    /// windows-shell-theme is enabled.
+    /// window-theme=ghostty is set.
     /// </summary>
     private void ApplyShellTheme()
     {
