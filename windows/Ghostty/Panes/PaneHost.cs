@@ -39,6 +39,9 @@ namespace Ghostty.Panes;
 /// </summary>
 internal sealed partial class PaneHost : UserControl, IPaneHost
 {
+    // Not readonly: RehostTo writes this during cross-window tab
+    // detach. UI-thread-only -- all reads and writes happen on the
+    // dispatcher queue, so no synchronization is needed.
     private GhosttyHost _host;
     private readonly Func<TerminalControl> _terminalFactory;
 

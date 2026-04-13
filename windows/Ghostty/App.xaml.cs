@@ -38,6 +38,13 @@ public partial class App : Application
     //   2. When WindowsByRoot is empty, bootstrap host disposes: it
     //      calls AppFree (its HostLifetimeState.OwnsApp is true).
     //   3. ConfigService disposal is handled by process exit.
+    // Instance fields for the App's own lifecycle (assigned in
+    // OnLaunched, cleared in OnAnyWindowClosedInternal). The matching
+    // static properties below expose the same references to types
+    // (MainWindow, GhosttyHost) that do not hold a reference to the
+    // App instance. WinUI 3's Application is a process singleton so
+    // both always agree; the duplication is the lesser evil compared
+    // to casting Application.Current everywhere.
     private ConfigService? _configService;
     private GhosttyHost? _bootstrapHost;
     private HostLifetimeSupervisor? _lifetimeSupervisor;

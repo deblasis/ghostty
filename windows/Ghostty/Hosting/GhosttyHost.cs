@@ -278,9 +278,11 @@ internal sealed class GhosttyHost : IDisposable
         // Remove any entries we own from the process-wide routing map.
         Ghostty.App.UnregisterHostSurfaces(this);
 
-        // Notify the supervisor. Throws on drain-last violation.
-        _ownership.NotifyDisposed();
+        // Mark disposed BEFORE notifying the supervisor. If
+        // NotifyDisposed throws (drain-last violation), the state
+        // is still correctly flagged as disposed.
         _ownership.State.MarkDisposed();
+        _ownership.NotifyDisposed();
 
         // Only the bootstrap host frees the app. The drain-last
         // invariant (enforced by _ownership.NotifyDisposed above)
