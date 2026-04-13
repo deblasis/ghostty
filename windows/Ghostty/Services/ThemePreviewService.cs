@@ -35,7 +35,7 @@ internal sealed class ThemePreviewService : IDisposable
 
     // Saved palette so we can revert on cancel.
     private uint _savedBg, _savedFg;
-    private uint? _savedCursor;
+    private uint? _savedCursor, _savedCursorText;
     private uint[]? _savedPalette;
 
     public static string PipeName { get; } =
@@ -134,6 +134,7 @@ internal sealed class ThemePreviewService : IDisposable
         _savedBg = _configService.BackgroundColor;
         _savedFg = _configService.ForegroundColor;
         _savedCursor = _configService.CursorColor;
+        _savedCursorText = _configService.CursorTextColor;
         _savedPalette = (uint[])_configService.AnsiPalette.Clone();
     }
 
@@ -143,12 +144,13 @@ internal sealed class ThemePreviewService : IDisposable
         _dispatcher.TryEnqueue(() =>
         {
             _configService.ApplyThemeColors(
-                _savedFg, _savedBg, _savedCursor, _savedPalette);
+                _savedFg, _savedBg, _savedCursor, _savedCursorText, _savedPalette);
         });
     }
 
     internal void ApplyThemePreview(string themeName)
     {
+
         // Validate: theme names are filenames, reject anything suspicious.
         if (themeName.Length > 255 ||
             themeName.Contains("..") ||
@@ -163,15 +165,15 @@ internal sealed class ThemePreviewService : IDisposable
         var themePath = Path.Combine(configDir, "themes", themeName);
         if (!File.Exists(themePath)) return;
 
-        var (palette, fg, bg, cursor) = ParseThemeFile(themePath);
+        var (palette, fg, bg, cursor, cursorText) = ParseThemeFile(themePath);
 
         _dispatcher.TryEnqueue(() =>
         {
-            _configService.ApplyThemeColors(fg, bg, cursor, palette);
+            _configService.ApplyThemeColors(fg, bg, cursor, cursorText, palette);
         });
     }
 
-    private static (uint[] palette, uint fg, uint bg, uint? cursor) ParseThemeFile(string path)
+    private static (uint[] palette, uint fg, uint bg, uint? cursor, uint? cursorText) ParseThemeFile(string path)
     {
         uint[] palette = new uint[16];
         uint[] defaults =
@@ -184,6 +186,7 @@ internal sealed class ThemePreviewService : IDisposable
         Array.Copy(defaults, palette, 16);
         uint fg = 0xCCCCCC, bg = 0x000000;
         uint? cursor = null;
+        uint? cursorText = null;
 
         foreach (var line in File.ReadLines(path))
         {
@@ -197,6 +200,7 @@ internal sealed class ThemePreviewService : IDisposable
             if (key == "foreground") { if (TryParseHex(val, out var c)) fg = c; }
             else if (key == "background") { if (TryParseHex(val, out var c)) bg = c; }
             else if (key == "cursor-color") { if (TryParseHex(val, out var c)) cursor = c; }
+            else if (key == "cursor-text") { if (TryParseHex(val, out var c)) cursorText = c; }
             else if (key == "palette")
             {
                 var peq = val.IndexOf('=');
@@ -206,7 +210,7 @@ internal sealed class ThemePreviewService : IDisposable
             }
         }
 
-        return (palette, fg, bg, cursor);
+        return (palette, fg, bg, cursor, cursorText);
     }
 
     private static bool TryParseHex(string s, out uint color)

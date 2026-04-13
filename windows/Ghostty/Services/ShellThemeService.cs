@@ -1,6 +1,4 @@
 using System;
-using System.Threading;
-using Microsoft.UI.Dispatching;
 
 namespace Ghostty.Services;
 
@@ -8,16 +6,10 @@ namespace Ghostty.Services;
 /// Derives a UI color scheme from the terminal's ANSI palette.
 /// Fires <see cref="ThemeChanged"/> when the derived colors change
 /// so UI controls can update.
-///
-/// Shell theme updates are debounced so rapid theme browsing (e.g.
-/// scrolling in the theme picker) doesn't flood the XAML layout
-/// engine. Terminal rendering is unaffected -- only the tab/title
-/// bar repaint is throttled.
 /// </summary>
 internal sealed class ShellThemeService
 {
     private readonly ConfigService _configService;
-    private readonly DispatcherQueue? _dispatcher;
 
     public event Action? ThemeChanged;
 
@@ -25,6 +17,7 @@ internal sealed class ShellThemeService
     public Windows.UI.Color TitleBarForeground { get; private set; }
     public Windows.UI.Color TabBarBackground { get; private set; }
     public Windows.UI.Color AccentColor { get; private set; }
+    public Windows.UI.Color ActiveTabText { get; private set; }
     public Windows.UI.Color InactiveTabText { get; private set; }
     public Windows.UI.Color ScrollbarTrack { get; private set; }
     public Windows.UI.Color ScrollbarThumb { get; private set; }
@@ -32,46 +25,16 @@ internal sealed class ShellThemeService
     public bool IsEnabled => _configService.ShellThemeEnabled;
 
     private bool _wasEnabled;
-    private int _debouncePending;
-    // Debounce interval for shell theme updates (ms). Terminal rendering
-    // stays immediate; only tab/titlebar XAML repaint is throttled.
-    private const int DebounceMs = 30;
 
-    internal ShellThemeService(ConfigService configService, DispatcherQueue? dispatcher = null)
+    internal ShellThemeService(ConfigService configService)
     {
         _configService = configService;
-        _dispatcher = dispatcher;
         _wasEnabled = IsEnabled;
         Recompute();
         configService.ConfigChanged += _ =>
         {
-            if (Recompute()) ScheduleThemeChanged();
+            if (Recompute()) ThemeChanged?.Invoke();
         };
-    }
-
-    private void ScheduleThemeChanged()
-    {
-        // If we have a dispatcher, coalesce rapid updates so the XAML
-        // layout engine isn't hammered on every theme scroll. The
-        // terminal VT rendering is unaffected -- only the shell chrome
-        // repaint is coalesced.
-        if (_dispatcher is null)
-        {
-            ThemeChanged?.Invoke();
-            return;
-        }
-
-        // Mark that a change is pending. If one is already queued,
-        // skip -- the enqueued callback will pick up the latest colors
-        // since Recompute() already wrote them to our properties.
-        if (Interlocked.Exchange(ref _debouncePending, 1) == 1)
-            return;
-
-        _dispatcher.TryEnqueue(() =>
-        {
-            Interlocked.Exchange(ref _debouncePending, 0);
-            ThemeChanged?.Invoke();
-        });
     }
 
     /// <summary>
@@ -95,35 +58,25 @@ internal sealed class ShellThemeService
         var fg = UnpackColor(_configService.ForegroundColor);
         var palette = _configService.AnsiPalette;
 
-        var newTabBar = ShiftBrightness(bg, fg, 0.05f);
-        var newAccent = _configService.CursorColor.HasValue
-            ? UnpackColor(_configService.CursorColor.Value)
-            : FindAccent(palette);
-        var newInactive = UnpackColor(palette[8]);
-        var newTrack = ShiftBrightness(bg, fg, 0.08f);
-        var newThumb = Windows.UI.Color.FromArgb(
-            102, fg.R, fg.G, fg.B);
-
-        // Only report a change if something actually moved.
-        bool colorsChanged = !ColorsEqual(TitleBarBackground, bg)
-            || !ColorsEqual(TitleBarForeground, fg)
-            || !ColorsEqual(TabBarBackground, newTabBar)
-            || !ColorsEqual(AccentColor, newAccent)
-            || !ColorsEqual(InactiveTabText, newInactive);
-
         TitleBarBackground = bg;
         TitleBarForeground = fg;
-        TabBarBackground = newTabBar;
-        AccentColor = newAccent;
-        InactiveTabText = newInactive;
-        ScrollbarTrack = newTrack;
-        ScrollbarThumb = newThumb;
+        TabBarBackground = ShiftBrightness(bg, fg, 0.05f);
+        // Active tab uses cursor colors: cursor-color as background,
+        // cursor-text as foreground. This matches the terminal cursor
+        // appearance and creates a consistent visual accent.
+        AccentColor = _configService.CursorColor.HasValue
+            ? UnpackColor(_configService.CursorColor.Value)
+            : FindAccent(palette);
+        ActiveTabText = _configService.CursorTextColor.HasValue
+            ? UnpackColor(_configService.CursorTextColor.Value)
+            : bg; // fallback: background color on cursor-color bg
+        InactiveTabText = UnpackColor(palette[8]); // bright black
+        ScrollbarTrack = ShiftBrightness(bg, fg, 0.08f);
+        ScrollbarThumb = Windows.UI.Color.FromArgb(
+            102, fg.R, fg.G, fg.B); // 40% opacity
 
-        return colorsChanged;
+        return true;
     }
-
-    private static bool ColorsEqual(Windows.UI.Color a, Windows.UI.Color b)
-        => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
 
     /// <summary>
     /// Pick an accent color from the ANSI palette. Prefers blue

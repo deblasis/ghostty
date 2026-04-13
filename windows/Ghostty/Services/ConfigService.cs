@@ -51,6 +51,7 @@ internal sealed class ConfigService : IConfigService
     public uint ForegroundColor { get; private set; } = 0x00FFFFFF;
     public uint BackgroundColor { get; private set; } = 0x001E1E2E;
     public uint? CursorColor { get; private set; }
+    public uint? CursorTextColor { get; private set; }
     public uint[] AnsiPalette { get; private set; } = new uint[16];
     public bool ShellThemeEnabled { get; private set; }
     public string CurrentTheme { get; private set; } = "";
@@ -221,11 +222,12 @@ internal sealed class ConfigService : IConfigService
     /// Used by <see cref="ThemePreviewService"/> for live preview
     /// from the +list-themes TUI.
     /// </summary>
-    internal void ApplyThemeColors(uint fg, uint bg, uint? cursor, uint[] palette)
+    internal void ApplyThemeColors(uint fg, uint bg, uint? cursor, uint? cursorText, uint[] palette)
     {
         ForegroundColor = fg;
         BackgroundColor = bg;
         CursorColor = cursor ?? fg;
+        CursorTextColor = cursorText ?? bg;
         if (palette.Length >= 16)
             Array.Copy(palette, AnsiPalette, 16);
         ConfigChanged?.Invoke(this);

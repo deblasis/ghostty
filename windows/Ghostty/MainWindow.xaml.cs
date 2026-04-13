@@ -211,7 +211,7 @@ public sealed partial class MainWindow : Window
         ApplyTheme();
         _themeManager.ThemeChanged += _ => ApplyTheme();
 
-        _shellTheme = new ShellThemeService(configService, DispatcherQueue);
+        _shellTheme = new ShellThemeService(configService);
         _shellTheme.ThemeChanged += ApplyShellTheme;
         _themePreview = new ThemePreviewService(configService, DispatcherQueue);
         _themePreview.ListThemesRequested += OnListThemesRequested;
