@@ -117,6 +117,18 @@ public sealed partial class MainWindow : Window
     // visible white flash at the leading edge of the drag. Replacing the
     // class brush with a dark solid brush makes the flash invisible
     // against any dark color scheme.
+    // SetClassLongPtr and CreateSolidBrush are not in CsWin32 0.3.269
+    // metadata for this platform target; keep hand-written.
+    private const int GCLP_HBRBACKGROUND = -10;
+
+    [LibraryImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static partial IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [LibraryImport("gdi32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static partial IntPtr CreateSolidBrush(uint crColor);
+
     private const int GWL_STYLE = -16;
     private const int WS_MAXIMIZE = 0x01000000;
     private const int SW_SHOWMAXIMIZED = 3;
@@ -914,7 +926,7 @@ public sealed partial class MainWindow : Window
 
     private void SetTransparentChrome(IntPtr hwnd)
     {
-        PInvoke.SetClassLongPtr(new HWND(hwnd), GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND,
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
             Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH));
         RootGrid.Background = new SolidColorBrush(
             Windows.UI.Color.FromArgb(0, 0, 0, 0));
@@ -922,8 +934,8 @@ public sealed partial class MainWindow : Window
 
     private void SetOpaqueChrome(IntPtr hwnd)
     {
-        PInvoke.SetClassLongPtr(new HWND(hwnd), GET_CLASS_LONG_INDEX.GCLP_HBRBACKGROUND,
-            PInvoke.CreateSolidBrush(new COLORREF(0x000C0C0Cu)));
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND,
+            CreateSolidBrush(0x000C0C0Cu));
         RootGrid.Background = new SolidColorBrush(
             Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x0C, 0x0C, 0x0C));
     }

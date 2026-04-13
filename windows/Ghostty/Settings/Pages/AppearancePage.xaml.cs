@@ -338,10 +338,6 @@ internal sealed partial class AppearancePage : Page
         OnValueChanged("background-gradient-animation", value);
     }
 
-    [LibraryImport("dwrite.dll", EntryPoint = "DWriteCreateFactory")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvStdcall) })]
-    private static unsafe partial int DWriteCreateFactory(int factoryType, Guid* iid, IntPtr* factory);
-
     private sealed class GradientPointEditor
     {
         public Slider XSlider { get; }
