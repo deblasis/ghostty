@@ -48,9 +48,9 @@ internal sealed class ShellThemeService
         {
             // Report change when transitioning from enabled to disabled
             // so MainWindow can revert to standard chrome.
-            var changed = _wasEnabled;
+            var wasEnabled = _wasEnabled;
             _wasEnabled = false;
-            return changed;
+            return wasEnabled;
         }
         _wasEnabled = true;
 
