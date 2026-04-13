@@ -132,7 +132,7 @@ public sealed partial class TerminalControl : UserControl
     /// </summary>
     internal void RequestRedraw()
     {
-        if (_surface.Handle == IntPtr.Zero) return;
+        if (_surfaceDisposed || _surface.Handle == IntPtr.Zero) return;
         NativeMethods.SurfaceDraw(_surface);
     }
 

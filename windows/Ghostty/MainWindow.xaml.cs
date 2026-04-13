@@ -678,6 +678,11 @@ public sealed partial class MainWindow : Window
         _taskbar.Dispose();
         _themeManager.Dispose();
 
+        // Cancel any pending deferred redraw before freeing surfaces.
+        _redrawCts?.Cancel();
+        _redrawCts?.Dispose();
+        _redrawCts = null;
+
         // Surface lifetime is decoupled from Loaded/Unloaded
         // (see TerminalControl.DisposeSurface), so we have to
         // free every leaf in every tab explicitly before tearing
