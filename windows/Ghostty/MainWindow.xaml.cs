@@ -83,6 +83,12 @@ public sealed partial class MainWindow : Window
     private GradientTintVisual? _gradientVisual;
     private Window? _settingsWindow;
 
+    // Cancellation token for the deferred redraw scheduled after a
+    // config reload. If the user reloads config again before the
+    // previous delay fires, the old redraw is cancelled to avoid
+    // stacking up redundant draws.
+    private CancellationTokenSource? _redrawCts;
+
     private CommandPaletteViewModel? _commandPaletteVm;
     private FrecencyStore? _frecencyStore;
     private Controls.TerminalControl? _previousFocusSurface;
@@ -459,6 +465,11 @@ public sealed partial class MainWindow : Window
             // Re-apply shell theme after backdrop style, since
             // ApplyBackdropStyle may override RootGrid.Background.
             ApplyShellTheme();
+
+            // The Zig termio thread updates terminal.colors.foreground
+            // asynchronously after config reload. Schedule a deferred
+            // redraw so the renderer picks up the new palette values.
+            ScheduleDeferredRedraw();
         };
 
         _tabManager.LastTabClosed += (_, _) => Close();
@@ -949,6 +960,38 @@ public sealed partial class MainWindow : Window
 
         _horizontalTabHost.SetAccentColor(wuiColor);
         _verticalTabHost.SetAccentColor(wuiColor);
+    }
+
+    /// <summary>
+    /// Schedule a deferred redraw of every live terminal surface.
+    /// The Zig termio thread processes its change_config message
+    /// asynchronously after the renderer thread has already drawn
+    /// a frame with the old palette. A short delay lets the termio
+    /// thread catch up before we ask each surface to repaint.
+    /// Debounced: rapid config reloads cancel the previous timer.
+    /// </summary>
+    private async void ScheduleDeferredRedraw()
+    {
+        _redrawCts?.Cancel();
+        _redrawCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _redrawCts = cts;
+
+        try
+        {
+            await Task.Delay(50, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        foreach (var tab in _tabManager.Tabs)
+        {
+            var paneHost = (PaneHost)tab.PaneHost;
+            foreach (var leaf in PaneTree.Leaves(paneHost.RootNode))
+                leaf.Terminal().RequestRedraw();
+        }
     }
 
     /// <summary>

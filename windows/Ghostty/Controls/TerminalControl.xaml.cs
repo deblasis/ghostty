@@ -123,6 +123,19 @@ public sealed partial class TerminalControl : UserControl
         TitleChanged?.Invoke(this, title);
     }
     internal void RaiseCloseRequested() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Ask the renderer thread to repaint this surface. No-op if the
+    /// surface has not been created or has already been disposed.
+    /// Used after config reload to pick up color changes that the
+    /// termio thread applies asynchronously.
+    /// </summary>
+    internal void RequestRedraw()
+    {
+        if (_surface.Handle == IntPtr.Zero) return;
+        NativeMethods.SurfaceDraw(_surface);
+    }
+
     internal void RaiseProgressChanged(Ghostty.Core.Tabs.TabProgressState state)
     {
         CurrentProgress = state;
