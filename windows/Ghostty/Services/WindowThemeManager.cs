@@ -39,12 +39,6 @@ internal sealed class WindowThemeManager : IDisposable
     /// </summary>
     public ElementTheme ElementTheme => IsDarkMode ? ElementTheme.Dark : ElementTheme.Light;
 
-    /// <summary>
-    /// True when window-theme is "ghostty", meaning ShellThemeService
-    /// should derive chrome colors from the terminal palette.
-    /// </summary>
-    public bool IsGhosttyMode { get; private set; }
-
     public WindowThemeManager(IConfigService configService, DispatcherQueue dispatcher)
     {
         _configService = configService;
@@ -105,10 +99,7 @@ internal sealed class WindowThemeManager : IDisposable
 
     private void Resolve()
     {
-        var theme = _configService.WindowTheme;
-        IsGhosttyMode = theme == "ghostty";
-
-        IsDarkMode = theme switch
+        IsDarkMode = _configService.WindowTheme switch
         {
             "light" => false,
             "dark" => true,
