@@ -1849,6 +1849,103 @@ pub const CAPI = struct {
         }
     }
 
+    /// Run the inline theme picker on a surface. The picker renders
+    /// into the surface's terminal (alt screen) and intercepts input
+    /// via the surface's input redirect. The theme_callback fires on
+    /// preview (browsing) and confirm (Enter).
+    ///
+    /// This is a non-blocking call: it sets up the picker state and
+    /// input redirect. The picker renders on each key event. The
+    /// embedder should call ghostty_surface_list_themes_deinit when
+    /// the picker signals completion (should_quit).
+    ///
+    /// Returns an opaque pointer to the picker, or null on error.
+    export fn ghostty_surface_list_themes(
+        surface: *Surface,
+        theme_cb: ?*const fn ([*:0]const u8, bool) callconv(.c) void,
+    ) ?*anyopaque {
+        const picker_mod = @import("../cli/inline_theme_picker.zig");
+        const alloc = global.alloc;
+
+        // Discover themes using an arena.
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        const arena_alloc = arena.allocator();
+
+        const themes = picker_mod.discoverThemes(arena_alloc) catch return null;
+        if (themes.len == 0) {
+            arena.deinit();
+            return null;
+        }
+
+        const grid = surface.core_surface.size.grid();
+
+        // Write callback: feeds VT bytes into the surface's terminal.
+        const write_cb = struct {
+            fn write(ud: ?*anyopaque, data: [*]const u8, len: usize) callconv(.c) void {
+                const cs: *CoreSurface = @ptrCast(@alignCast(ud));
+                cs.writeVt(data[0..len]);
+            }
+        }.write;
+
+        const picker = picker_mod.InlineThemePicker.init(
+            alloc,
+            themes,
+            arena,
+            @intCast(grid.columns),
+            @intCast(grid.rows),
+            write_cb,
+            @ptrCast(&surface.core_surface),
+            theme_cb,
+        ) catch {
+            arena.deinit();
+            return null;
+        };
+
+        // Set up input redirect so keys go to the picker.
+        const input_cb = struct {
+            fn handle(ud: ?*anyopaque, event: *const input.KeyEvent) callconv(.c) bool {
+                const p: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(ud));
+                return p.handleKey(event);
+            }
+        }.handle;
+
+        surface.core_surface.input_redirect = .{
+            .callback = input_cb,
+            .userdata = @ptrCast(picker),
+        };
+
+        // Enter alt screen and render initial frame.
+        picker.enter();
+
+        return @ptrCast(picker);
+    }
+
+    /// Check if the inline theme picker has finished (user confirmed
+    /// or cancelled). Returns true if the picker wants to quit.
+    export fn ghostty_surface_list_themes_should_quit(picker_ptr: ?*anyopaque) bool {
+        const picker_mod = @import("../cli/inline_theme_picker.zig");
+        const picker: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(picker_ptr orelse return true));
+        return picker.should_quit;
+    }
+
+    /// Clean up the inline theme picker and restore the surface.
+    /// Must be called after the picker signals should_quit.
+    export fn ghostty_surface_list_themes_deinit(
+        surface: *Surface,
+        picker_ptr: ?*anyopaque,
+    ) void {
+        const picker_mod = @import("../cli/inline_theme_picker.zig");
+        const picker: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(picker_ptr orelse return));
+
+        // Clear input redirect.
+        surface.core_surface.input_redirect = null;
+
+        // Exit alt screen and restore terminal.
+        picker.exit();
+
+        picker.deinit();
+    }
+
     /// Return the ID3D12Device* used by this surface's renderer. Shared
     /// texture consumers should call OpenSharedResource1 on this same
     /// device to avoid cross-device synchronization issues.
