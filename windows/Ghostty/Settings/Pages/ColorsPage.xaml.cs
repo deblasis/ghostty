@@ -1,4 +1,3 @@
-using System;
 using Ghostty.Core.Config;
 using Ghostty.Services;
 using Microsoft.UI.Xaml;
@@ -71,8 +70,22 @@ internal sealed partial class ColorsPage : Page
         {
             ThemeSearch.Visibility = Visibility.Visible;
             PairThemePanel.Visibility = Visibility.Collapsed;
+
+            // Collapse back to single: pick the dark theme as the default
+            // (most users run dark mode). Clear the pair boxes so re-entering
+            // pair mode starts fresh.
+            var fallback = DarkThemeSearch.Text.Trim();
+            if (string.IsNullOrEmpty(fallback))
+                fallback = LightThemeSearch.Text.Trim();
+
             LightThemeSearch.Text = "";
             DarkThemeSearch.Text = "";
+
+            if (!string.IsNullOrEmpty(fallback))
+            {
+                ThemeSearch.Text = fallback;
+                OnValueChanged("theme", fallback);
+            }
         }
     }
 

@@ -208,7 +208,10 @@ public sealed partial class MainWindow : Window
             ? Ghostty.Interop.GhosttyColorScheme.Dark
             : Ghostty.Interop.GhosttyColorScheme.Light;
         Ghostty.Interop.NativeMethods.AppSetColorScheme(_host.App, initialScheme);
-        _host.NotifyColorSchemeChanged(initialScheme);
+        // NotifyColorSchemeChanged is not called here because no surfaces
+        // exist yet at window construction time. Each surface picks up the
+        // app-level scheme when it initializes. The runtime handler below
+        // covers post-init OS theme changes.
 
         // Subscribe to runtime theme changes. ColorValuesChanged fires on a
         // background thread, so dispatch back to the UI thread before calling

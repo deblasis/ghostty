@@ -105,6 +105,8 @@ internal sealed class WindowThemeManager : IDisposable
             "dark" => true,
             "system" => IsSystemDark(),
             "auto" => IsBackgroundDark(),
+            // ghostty: chrome colors come from the palette via ShellThemeService,
+            // so XAML theme follows palette luminance just like "auto".
             "ghostty" => IsBackgroundDark(),
             _ => true, // default to dark
         };

@@ -538,7 +538,9 @@ internal sealed class ConfigService : IConfigService
                 dark = part[5..].Trim();
         }
 
-        if (light is not null || dark is not null)
+        // Zig's Theme.parseCLI requires both light and dark to be present;
+        // a partial pair (e.g. "light:X" alone) is an error. Match that here.
+        if (light is not null && dark is not null)
             return (light, dark);
 
         return (null, null);
