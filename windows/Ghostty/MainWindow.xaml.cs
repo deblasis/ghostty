@@ -204,9 +204,11 @@ public sealed partial class MainWindow : Window
         _systemUiSettings = new Windows.UI.ViewManagement.UISettings();
         var initialFg = _systemUiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
         var initialDark = initialFg.R > 128;
-        Ghostty.Interop.NativeMethods.AppSetColorScheme(
-            _host.App,
-            initialDark ? Ghostty.Interop.GhosttyColorScheme.Dark : Ghostty.Interop.GhosttyColorScheme.Light);
+        var initialScheme = initialDark
+            ? Ghostty.Interop.GhosttyColorScheme.Dark
+            : Ghostty.Interop.GhosttyColorScheme.Light;
+        Ghostty.Interop.NativeMethods.AppSetColorScheme(_host.App, initialScheme);
+        _host.NotifyColorSchemeChanged(initialScheme);
 
         // Subscribe to runtime theme changes. ColorValuesChanged fires on a
         // background thread, so dispatch back to the UI thread before calling
@@ -216,9 +218,13 @@ public sealed partial class MainWindow : Window
             var fg = s.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
             var dark = fg.R > 128;
             DispatcherQueue.TryEnqueue(() =>
-                Ghostty.Interop.NativeMethods.AppSetColorScheme(
-                    _host.App,
-                    dark ? Ghostty.Interop.GhosttyColorScheme.Dark : Ghostty.Interop.GhosttyColorScheme.Light));
+            {
+                var scheme = dark
+                    ? Ghostty.Interop.GhosttyColorScheme.Dark
+                    : Ghostty.Interop.GhosttyColorScheme.Light;
+                Ghostty.Interop.NativeMethods.AppSetColorScheme(_host.App, scheme);
+                _host.NotifyColorSchemeChanged(scheme);
+            });
         };
 
         // Apply initial backdrop (Mica when opaque, transparent when
