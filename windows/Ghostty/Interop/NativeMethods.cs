@@ -541,22 +541,38 @@ internal static partial class NativeMethods
         bool confirmed)
         => SurfaceCompleteClipboardRequestNative(surface, text, state, confirmed ? (byte)1 : (byte)0);
 
-    // ghostty_surface_complete_clipboard_request(surface, text, state, confirmed)
-    // Called once per read/confirm request to return clipboard text to libghostty
-    // and release its internal request state. Must be called exactly once even on
-    // error paths -- skipping it leaks state inside libghostty.
-    //
-    // Source-generated via [LibraryImport] so this entry point is AOT-friendly
-    // and produces no IL stub. The rest of the file still uses [DllImport]; the
-    // standing migration TODO covers those.
-    [LibraryImport(Dll, EntryPoint = "ghostty_surface_complete_clipboard_request",
-        StringMarshalling = StringMarshalling.Utf8)]
+
+    // ---- inline theme picker ---------------------------------------------
+
+    // Callback for the inline theme picker. Fired from the Zig/apprt
+    // thread for each preview/confirm event.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void InlineThemeCallback(IntPtr namePtr, byte confirmed);
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-    internal static partial void SurfaceCompleteClipboardRequest(
-        IntPtr surface,
-        string text,
-        IntPtr state,
-        [MarshalAs(UnmanagedType.I1)] bool confirmed);
+    internal static partial IntPtr SurfaceListThemes(GhosttySurface surface, IntPtr callback);
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes_should_quit")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static partial byte SurfaceListThemesShouldQuitNative(IntPtr handle);
+
+    internal static bool SurfaceListThemesShouldQuit(IntPtr handle)
+        => SurfaceListThemesShouldQuitNative(handle) != 0;
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes_deinit")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial void SurfaceListThemesDeinit(GhosttySurface surface, IntPtr handle);
+
+    // ---- CLI actions (PR 218) -------------------------------------------
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_cli_run_action")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial int CliRunAction();
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_cli_set_theme_callback")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial void CliSetThemeCallback(IntPtr callback);
 
     // ---- user32 --------------------------------------------------------
 
