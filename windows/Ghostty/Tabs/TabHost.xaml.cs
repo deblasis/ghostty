@@ -170,6 +170,12 @@ internal sealed partial class TabHost : UserControl, ITabHost
         _suppressSelectionEvent = false;
     }
 
+    // Tab color alpha values. Selected tabs use a stronger tint so
+    // the color is clearly visible; unselected tabs use a lighter
+    // tint so Mica/acrylic shows through and text stays readable.
+    private const byte SelectedTabAlpha = 153;   // ~0.6 of 255
+    private const byte UnselectedTabAlpha = 89;  // ~0.35 of 255
+
     /// <summary>
     /// Paint the tab header background from a <see cref="TabColor"/>.
     /// None clears to transparent. Non-None uses fixed sRGB at alpha
@@ -184,7 +190,7 @@ internal sealed partial class TabHost : UserControl, ITabHost
             return;
         }
         var drawing = TabColorPalette.Colors[color];
-        var alpha = (byte)(selected ? 153 : 89); // 0.6 and 0.35 of 255
+        var alpha = selected ? SelectedTabAlpha : UnselectedTabAlpha;
         headerPanel.Background = new SolidColorBrush(
             Windows.UI.Color.FromArgb(alpha, drawing.R, drawing.G, drawing.B));
     }

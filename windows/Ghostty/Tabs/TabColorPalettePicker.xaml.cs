@@ -66,16 +66,16 @@ internal sealed partial class TabColorPalettePicker : UserControl
             // Hollow circle with a diagonal slash, matching the macOS
             // .circle.slash symbol. Implemented as an Ellipse with
             // Stroke plus a Line inside a Grid.
+            var secondaryBrush = GetBrushResource("TextFillColorSecondaryBrush");
             ellipse.Fill = new SolidColorBrush(Colors.Transparent);
-            ellipse.Stroke =
-                (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+            ellipse.Stroke = secondaryBrush;
             ellipse.StrokeThickness = 1;
 
             var slash = new Line
             {
                 X1 = 3, Y1 = 17, X2 = 17, Y2 = 3,
                 StrokeThickness = 1.5,
-                Stroke = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                Stroke = secondaryBrush,
             };
 
             var grid = new Grid { Width = 20, Height = 20 };
@@ -107,7 +107,7 @@ internal sealed partial class TabColorPalettePicker : UserControl
             CornerRadius = new CornerRadius(12),
             BorderThickness = new Thickness(selected ? 2 : 0),
             BorderBrush = selected
-                ? (SolidColorBrush)Application.Current.Resources["SystemControlHighlightAccentBrush"]
+                ? GetBrushResource("SystemControlHighlightAccentBrush")
                 : new SolidColorBrush(Colors.Transparent),
             Background = new SolidColorBrush(Colors.Transparent),
             Padding = new Thickness(2),
@@ -121,5 +121,17 @@ internal sealed partial class TabColorPalettePicker : UserControl
             ColorSelected?.Invoke(this, color);
         };
         return border;
+    }
+
+    /// <summary>
+    /// Look up a theme brush resource with a fallback. WinUI 3 theme
+    /// resources are not always <see cref="SolidColorBrush"/>; a raw
+    /// cast would throw on unexpected types or missing keys.
+    /// </summary>
+    private static SolidColorBrush GetBrushResource(string key)
+    {
+        if (Application.Current.Resources.TryGetValue(key, out var value) && value is SolidColorBrush brush)
+            return brush;
+        return new SolidColorBrush(Colors.Gray);
     }
 }
