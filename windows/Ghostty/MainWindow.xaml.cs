@@ -129,38 +129,8 @@ public sealed partial class MainWindow : Window
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static partial IntPtr CreateSolidBrush(uint crColor);
 
-    private const int GWL_STYLE = -16;
-    private const int WS_MAXIMIZE = 0x01000000;
-    private const int SW_SHOWMAXIMIZED = 3;
-    private const int SW_SHOWNORMAL = 1;
-
-    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
-    private static partial int GetWindowLong(IntPtr hWnd, int nIndex);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WINDOWPLACEMENT
-    {
-        public int length;
-        public int flags;
-        public int showCmd;
-        public POINT ptMinPosition;
-        public POINT ptMaxPosition;
-        public RECT rcNormalPosition;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT { public int x, y; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT { public int left, top, right, bottom; }
+    // GetWindowLong, GetWindowPlacement, ShowWindow, WINDOWPLACEMENT,
+    // WINDOW_STYLE, and SHOW_WINDOW_CMD are provided by CsWin32.
 
     internal MainWindow(ConfigService configService)
     {
@@ -453,15 +423,17 @@ public sealed partial class MainWindow : Window
         // fullscreen -- restore to the normal size instead.
         if (AppWindow.Presenter.Kind != Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen)
         {
-            var isMaximized = GetWindowLong(WindowNative.GetWindowHandle(this), GWL_STYLE) & WS_MAXIMIZE;
-            _uiSettings.WindowMaximized = isMaximized != 0;
+            var hwnd = new HWND(WindowNative.GetWindowHandle(this));
+            var style = (WINDOW_STYLE)PInvoke.GetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_STYLE);
+            var isMaximized = (style & WINDOW_STYLE.WS_MAXIMIZE) != 0;
+            _uiSettings.WindowMaximized = isMaximized;
 
             // Save the restored (non-maximized) bounds so we don't
             // persist a maximized rect that fills the whole monitor.
-            if (isMaximized != 0)
+            if (isMaximized)
             {
-                var placement = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
-                GetWindowPlacement(WindowNative.GetWindowHandle(this), ref placement);
+                var placement = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+                PInvoke.GetWindowPlacement(hwnd, ref placement);
                 var rc = placement.rcNormalPosition;
                 _uiSettings.WindowX = rc.left;
                 _uiSettings.WindowY = rc.top;
@@ -990,7 +962,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
 
         if (_uiSettings.WindowMaximized)
-            ShowWindow(WindowNative.GetWindowHandle(this), SW_SHOWMAXIMIZED);
+            PInvoke.ShowWindow(new HWND(WindowNative.GetWindowHandle(this)), SHOW_WINDOW_CMD.SW_SHOWMAXIMIZED);
     }
 
     /// <summary>
