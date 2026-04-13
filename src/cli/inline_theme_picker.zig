@@ -203,6 +203,10 @@ pub const InlineThemePicker = struct {
 
     /// Exit alt screen, restore terminal.
     pub fn exit(self: *InlineThemePicker) void {
+        // Restore original terminal default colors before exiting
+        // alt screen. OSC 110/111 reset fg/bg to their defaults.
+        self.write("\x1b]110\x1b\\"); // reset fg
+        self.write("\x1b]111\x1b\\"); // reset bg
         self.write("\x1b[?25h"); // show cursor
         self.write("\x1b[?1049l"); // exit alt screen
     }
@@ -461,6 +465,7 @@ pub const InlineThemePicker = struct {
             .search => self.drawSearchBox(),
             .help => self.drawHelpOverlay(),
         }
+
     }
 
     fn drawThemeList(self: *InlineThemePicker) void {
@@ -539,6 +544,16 @@ pub const InlineThemePicker = struct {
             self.print("Unable to open {s}", .{theme.name});
             return;
         };
+
+        // Set the terminal's default fg/bg via OSC 10/11 so the
+        // entire terminal background matches the theme, not just
+        // the cells we explicitly paint.
+        {
+            const fg = config.foreground;
+            const bg = config.background;
+            self.print("\x1b]10;rgb:{x:0>2}/{x:0>2}/{x:0>2}\x1b\\", .{ fg.r, fg.g, fg.b });
+            self.print("\x1b]11;rgb:{x:0>2}/{x:0>2}/{x:0>2}\x1b\\", .{ bg.r, bg.g, bg.b });
+        }
 
         const fg = config.foreground;
         const bg = config.background;

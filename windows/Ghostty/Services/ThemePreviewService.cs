@@ -150,7 +150,6 @@ internal sealed class ThemePreviewService : IDisposable
 
     internal void ApplyThemePreview(string themeName)
     {
-
         // Validate: theme names are filenames, reject anything suspicious.
         if (themeName.Length > 255 ||
             themeName.Contains("..") ||
@@ -167,10 +166,14 @@ internal sealed class ThemePreviewService : IDisposable
 
         var (palette, fg, bg, cursor, cursorText) = ParseThemeFile(themePath);
 
-        _dispatcher.TryEnqueue(() =>
-        {
+        // If called from the UI thread (inline picker dispatch), apply
+        // directly. If called from a background thread (pipe server),
+        // dispatch to UI thread.
+        if (_dispatcher.HasThreadAccess)
             _configService.ApplyThemeColors(fg, bg, cursor, cursorText, palette);
-        });
+        else
+            _dispatcher.TryEnqueue(() =>
+                _configService.ApplyThemeColors(fg, bg, cursor, cursorText, palette));
     }
 
     private static (uint[] palette, uint fg, uint bg, uint? cursor, uint? cursorText) ParseThemeFile(string path)

@@ -427,6 +427,10 @@ public sealed partial class MainWindow : Window
             UpdateAcrylicTuning();
             ApplyGradientTint();
             UpdateCursorAccentColors();
+
+            // Re-apply shell theme after backdrop style, since
+            // ApplyBackdropStyle may override RootGrid.Background.
+            ApplyShellTheme();
         };
 
         _tabManager.LastTabClosed += (_, _) => Close();
@@ -1140,12 +1144,20 @@ public sealed partial class MainWindow : Window
         // Theme callback: apply preview/confirm colors on the UI thread.
         _inlineThemeCb = (namePtr, confirmed) =>
         {
-            var name = Marshal.PtrToStringUTF8(namePtr);
-            if (name is null) return;
+            try
+            {
+                var name = Marshal.PtrToStringUTF8(namePtr);
+                if (name is null) return;
 
-            // Reuse the same theme file lookup and color application
-            // that the TUI-based pipe protocol uses.
-            _themePreview.ApplyThemePreview(name);
+                // The callback fires from the Zig/apprt thread. Dispatch
+                // to the UI thread so ConfigService and ShellThemeService
+                // updates happen on the right thread.
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    _themePreview.ApplyThemePreview(name);
+                });
+            }
+            catch { }
         };
         var cbPtr = Marshal.GetFunctionPointerForDelegate(_inlineThemeCb);
 
