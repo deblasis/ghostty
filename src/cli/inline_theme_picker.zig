@@ -415,6 +415,17 @@ pub const InlineThemePicker = struct {
         self.window = 0;
     }
 
+    /// Update the terminal dimensions. Call when the surface resizes.
+    pub fn resize(self: *InlineThemePicker, cols: u16, rows: u16) void {
+        if (self.should_quit) return;
+        self.cols = cols;
+        self.rows = rows;
+        // Clear immediately to avoid showing stale content from the
+        // alt screen reflow during the resize.
+        self.write("\x1b[2J\x1b[H");
+        self.draw();
+    }
+
     /// Render the current state via VT escape sequences.
     pub fn draw(self: *InlineThemePicker) void {
         _ = self.frame_arena.reset(.retain_capacity);

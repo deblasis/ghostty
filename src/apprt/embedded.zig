@@ -1927,6 +1927,19 @@ pub const CAPI = struct {
             .userdata = @ptrCast(picker),
         };
 
+        // Set up resize redirect so the picker redraws on window resize.
+        const resize_cb = struct {
+            fn handle(ud: ?*anyopaque, cols: u16, rows: u16) callconv(.c) void {
+                const p: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(ud));
+                p.resize(cols, rows);
+            }
+        }.handle;
+
+        surface.core_surface.resize_redirect = .{
+            .callback = resize_cb,
+            .userdata = @ptrCast(picker),
+        };
+
         // Enter alt screen and render initial frame.
         picker.enter();
 
@@ -1950,9 +1963,10 @@ pub const CAPI = struct {
         const picker_mod = @import("../cli/inline_theme_picker.zig");
         const picker: *picker_mod.InlineThemePicker = @ptrCast(@alignCast(picker_ptr orelse return));
 
-        // Clear input and scroll redirects.
+        // Clear input, scroll, and resize redirects.
         surface.core_surface.input_redirect = null;
         surface.core_surface.scroll_redirect = null;
+        surface.core_surface.resize_redirect = null;
 
         // Exit alt screen and restore terminal.
         picker.exit();

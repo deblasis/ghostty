@@ -181,6 +181,10 @@ input_redirect: ?InputRedirect = null,
 /// the normal scroll handling. Used by in-process features.
 scroll_redirect: ?ScrollRedirect = null,
 
+/// When set, called after the surface resizes so in-process features
+/// can update their layout.
+resize_redirect: ?ResizeRedirect = null,
+
 /// Used to rate limit BEL handling.
 last_bell_time: ?std.time.Instant = null,
 
@@ -237,6 +241,13 @@ pub const InputRedirect = struct {
 pub const ScrollRedirect = struct {
     /// Called with the scroll delta. Return true if consumed.
     callback: *const fn (ud: ?*anyopaque, yoff: f64) callconv(.c) bool,
+    userdata: ?*anyopaque,
+};
+
+/// Resize redirect for in-process features that need to update
+/// their layout when the terminal dimensions change.
+pub const ResizeRedirect = struct {
+    callback: *const fn (ud: ?*anyopaque, cols: u16, rows: u16) callconv(.c) void,
     userdata: ?*anyopaque,
 };
 
@@ -2530,6 +2541,12 @@ fn resize(self: *Surface, size: rendererpkg.ScreenSize) !void {
 
     // Mail the IO thread
     self.queueIo(.{ .resize = self.size }, .unlocked);
+
+    // Notify in-process features (e.g., theme picker) about the new size.
+    if (self.resize_redirect) |redirect| {
+        const grid = self.size.grid();
+        redirect.callback(redirect.userdata, @intCast(grid.columns), @intCast(grid.rows));
+    }
 }
 
 /// Recalculate the balanced padding if needed.
