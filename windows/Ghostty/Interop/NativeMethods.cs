@@ -513,6 +513,31 @@ internal static partial class NativeMethods
         IntPtr state,
         [MarshalAs(UnmanagedType.I1)] bool confirmed);
 
+    // ---- inline theme picker ---------------------------------------------
+
+    // Theme callback delegate: (name: [*:0]const u8, confirmed: bool)
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void InlineThemeCallback(
+        IntPtr name,
+        [MarshalAs(UnmanagedType.U1)] bool confirmed);
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial IntPtr SurfaceListThemes(
+        GhosttySurface surface,
+        IntPtr themeCallback);
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes_should_quit")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    [return: MarshalAs(UnmanagedType.U1)]
+    internal static partial bool SurfaceListThemesShouldQuit(IntPtr picker);
+
+    [LibraryImport(Dll, EntryPoint = "ghostty_surface_list_themes_deinit")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    internal static partial void SurfaceListThemesDeinit(
+        GhosttySurface surface,
+        IntPtr picker);
+
     // ---- user32 --------------------------------------------------------
 
     // MessageBeep is thread-safe and minimal-dependency. Used by the

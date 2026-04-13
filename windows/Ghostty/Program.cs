@@ -30,6 +30,11 @@ public static partial class Program
         // For GUI mode we detach from the console immediately.
         if (args.Length > 0 && args[0].StartsWith('+'))
         {
+            // +list-themes (without -tui): try the in-process picker first
+            // by sending LIST_THEMES to a running Ghostty app's pipe.
+            if (args[0] == "+list-themes" && TrySendListThemesMessage())
+                Environment.Exit(0);
+
             RegisterNativeResolver();
             InitGhostty(args);
             RegisterThemeCallback();
@@ -138,6 +143,30 @@ public static partial class Program
         catch
         {
             // Pipe broken -- running app may have closed.
+        }
+    }
+
+    /// <summary>
+    /// Try to send LIST_THEMES to a running Ghostty app's pipe.
+    /// Returns true if the message was sent successfully.
+    /// </summary>
+    private static bool TrySendListThemesMessage()
+    {
+        var pipeName = FindThemePreviewPipe();
+        if (pipeName is null) return false;
+
+        try
+        {
+            using var pipe = new System.IO.Pipes.NamedPipeClientStream(
+                ".", pipeName, System.IO.Pipes.PipeDirection.Out);
+            pipe.Connect(1000);
+            using var writer = new StreamWriter(pipe) { AutoFlush = true };
+            writer.WriteLine("LIST_THEMES");
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

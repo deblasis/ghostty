@@ -27,6 +27,12 @@ internal sealed class ThemePreviewService : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _serverTask;
 
+    /// <summary>
+    /// Raised on the UI thread when a CLI process sends LIST_THEMES
+    /// over the pipe, requesting the in-process theme picker.
+    /// </summary>
+    public event EventHandler? ListThemesRequested;
+
     // Saved palette so we can revert on cancel.
     private uint _savedBg, _savedFg;
     private uint? _savedCursor;
@@ -78,7 +84,16 @@ internal sealed class ThemePreviewService : IDisposable
                     var line = await reader.ReadLineAsync(ct);
                     if (line is null) break; // pipe closed
 
-                    if (line.StartsWith("PREVIEW:", StringComparison.Ordinal))
+                    if (line == "LIST_THEMES")
+                    {
+                        // The CLI process wants us to run the in-process
+                        // theme picker on the focused surface.
+                        _dispatcher.TryEnqueue(() =>
+                            ListThemesRequested?.Invoke(this, EventArgs.Empty));
+                        confirmed = true; // don't revert on close
+                        break;
+                    }
+                    else if (line.StartsWith("PREVIEW:", StringComparison.Ordinal))
                     {
                         var themeName = line[8..];
                         ApplyThemePreview(themeName);
@@ -132,7 +147,7 @@ internal sealed class ThemePreviewService : IDisposable
         });
     }
 
-    private void ApplyThemePreview(string themeName)
+    internal void ApplyThemePreview(string themeName)
     {
         // Validate: theme names are filenames, reject anything suspicious.
         if (themeName.Length > 255 ||

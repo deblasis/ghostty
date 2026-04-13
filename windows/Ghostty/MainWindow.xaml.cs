@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Ghostty.Commands;
 using Ghostty.Controls;
 using Ghostty.Core.Tabs;
@@ -212,6 +214,7 @@ public sealed partial class MainWindow : Window
         _shellTheme = new ShellThemeService(configService);
         _shellTheme.ThemeChanged += ApplyShellTheme;
         _themePreview = new ThemePreviewService(configService, DispatcherQueue);
+        _themePreview.ListThemesRequested += OnListThemesRequested;
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(() => _factory.Create());
@@ -1116,5 +1119,47 @@ public sealed partial class MainWindow : Window
                 NativeMethods.SurfaceBindingAction(surface, p, (UIntPtr)actionBytes.Length);
             }
         }
+    }
+
+    // Prevent the theme callback delegate from being GC'd while
+    // the picker holds a pointer to it.
+    private NativeMethods.InlineThemeCallback? _inlineThemeCb;
+
+    private void OnListThemesRequested(object? sender, EventArgs e)
+    {
+        var leaf = _tabManager.ActiveTab?.PaneHost?.ActiveLeaf;
+        if (leaf is null) return;
+
+        var terminal = leaf.Terminal();
+        var surfaceHandle = terminal.SurfaceHandle;
+        if (surfaceHandle == IntPtr.Zero) return;
+
+        var surface = new GhosttySurface(surfaceHandle);
+
+        // Theme callback: apply preview/confirm colors on the UI thread.
+        _inlineThemeCb = (namePtr, confirmed) =>
+        {
+            var name = Marshal.PtrToStringUTF8(namePtr);
+            if (name is null) return;
+
+            // Reuse the same theme file lookup and color application
+            // that the TUI-based pipe protocol uses.
+            _themePreview.ApplyThemePreview(name);
+        };
+        var cbPtr = Marshal.GetFunctionPointerForDelegate(_inlineThemeCb);
+
+        // Run picker on a background thread so the UI stays responsive.
+        _ = Task.Run(() =>
+        {
+            var picker = NativeMethods.SurfaceListThemes(surface, cbPtr);
+            if (picker == IntPtr.Zero) return;
+
+            // The picker renders on each key event via the input redirect.
+            // Poll until the user confirms or cancels.
+            while (!NativeMethods.SurfaceListThemesShouldQuit(picker))
+                Thread.Sleep(16);
+
+            NativeMethods.SurfaceListThemesDeinit(surface, picker);
+        });
     }
 }
