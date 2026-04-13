@@ -54,6 +54,19 @@ internal sealed class ConfigService : IConfigService
     public uint? CursorTextColor { get; private set; }
     public uint[] AnsiPalette { get; private set; } = new uint[16];
     public string CurrentTheme { get; private set; } = "";
+
+    /// <summary>
+    /// Parsed light theme name from a conditional theme pair, or null
+    /// if the theme is a single (non-conditional) value.
+    /// </summary>
+    public string? LightTheme { get; private set; }
+
+    /// <summary>
+    /// Parsed dark theme name from a conditional theme pair, or null
+    /// if the theme is a single (non-conditional) value.
+    /// </summary>
+    public string? DarkTheme { get; private set; }
+
     public int DiagnosticsCount { get; private set; }
 
     /// <summary>
@@ -225,6 +238,9 @@ internal sealed class ConfigService : IConfigService
         }
 
         CurrentTheme = GetFileValue("theme", "");
+        var (parsedLight, parsedDark) = ParseThemePair(CurrentTheme);
+        LightTheme = parsedLight;
+        DarkTheme = parsedDark;
 
         AnsiPalette = GetAllPaletteColors();
     }
@@ -494,6 +510,38 @@ internal sealed class ConfigService : IConfigService
             };
         }
         catch (FormatException) { return null; }
+    }
+
+    /// <summary>
+    /// Parse a theme config value into light/dark components.
+    /// Handles: "ThemeName" (single), "light:X,dark:Y" (pair).
+    /// Matches the Zig parser in Config.zig Theme.parseCLI.
+    /// </summary>
+    internal static (string? light, string? dark) ParseThemePair(string theme)
+    {
+        if (string.IsNullOrWhiteSpace(theme))
+            return (null, null);
+
+        var parts = theme.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        string? light = null;
+        string? dark = null;
+
+        foreach (var part in parts)
+        {
+            if (part.StartsWith("light:", StringComparison.OrdinalIgnoreCase))
+                light = part[6..].Trim();
+            else if (part.StartsWith("light=", StringComparison.OrdinalIgnoreCase))
+                light = part[6..].Trim();
+            else if (part.StartsWith("dark:", StringComparison.OrdinalIgnoreCase))
+                dark = part[5..].Trim();
+            else if (part.StartsWith("dark=", StringComparison.OrdinalIgnoreCase))
+                dark = part[5..].Trim();
+        }
+
+        if (light is not null || dark is not null)
+            return (light, dark);
+
+        return (null, null);
     }
 
     private static float? ParseFloat(string value)
