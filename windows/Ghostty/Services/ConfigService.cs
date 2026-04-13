@@ -208,6 +208,19 @@ internal sealed class ConfigService : IConfigService
             CursorColor = ForegroundColor;
         }
 
+        var cursorTextHex = GetThemeValue("cursor-text");
+        if (!string.IsNullOrEmpty(cursorTextHex))
+        {
+            var parsed = ParseHexColor(cursorTextHex);
+            CursorTextColor = parsed is not null
+                ? ((uint)parsed.Value.R << 16) | ((uint)parsed.Value.G << 8) | parsed.Value.B
+                : BackgroundColor;
+        }
+        else
+        {
+            CursorTextColor = BackgroundColor;
+        }
+
         ShellThemeEnabled = string.Equals(
             GetFileValue("windows-shell-theme", "false"),
             "true", StringComparison.OrdinalIgnoreCase);
