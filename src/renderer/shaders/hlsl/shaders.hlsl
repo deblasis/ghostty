@@ -138,9 +138,11 @@ float4 load_color(uint packed)
 
 // Variant for colors that arrived via hardware R8G8B8A8_UNORM conversion
 // (e.g. the CellText color instance attribute). Already in [0, 1].
+// Premultiply to match load_color() -- the blend state uses SrcBlend=ONE.
 // TODO: linearize, Display P3, min-contrast -- port from Metal
 float4 load_color_f4(float4 color)
 {
+    color.rgb *= color.a;
     return color;
 }
 

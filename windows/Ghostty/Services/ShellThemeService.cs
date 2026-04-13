@@ -58,24 +58,42 @@ internal sealed class ShellThemeService
         var fg = UnpackColor(_configService.ForegroundColor);
         var palette = _configService.AnsiPalette;
 
-        TitleBarBackground = bg;
-        TitleBarForeground = fg;
-        TabBarBackground = ShiftBrightness(bg, fg, 0.05f);
+        var newTitleBarBg = bg;
+        var newTitleBarFg = fg;
+        var newTabBarBg = ShiftBrightness(bg, fg, 0.05f);
         // Active tab uses cursor colors: cursor-color as background,
         // cursor-text as foreground. This matches the terminal cursor
         // appearance and creates a consistent visual accent.
-        AccentColor = _configService.CursorColor.HasValue
+        var newAccent = _configService.CursorColor.HasValue
             ? UnpackColor(_configService.CursorColor.Value)
             : FindAccent(palette);
-        ActiveTabText = _configService.CursorTextColor.HasValue
+        var newActiveTabText = _configService.CursorTextColor.HasValue
             ? UnpackColor(_configService.CursorTextColor.Value)
             : bg; // fallback: background color on cursor-color bg
-        InactiveTabText = UnpackColor(palette[8]); // bright black
-        ScrollbarTrack = ShiftBrightness(bg, fg, 0.08f);
-        ScrollbarThumb = Windows.UI.Color.FromArgb(
+        var newInactiveTabText = UnpackColor(palette[8]); // bright black
+        var newScrollbarTrack = ShiftBrightness(bg, fg, 0.08f);
+        var newScrollbarThumb = Windows.UI.Color.FromArgb(
             102, fg.R, fg.G, fg.B); // 40% opacity
 
-        return true;
+        bool changed = TitleBarBackground != newTitleBarBg
+            || TitleBarForeground != newTitleBarFg
+            || TabBarBackground != newTabBarBg
+            || AccentColor != newAccent
+            || ActiveTabText != newActiveTabText
+            || InactiveTabText != newInactiveTabText
+            || ScrollbarTrack != newScrollbarTrack
+            || ScrollbarThumb != newScrollbarThumb;
+
+        TitleBarBackground = newTitleBarBg;
+        TitleBarForeground = newTitleBarFg;
+        TabBarBackground = newTabBarBg;
+        AccentColor = newAccent;
+        ActiveTabText = newActiveTabText;
+        InactiveTabText = newInactiveTabText;
+        ScrollbarTrack = newScrollbarTrack;
+        ScrollbarThumb = newScrollbarThumb;
+
+        return changed;
     }
 
     /// <summary>
@@ -129,9 +147,9 @@ internal sealed class ShellThemeService
         Windows.UI.Color from, Windows.UI.Color toward, float amount)
     {
         return Windows.UI.Color.FromArgb(0xFF,
-            (byte)(from.R + (toward.R - from.R) * amount),
-            (byte)(from.G + (toward.G - from.G) * amount),
-            (byte)(from.B + (toward.B - from.B) * amount));
+            (byte)Math.Clamp(from.R + (toward.R - from.R) * amount, 0f, 255f),
+            (byte)Math.Clamp(from.G + (toward.G - from.G) * amount, 0f, 255f),
+            (byte)Math.Clamp(from.B + (toward.B - from.B) * amount, 0f, 255f));
     }
 
     private static Windows.UI.Color UnpackColor(uint packed)

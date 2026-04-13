@@ -8,12 +8,22 @@ const global_state = &@import("../global.zig").state;
 
 const zf = @import("zf");
 
+const log = std.log.scoped(.inline_theme_picker);
+
 /// Callback fired when the user previews or confirms a theme.
 /// First arg is the null-terminated theme name, second is true on confirm.
 pub const ThemeCallback = *const fn ([*:0]const u8, bool) callconv(.c) void;
 
 /// Callback to write VT bytes into the surface's terminal.
-pub const WriteCallback = *const fn (ud: ?*anyopaque, data: [*]const u8, len: usize) callconv(.c) void;
+pub const WriteCallback = *const fn (ud: ?*anyopaque, data: [*]const u8, len: usize) void;
+
+/// A code segment for syntax-highlighted display in the preview.
+const CodeSegment = struct {
+    text: []const u8,
+    pal: ?usize = null,
+    selection: bool = false,
+    cursor: bool = false,
+};
 
 /// Theme entry discovered from the filesystem.
 pub const ThemeEntry = struct {
@@ -35,9 +45,10 @@ pub fn discoverThemes(arena: Allocator) ![]ThemeEntry {
     var it: themepkg.LocationIterator = .{ .arena_alloc = arena };
 
     while (try it.next()) |loc| {
-        var dir = std.fs.cwd().openDir(loc.dir, .{ .iterate = true }) catch |err| switch (err) {
-            error.FileNotFound => continue,
-            else => continue,
+        var dir = std.fs.cwd().openDir(loc.dir, .{ .iterate = true }) catch |err| {
+            if (err != error.FileNotFound)
+                log.warn("failed to open theme dir {s}: {}", .{ loc.dir, err });
+            continue;
         };
         defer dir.close();
 
@@ -144,6 +155,7 @@ pub const InlineThemePicker = struct {
         self.filtered.deinit(allocator);
         self.search_buf.deinit(allocator);
         if (self.theme_arena) |*arena| arena.deinit();
+        self.* = undefined;
         allocator.destroy(self);
     }
 
@@ -252,6 +264,8 @@ pub const InlineThemePicker = struct {
                                 @memcpy(buf[0..name.len], name);
                                 buf[name.len] = 0;
                                 cb(@ptrCast(&buf), true);
+                            } else {
+                                log.warn("theme name too long for callback ({d} bytes): {s}...", .{ name.len, name[0..@min(name.len, 64)] });
                             }
                         }
                     }
@@ -363,6 +377,8 @@ pub const InlineThemePicker = struct {
                         @memcpy(buf[0..name.len], name);
                         buf[name.len] = 0;
                         cb(@ptrCast(&buf), false);
+                    } else {
+                        log.warn("theme name too long for callback ({d} bytes): {s}...", .{ name.len, name[0..@min(name.len, 64)] });
                     }
                 }
             }
@@ -634,16 +650,6 @@ pub const InlineThemePicker = struct {
                 const pc = paletteColor(s.cfg, idx);
                 s.picker.setFg(pc[0], pc[1], pc[2]);
                 s.picker.setBg(s.bg_color.r, s.bg_color.g, s.bg_color.b);
-            }
-
-            fn std_style(s: @This()) void {
-                s.picker.setFg(s.picker_fg().r, s.picker_fg().g, s.picker_fg().b);
-                s.picker.setBg(s.bg_color.r, s.bg_color.g, s.bg_color.b);
-            }
-
-            fn picker_fg(s: @This()) @TypeOf(config.foreground) {
-                _ = s;
-                return fg;
             }
         };
 
@@ -1075,12 +1081,6 @@ pub const InlineThemePicker = struct {
         }
     }
 
-    const CodeSegment = struct {
-        text: []const u8,
-        pal: ?usize = null,
-        selection: bool = false,
-        cursor: bool = false,
-    };
 };
 
 fn paletteColor(config: Config, idx: usize) [3]u8 {

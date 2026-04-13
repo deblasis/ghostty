@@ -14,10 +14,10 @@ namespace Ghostty.Shell;
 /// </summary>
 internal sealed partial class CrystalBackdrop : SystemBackdrop
 {
-    private readonly IntPtr _hwnd;
-    private IntPtr _blurRegion;
+    private readonly nint _hwnd;
+    private nint _blurRegion;
 
-    internal CrystalBackdrop(IntPtr hwnd)
+    internal CrystalBackdrop(nint hwnd)
     {
         _hwnd = hwnd;
     }
@@ -28,7 +28,7 @@ internal sealed partial class CrystalBackdrop : SystemBackdrop
     {
         base.OnTargetConnected(target, xamlRoot);
 
-        if (_hwnd == IntPtr.Zero) return;
+        if (_hwnd == 0) return;
 
         // Extend the DWM frame into the entire client area.
         var margins = new Win32Interop.MARGINS();
@@ -38,14 +38,23 @@ internal sealed partial class CrystalBackdrop : SystemBackdrop
         // This tricks DWM into compositing the window as transparent
         // without applying any blur filter.
         _blurRegion = Win32Interop.CreateRectRgn(-2, -2, -1, -1);
-        var bb = new Win32Interop.DWM_BLURBEHIND
+        try
         {
-            DwFlags = Win32Interop.DWM_BLURBEHIND.DWM_BB_ENABLE
-                    | Win32Interop.DWM_BLURBEHIND.DWM_BB_BLURREGION,
-            FEnable = 1,
-            HRgnBlur = _blurRegion,
-        };
-        Win32Interop.DwmEnableBlurBehindWindow(_hwnd, ref bb);
+            var bb = new Win32Interop.DWM_BLURBEHIND
+            {
+                DwFlags = Win32Interop.DWM_BLURBEHIND.DWM_BB_ENABLE
+                        | Win32Interop.DWM_BLURBEHIND.DWM_BB_BLURREGION,
+                FEnable = 1,
+                HRgnBlur = _blurRegion,
+            };
+            Win32Interop.DwmEnableBlurBehindWindow(_hwnd, ref bb);
+        }
+        catch
+        {
+            Win32Interop.DeleteObject(_blurRegion);
+            _blurRegion = 0;
+            throw;
+        }
     }
 
     protected override void OnTargetDisconnected(
@@ -53,10 +62,10 @@ internal sealed partial class CrystalBackdrop : SystemBackdrop
     {
         base.OnTargetDisconnected(target);
 
-        if (_blurRegion != IntPtr.Zero)
+        if (_blurRegion != 0)
         {
             Win32Interop.DeleteObject(_blurRegion);
-            _blurRegion = IntPtr.Zero;
+            _blurRegion = 0;
         }
     }
 }

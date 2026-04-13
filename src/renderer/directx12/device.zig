@@ -551,7 +551,8 @@ fn createCompositionSwapChain(
         .Scaling = .STRETCH,
         // FLIP_SEQUENTIAL is required for premultiplied alpha to
         // composite correctly through SwapChainPanel. FLIP_DISCARD
-        // may discard the alpha channel during presentation.
+        // may discard back buffer contents between presents, breaking
+        // premultiplied alpha compositing through DWM.
         .SwapEffect = .FLIP_SEQUENTIAL,
         .AlphaMode = .PREMULTIPLIED,
         .Flags = 0,

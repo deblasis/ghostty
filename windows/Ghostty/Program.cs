@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Ghostty.Interop;
 
@@ -82,15 +83,10 @@ public static partial class Program
         }
     }
 
-    // Prevent the delegate from being GC'd while Zig holds the pointer.
-    private static ThemeCallbackDelegate? _themeCallbackDelegate;
     private static System.IO.Pipes.NamedPipeClientStream? _themePipe;
     private static StreamWriter? _themePipeWriter;
 
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void ThemeCallbackDelegate(IntPtr name, [MarshalAs(UnmanagedType.U1)] bool confirmed);
-
-    private static void RegisterThemeCallback()
+    private static unsafe void RegisterThemeCallback()
     {
         // Find the running Ghostty app's pipe. The pipe name includes
         // the PID, so we scan for ghostty-theme-preview-* pipes.
@@ -114,15 +110,12 @@ public static partial class Program
             }
         }
 
-        _themeCallbackDelegate = OnThemeChanged;
-        var ptr = Marshal.GetFunctionPointerForDelegate(_themeCallbackDelegate);
-        NativeMethods.CliSetThemeCallback(ptr);
+        NativeMethods.CliSetThemeCallback((IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, byte, void>)&OnThemeChanged);
     }
 
     private static void CleanupThemeCallback()
     {
         NativeMethods.CliSetThemeCallback(IntPtr.Zero);
-        _themeCallbackDelegate = null;
         // Closing the pipe without a CONFIRM message tells the server
         // to revert to the original theme.
         _themePipeWriter?.Dispose();
@@ -131,14 +124,15 @@ public static partial class Program
         _themePipe = null;
     }
 
-    private static void OnThemeChanged(IntPtr namePtr, bool confirmed)
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnThemeChanged(IntPtr namePtr, byte confirmed)
     {
         var name = Marshal.PtrToStringUTF8(namePtr);
         if (name is null || _themePipeWriter is null) return;
 
         try
         {
-            _themePipeWriter.WriteLine(confirmed ? $"CONFIRM:{name}" : $"PREVIEW:{name}");
+            _themePipeWriter.WriteLine(confirmed != 0 ? $"CONFIRM:{name}" : $"PREVIEW:{name}");
         }
         catch
         {
@@ -179,11 +173,14 @@ public static partial class Program
             var procs = System.Diagnostics.Process.GetProcessesByName("Ghostty");
             foreach (var proc in procs)
             {
-                if (proc.Id == Environment.ProcessId) continue;
-                var candidate = $"ghostty-theme-preview-{proc.Id}";
-                // Check if the pipe exists by trying the well-known path.
-                if (File.Exists($@"\\.\pipe\{candidate}"))
-                    return candidate;
+                using (proc)
+                {
+                    if (proc.Id == Environment.ProcessId) continue;
+                    var candidate = $"ghostty-theme-preview-{proc.Id}";
+                    // Check if the pipe exists by trying the well-known path.
+                    if (File.Exists($@"\\.\pipe\{candidate}"))
+                        return candidate;
+                }
             }
         }
         catch { }

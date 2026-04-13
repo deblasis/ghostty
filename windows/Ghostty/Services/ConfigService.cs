@@ -226,8 +226,7 @@ internal sealed class ConfigService : IConfigService
             "true", StringComparison.OrdinalIgnoreCase);
         CurrentTheme = GetFileValue("theme", "");
 
-        for (int i = 0; i < 16; i++)
-            AnsiPalette[i] = GetPaletteColor(i);
+        AnsiPalette = GetAllPaletteColors();
     }
 
     /// <summary>
@@ -429,12 +428,13 @@ internal sealed class ConfigService : IConfigService
     }
 
     /// <summary>
-    /// Read a single palette color by index. Tries the config file
-    /// first ("palette = N=#COLOR"), falls back to xterm defaults.
+    /// Read all 16 palette colors. Reads the config file once and
+    /// parses all "palette = N=#COLOR" entries, falling back to
+    /// xterm defaults for missing indices.
     /// </summary>
-    private uint GetPaletteColor(int index)
+    private uint[] GetAllPaletteColors()
     {
-        ReadOnlySpan<uint> defaults =
+        uint[] defaults =
         [
             0x000000, 0xCC0000, 0x00CC00, 0xCCCC00,
             0x0000CC, 0xCC00CC, 0x00CCCC, 0xCCCCCC,
@@ -449,16 +449,16 @@ internal sealed class ConfigService : IConfigService
             if (eqIdx < 0) continue;
             var idxStr = entry[..eqIdx].Trim();
             if (!int.TryParse(idxStr, out var parsedIdx)) continue;
-            if (parsedIdx != index) continue;
+            if (parsedIdx is < 0 or >= 16) continue;
             var colorStr = entry[(eqIdx + 1)..].Trim();
             var parsed = ParseHexColor(colorStr);
             if (parsed is not null)
-                return ((uint)parsed.Value.R << 16)
-                     | ((uint)parsed.Value.G << 8)
-                     | parsed.Value.B;
+                defaults[parsedIdx] = ((uint)parsed.Value.R << 16)
+                                    | ((uint)parsed.Value.G << 8)
+                                    | parsed.Value.B;
         }
 
-        return index < defaults.Length ? defaults[index] : 0x000000;
+        return defaults;
     }
 
     /// <summary>

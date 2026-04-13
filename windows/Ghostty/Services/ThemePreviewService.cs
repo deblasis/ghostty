@@ -20,7 +20,7 @@ namespace Ghostty.Services;
 ///   "CONFIRM:ThemeName\n"  -- user accepted the theme
 ///   (pipe closed)          -- user cancelled, revert to original
 /// </summary>
-internal sealed class ThemePreviewService : IDisposable
+internal sealed class ThemePreviewService : IAsyncDisposable, IDisposable
 {
     private readonly ConfigService _configService;
     private readonly DispatcherQueue _dispatcher;
@@ -50,9 +50,24 @@ internal sealed class ThemePreviewService : IDisposable
         _serverTask = Task.Run(() => RunServer(_cts.Token));
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        if (_serverTask is not null)
+        {
+            try { await _serverTask; }
+            catch (OperationCanceledException) { }
+            catch (Exception) { /* server loop handles its own errors */ }
+        }
+        _cts.Dispose();
+    }
+
     public void Dispose()
     {
         _cts.Cancel();
+        // Best-effort synchronous wait -- prefer DisposeAsync.
+        try { _serverTask?.GetAwaiter().GetResult(); }
+        catch { /* expected OCE or pipe error */ }
         _cts.Dispose();
     }
 

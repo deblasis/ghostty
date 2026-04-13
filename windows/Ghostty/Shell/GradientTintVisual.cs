@@ -57,9 +57,9 @@ internal sealed class GradientTintVisual : IDisposable
                 IsHitTestVisible = false,
                 Opacity = overlayOpacity,
             };
-            // Span the entire grid.
-            Microsoft.UI.Xaml.Controls.Grid.SetRowSpan(_overlayCanvas, 10);
-            Microsoft.UI.Xaml.Controls.Grid.SetColumnSpan(_overlayCanvas, 10);
+            // Span the entire grid -- use a large value to cover any row/column count.
+            Microsoft.UI.Xaml.Controls.Grid.SetRowSpan(_overlayCanvas, int.MaxValue);
+            Microsoft.UI.Xaml.Controls.Grid.SetColumnSpan(_overlayCanvas, int.MaxValue);
             host.Children.Add(_overlayCanvas);
             ElementCompositionPreview.SetElementChildVisual(
                 _overlayCanvas, _rootVisual);
@@ -111,7 +111,7 @@ internal sealed class GradientTintVisual : IDisposable
         return brush;
     }
 
-    private CompositionBrush CreateMultiPointBrush(IReadOnlyList<GradientPoint> points)
+    private CompositionBrush? CreateMultiPointBrush(IReadOnlyList<GradientPoint> points)
     {
         // Use a container visual with one sprite per point, each
         // with its own radial gradient brush. The sprites use
@@ -128,8 +128,8 @@ internal sealed class GradientTintVisual : IDisposable
             _rootVisual.Children.InsertAtTop(sprite);
         }
 
-        // Return null for the root brush since children handle rendering.
-        return null!;
+        // Children handle rendering; the root visual doesn't need its own brush.
+        return null;
     }
 
     /// <summary>
@@ -201,7 +201,7 @@ internal sealed class GradientTintVisual : IDisposable
 
     private void ApplyDrift(TimeSpan duration)
     {
-        var rng = new Random(42);
+        var rng = new Random(42); // fixed seed: deterministic animation offsets across rebuilds
         var index = 0;
         foreach (var child in _rootVisual.Children)
         {
@@ -267,7 +267,7 @@ internal sealed class GradientTintVisual : IDisposable
 
     private void ApplyWander(TimeSpan duration)
     {
-        var rng = new Random(42);
+        var rng = new Random(42); // fixed seed: deterministic animation offsets across rebuilds
         foreach (var child in _rootVisual.Children)
         {
             if (child is not SpriteVisual sprite) continue;
@@ -296,7 +296,7 @@ internal sealed class GradientTintVisual : IDisposable
 
     private void ApplyBounce(TimeSpan duration)
     {
-        var rng = new Random(42);
+        var rng = new Random(42); // fixed seed: deterministic animation offsets across rebuilds
         foreach (var child in _rootVisual.Children)
         {
             if (child is not SpriteVisual sprite) continue;
@@ -453,9 +453,9 @@ internal sealed class GradientTintVisual : IDisposable
         else { r = c; g = 0; b = x; }
 
         return Windows.UI.Color.FromArgb(a,
-            (byte)((r + m) * 255f),
-            (byte)((g + m) * 255f),
-            (byte)((b + m) * 255f));
+            (byte)Math.Clamp((r + m) * 255f, 0f, 255f),
+            (byte)Math.Clamp((g + m) * 255f, 0f, 255f),
+            (byte)Math.Clamp((b + m) * 255f, 0f, 255f));
     }
 
     public void Dispose()
