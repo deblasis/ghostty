@@ -281,15 +281,30 @@ internal sealed partial class AppearancePage : Page
     private void WriteAllPoints()
     {
         if (_loading) return;
-        var values = GradientEditor.Points
-            .Select(p => string.Create(
-                System.Globalization.CultureInfo.InvariantCulture,
-                $"{p.X:0.###},{p.Y:0.###},#{p.Color.R:X2}{p.Color.G:X2}{p.Color.B:X2},{p.Radius:0.###}"))
-            .ToArray();
-        _configService.SuppressWatcher(true);
-        try { _editor.SetRepeatableValues("background-gradient-point", values); }
-        finally { _configService.SuppressWatcher(false); }
-        _configService.Reload();
+        // Suppress the re-seed that OnConfigChanged would otherwise do
+        // when our own Reload() fires ConfigChanged synchronously. The
+        // editor already reflects the values we are about to write, so
+        // re-seeding would just rebuild rows and destroy any open flyout
+        // (e.g. the color picker the user is dragging). Inner try/finally
+        // on SuppressWatcher keeps the watcher flag balanced if
+        // SetRepeatableValues throws.
+        _loading = true;
+        try
+        {
+            var values = GradientEditor.Points
+                .Select(p => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"{p.X:0.###},{p.Y:0.###},#{p.Color.R:X2}{p.Color.G:X2}{p.Color.B:X2},{p.Radius:0.###}"))
+                .ToArray();
+            _configService.SuppressWatcher(true);
+            try { _editor.SetRepeatableValues("background-gradient-point", values); }
+            finally { _configService.SuppressWatcher(false); }
+            _configService.Reload();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void AnimationMode_Changed(object sender, object e)
