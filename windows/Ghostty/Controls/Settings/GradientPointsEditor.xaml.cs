@@ -36,7 +36,7 @@ public sealed partial class GradientPointsEditor : UserControl
     // _points. RenderCanvas clears and repopulates these. MovePoint
     // mutates existing instances in place so pointer capture survives.
     private readonly List<Microsoft.UI.Xaml.Shapes.Ellipse> _falloffs = new();
-    private readonly List<Microsoft.UI.Xaml.Shapes.Ellipse> _handles = new();
+    private readonly List<Microsoft.UI.Xaml.UIElement> _handles = new();
 
     public event EventHandler<IReadOnlyList<GradientPointModel>>? PointsChanged;
 
@@ -248,22 +248,62 @@ public sealed partial class GradientPointsEditor : UserControl
             PointsCanvas.Children.Add(falloff);
             _falloffs.Add(falloff);
 
-            // Handle: a small white-bordered solid dot above the falloff.
-            var handle = new Microsoft.UI.Xaml.Shapes.Ellipse
+            // Handle: a small white-bordered circular button above the falloff.
+            // Using Button (a Control) instead of Ellipse (a Shape) so that
+            // IsTabStop and KeyDown are available for keyboard nudge + delete.
+            // CornerRadius = (HandleDiameter + 4) / 2 makes it visually circular.
+            var handleSize = HandleDiameter + 4;
+            var handle = new Button
             {
-                Width = HandleDiameter,
-                Height = HandleDiameter,
-                Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(p.Color),
-                Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Width = handleSize,
+                Height = handleSize,
+                Padding = new Microsoft.UI.Xaml.Thickness(0),
+                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(p.Color),
+                BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
                     Microsoft.UI.Colors.White),
-                StrokeThickness = 2,
+                BorderThickness = new Microsoft.UI.Xaml.Thickness(2),
+                CornerRadius = new Microsoft.UI.Xaml.CornerRadius(handleSize / 2),
                 Tag = i,
             };
             int capturedIndex = i;
+            handle.KeyDown += (s, e) =>
+            {
+                if (_points.Count == 0) return;
+                const float step = 0.01f;
+                var cur = _points[capturedIndex];
+                switch (e.Key)
+                {
+                    case Windows.System.VirtualKey.Left:
+                        _points[capturedIndex] = cur with { X = Math.Clamp(cur.X - step, 0f, 1f) };
+                        break;
+                    case Windows.System.VirtualKey.Right:
+                        _points[capturedIndex] = cur with { X = Math.Clamp(cur.X + step, 0f, 1f) };
+                        break;
+                    case Windows.System.VirtualKey.Up:
+                        _points[capturedIndex] = cur with { Y = Math.Clamp(cur.Y - step, 0f, 1f) };
+                        break;
+                    case Windows.System.VirtualKey.Down:
+                        _points[capturedIndex] = cur with { Y = Math.Clamp(cur.Y + step, 0f, 1f) };
+                        break;
+                    case Windows.System.VirtualKey.Delete:
+                        _points.RemoveAt(capturedIndex);
+                        RenderCanvas();
+                        RebuildRows();
+                        RaisePointsChanged();
+                        e.Handled = true;
+                        return;
+                    default:
+                        return;
+                }
+                RenderCanvas();
+                SyncRowNumbers(capturedIndex);
+                RaisePointsChanged();
+                e.Handled = true;
+            };
             handle.PointerPressed += (s, e) =>
             {
-                if (s is not Microsoft.UI.Xaml.Shapes.Ellipse el) return;
-                el.CapturePointer(e.Pointer);
+                if (s is not Button btn) return;
+                btn.CapturePointer(e.Pointer);
                 _dragIndex = capturedIndex;
                 e.Handled = true;
             };
@@ -284,13 +324,13 @@ public sealed partial class GradientPointsEditor : UserControl
             };
             handle.PointerReleased += (s, e) =>
             {
-                if (_dragIndex == capturedIndex && s is Microsoft.UI.Xaml.Shapes.Ellipse el)
-                    el.ReleasePointerCapture(e.Pointer);
+                if (_dragIndex == capturedIndex && s is Button btn)
+                    btn.ReleasePointerCapture(e.Pointer);
                 _dragIndex = -1;
             };
             handle.PointerCaptureLost += (_, _) => _dragIndex = -1;
-            Canvas.SetLeft(handle, p.X * w - HandleDiameter / 2);
-            Canvas.SetTop(handle, p.Y * h - HandleDiameter / 2);
+            Canvas.SetLeft(handle, p.X * w - handleSize / 2);
+            Canvas.SetTop(handle, p.Y * h - handleSize / 2);
             PointsCanvas.Children.Add(handle);
             _handles.Add(handle);
         }
@@ -319,8 +359,9 @@ public sealed partial class GradientPointsEditor : UserControl
         Canvas.SetTop(falloff, p.Y * h - falloffSize / 2);
 
         var handle = _handles[index];
-        Canvas.SetLeft(handle, p.X * w - HandleDiameter / 2);
-        Canvas.SetTop(handle, p.Y * h - HandleDiameter / 2);
+        var handleSize = HandleDiameter + 4;
+        Canvas.SetLeft(handle, p.X * w - handleSize / 2);
+        Canvas.SetTop(handle, p.Y * h - handleSize / 2);
     }
 
     // Updates the X/Y/R NumberBoxes in a row to match _points[index]
