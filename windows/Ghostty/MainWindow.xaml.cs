@@ -903,15 +903,8 @@ public sealed partial class MainWindow : Window
     {
         if (!_shellTheme.IsEnabled)
         {
-            // Revert to standard chrome. Clear custom title bar
-            // button colors back to null (system default).
-            ApplyButtonColors(
-                bg: null, fg: null,
-                inactiveBg: null, inactiveFg: null,
-                hoverBg: null, hoverFg: null,
-                pressedBg: null, pressedFg: null);
-
-            // Reset VerticalTitleText to theme default.
+            // Revert to standard chrome. Reset VerticalTitleText so
+            // it picks up the element-theme default again.
             VerticalTitleText.ClearValue(TextBlock.ForegroundProperty);
 
             // Force ApplyBackdropStyle to re-run by clearing its
@@ -919,6 +912,12 @@ public sealed partial class MainWindow : Window
             // SetTransparentChrome/SetOpaqueChrome.
             _currentBackdropStyle = "";
             ApplyBackdropStyle();
+
+            // Let ApplyTheme write the standard caption-button colors
+            // directly. Pre-clearing the buttons to null here would
+            // briefly show the system accent (blue) on close/min/max
+            // before ApplyTheme overwrites them, producing a visible
+            // flash on every config reload.
             ApplyTheme();
 
             _horizontalTabHost.ClearShellTheme();
