@@ -524,6 +524,16 @@ internal sealed class ConfigService : IConfigService
             : defaultValue;
 
     /// <summary>
+    /// True iff the user's config file actually sets a value for this
+    /// key. Distinguishes a user-authored override from an inherited
+    /// theme/default value, which the typed accessors above conflate.
+    /// </summary>
+    public bool IsConfiguredInFile(string key)
+        => _configFileCache is not null
+            && _configFileCache.TryGetValue(key, out var list)
+            && list.Count > 0;
+
+    /// <summary>
     /// Read all values for a repeatable Windows-only config key from
     /// the cached snapshot. Returns each matching line's value in file
     /// order.
