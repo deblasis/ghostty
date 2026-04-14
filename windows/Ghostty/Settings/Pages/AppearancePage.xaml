@@ -13,13 +13,48 @@
                 <ctrl:SettingsCard Header="Window mode"
                                    Description="Auto derives from background luminosity. Ghostty colors the title bar from the terminal palette."
                                    ctrl:SettingsCard.ConfigKey="window-theme">
-                    <ComboBox x:Name="WindowThemeCombo" MinWidth="160"
+                    <ComboBox x:Name="WindowThemeCombo" MinWidth="260"
                               SelectionChanged="WindowTheme_SelectionChanged">
-                        <ComboBoxItem Content="Auto" Tag="auto" />
-                        <ComboBoxItem Content="System" Tag="system" />
-                        <ComboBoxItem Content="Light" Tag="light" />
-                        <ComboBoxItem Content="Dark" Tag="dark" />
-                        <ComboBoxItem Content="Ghostty" Tag="ghostty" />
+                        <ComboBoxItem Tag="auto">
+                            <StackPanel>
+                                <TextBlock Text="Auto" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Derive from terminal background luminosity."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem Tag="system">
+                            <StackPanel>
+                                <TextBlock Text="System" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Follow Windows light/dark setting."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem Tag="light">
+                            <StackPanel>
+                                <TextBlock Text="Light" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Force light title bar and chrome."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem Tag="dark">
+                            <StackPanel>
+                                <TextBlock Text="Dark" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Force dark title bar and chrome."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem Tag="ghostty">
+                            <StackPanel>
+                                <TextBlock Text="Ghostty" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Color title bar from the terminal palette."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ComboBoxItem>
                     </ComboBox>
                 </ctrl:SettingsCard>
             </ctrl:SettingsGroup>

@@ -56,6 +56,16 @@ internal sealed class ConfigService : IConfigService
     public uint[] AnsiPalette { get; private set; } = new uint[16];
     public string CurrentTheme { get; private set; } = "";
 
+    // Terminal settings snapshot (for settings UI to display current values).
+    public string CursorStyle { get; private set; } = "block";
+    public bool CursorBlink { get; private set; }
+    public bool MouseHideWhileTyping { get; private set; }
+    public int ScrollbackLimit { get; private set; } = 10000;
+
+    // Font settings snapshot (for settings UI to display current values).
+    public string FontFamily { get; private set; } = "";
+    public double FontSize { get; private set; } = 13.0;
+
     /// <summary>
     /// Parsed light theme name from a conditional theme pair, or null
     /// if the theme is a single (non-conditional) value.
@@ -291,6 +301,16 @@ internal sealed class ConfigService : IConfigService
         var (parsedLight, parsedDark) = ThemeParser.ParseThemePair(CurrentTheme);
         LightTheme = parsedLight;
         DarkTheme = parsedDark;
+
+        // Terminal settings (used by settings UI for initial display).
+        CursorStyle = GetString("cursor-style", "block");
+        CursorBlink = GetBool("cursor-style-blink");
+        MouseHideWhileTyping = GetBool("mouse-hide-while-typing");
+        ScrollbackLimit = (int)Math.Clamp(GetDouble("scrollback-limit", 10000.0), 0, 1_000_000);
+
+        // Font settings (used by settings UI for initial display).
+        FontFamily = GetString("font-family", "");
+        FontSize = Math.Clamp(GetDouble("font-size", 13.0), 6.0, 72.0);
 
         AnsiPalette = GetAllPaletteColors();
     }
