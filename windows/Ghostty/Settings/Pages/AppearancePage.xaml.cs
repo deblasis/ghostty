@@ -95,6 +95,8 @@ internal sealed partial class AppearancePage : Page
             SelectComboByTag(GradientBlendCombo, configSvc.GradientBlend);
         }
 
+        GradientEditor.PointsChanged += (_, _) => WriteAllPoints();
+
         _loading = false;
 
         // Re-seed the gradient editor when the config file changes on disk.

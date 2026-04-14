@@ -45,7 +45,18 @@ public sealed partial class GradientPointsEditor : UserControl
     public GradientPointsEditor()
     {
         InitializeComponent();
-        PointsCanvas.SizeChanged += (_, _) => RenderCanvas();
+        PointsCanvas.SizeChanged += (_, _) =>
+        {
+            if (_dragIndex != -1)
+            {
+                // Mid-drag: reposition in place so pointer capture survives.
+                MovePoint(_dragIndex);
+            }
+            else
+            {
+                RenderCanvas();
+            }
+        };
         AddPointButton.Click += (_, _) => TryAdd(0.5f, 0.5f);
         PointsCanvas.DoubleTapped += (_, e) =>
         {
@@ -272,7 +283,7 @@ public sealed partial class GradientPointsEditor : UserControl
             int capturedIndex = i;
             handle.KeyDown += (s, e) =>
             {
-                if (_points.Count == 0) return;
+                if (capturedIndex >= _points.Count) return;
                 const float step = 0.01f;
                 var cur = _points[capturedIndex];
                 switch (e.Key)
