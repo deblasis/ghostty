@@ -129,15 +129,10 @@ public sealed partial class GradientPointsEditor : UserControl
             Tag = index,
         };
 
-        var swatch = new Button
-        {
-            Width = 24,
-            Height = 24,
-            Padding = new Thickness(0),
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                _points[index].Color),
-        };
-        // Reuse the existing ColorPickerControl flyout from Phase 2.
+        // ColorPickerControl provides its own swatch and flyout -- no outer
+        // wrapper needed. Wrapping it in a second Flyout caused the inner
+        // WinUI ColorPicker flyout to light-dismiss whenever the user dragged
+        // a slider past the outer flyout boundary.
         var picker = new ColorPickerControl
         {
             Color = ColorToHex(_points[index].Color),
@@ -157,13 +152,10 @@ public sealed partial class GradientPointsEditor : UserControl
                     return;
                 var p = _points[index];
                 _points[index] = p with { Color = c };
-                swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(c);
                 RenderCanvas();
                 RaisePointsChanged();
             });
-        var flyout = new Flyout { Content = picker };
-        swatch.Flyout = flyout;
-        row.Children.Add(swatch);
+        row.Children.Add(picker);
 
         row.Children.Add(BuildNumberBox("X", _points[index].X, v =>
         {
@@ -407,7 +399,7 @@ public sealed partial class GradientPointsEditor : UserControl
         _suppressRowEcho = true;
         try
         {
-            // Row layout is: swatch, X nb, Y nb, R nb, remove. Indexes 1..3.
+            // Row layout is: picker, X nb, Y nb, R nb, remove. Indexes 1..3.
             if (row.Children[1] is NumberBox xn) xn.Value = _points[index].X;
             if (row.Children[2] is NumberBox yn) yn.Value = _points[index].Y;
             if (row.Children[3] is NumberBox rn) rn.Value = _points[index].Radius;
