@@ -21,6 +21,8 @@ public sealed partial class GradientPointsEditor : UserControl
 
     public event EventHandler<IReadOnlyList<GradientPointModel>>? PointsChanged;
 
+    public IReadOnlyList<GradientPointModel> Points => _points;
+
     public GradientPointsEditor()
     {
         InitializeComponent();

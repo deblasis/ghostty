@@ -186,16 +186,9 @@
                             Value="1"
                             ValueChanged="GradientSpeed_ValueChanged" />
 
-                    <!-- Gradient points editor -->
-                    <TextBlock Text="Gradient points" Margin="0,12,0,4" />
-                    <TextBlock Text="Up to 5 color points. Each has position (x,y), color, and radius."
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-
-                    <StackPanel x:Name="PointsPanel" Spacing="8" />
-
-                    <Button Content="Add point" Click="AddPoint_Click"
-                            x:Name="AddPointButton" />
+                    <!-- Gradient points editor (Phase 4): visual 2D canvas. -->
+                    <ctrl:GradientPointsEditor x:Name="GradientEditor"
+                                               ctrl:SettingsCard.ConfigKey="background-gradient-point" />
                 </StackPanel>
             </ctrl:SettingsGroup>
         </StackPanel>

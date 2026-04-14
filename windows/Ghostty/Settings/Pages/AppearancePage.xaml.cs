@@ -19,7 +19,6 @@ internal sealed partial class AppearancePage : Page
     private readonly IConfigFileEditor _editor;
     private readonly SearchableList _fontList;
     private bool _loading = true;
-    private readonly List<GradientPointEditor> _pointEditors = [];
 
     public AppearancePage(IConfigService configService, IConfigFileEditor editor)
     {
@@ -66,12 +65,10 @@ internal sealed partial class AppearancePage : Page
             GradientSettingsPanel.Visibility = points.Count > 0
                 ? Visibility.Visible : Visibility.Collapsed;
 
-            // Load existing points into editors.
-            foreach (var pt in points)
-            {
-                AddPointEditor(pt.X, pt.Y,
-                    $"#{pt.Color.R:X2}{pt.Color.G:X2}{pt.Color.B:X2}", pt.Radius);
-            }
+            // Load existing points into editor.
+            GradientEditor.SetPoints(points
+                .Select(p => new GradientPointModel(p.X, p.Y, p.Color, p.Radius))
+                .ToList());
 
             // Parse animation mode into radio + checkboxes.
             var anim = configSvc.GradientAnimation;
@@ -98,7 +95,6 @@ internal sealed partial class AppearancePage : Page
             SelectComboByTag(GradientBlendCombo, configSvc.GradientBlend);
         }
 
-        UpdateAddButtonVisibility();
         _loading = false;
         LoadFontsAsync();
     }
@@ -259,74 +255,32 @@ internal sealed partial class AppearancePage : Page
             try { _editor.RemoveValue("background-gradient-point"); }
             finally { _configService.SuppressWatcher(false); }
             _configService.Reload();
-            _pointEditors.Clear();
-            PointsPanel.Children.Clear();
+            GradientEditor.SetPoints(System.Array.Empty<GradientPointModel>());
         }
-        else if (_pointEditors.Count == 0)
+        else if (GradientEditor.Points.Count == 0)
         {
-            // Add a default point when enabling.
-            AddPointEditor(0.5f, 0.5f, "#FF6B35", 0.5f);
+            // Seed a default point when enabling for the first time.
+            GradientEditor.SetPoints(new[]
+            {
+                new GradientPointModel(
+                    0.5f, 0.5f, Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x35), 0.5f),
+            });
             WriteAllPoints();
-        }
-    }
-
-    private void AddPoint_Click(object sender, RoutedEventArgs e)
-    {
-        if (_pointEditors.Count >= 5) return;
-        AddPointEditor(0.5f, 0.5f, "#F7C948", 0.4f);
-        WriteAllPoints();
-        UpdateAddButtonVisibility();
-    }
-
-    private void AddPointEditor(float x, float y, string color, float radius)
-    {
-        var editor = new GradientPointEditor(
-            _pointEditors.Count,
-            () => { if (!_loading) WriteAllPoints(); },
-            RemovePointEditor);
-        editor.XSlider.Value = x;
-        editor.YSlider.Value = y;
-        editor.ColorPicker.Color = color;
-        editor.RadiusSlider.Value = radius;
-        _pointEditors.Add(editor);
-        PointsPanel.Children.Add(editor.Panel);
-        UpdateAddButtonVisibility();
-    }
-
-    private void RemovePointEditor(GradientPointEditor editor)
-    {
-        _pointEditors.Remove(editor);
-        PointsPanel.Children.Remove(editor.Panel);
-        // Renumber remaining points.
-        for (int i = 0; i < _pointEditors.Count; i++)
-        {
-            var header = _pointEditors[i].Panel.Children[0] as StackPanel;
-            if (header?.Children[0] is TextBlock tb)
-                tb.Text = $"Point {i + 1}";
-        }
-        WriteAllPoints();
-        UpdateAddButtonVisibility();
-
-        if (_pointEditors.Count == 0)
-        {
-            GradientEnabledToggle.IsOn = false;
-            GradientSettingsPanel.Visibility = Visibility.Collapsed;
         }
     }
 
     private void WriteAllPoints()
     {
         if (_loading) return;
-        var values = _pointEditors.Select(e => e.ToConfigValue()).ToArray();
+        var values = GradientEditor.Points
+            .Select(p => string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{p.X:0.###},{p.Y:0.###},#{p.Color.R:X2}{p.Color.G:X2}{p.Color.B:X2},{p.Radius:0.###}"))
+            .ToArray();
         _configService.SuppressWatcher(true);
         try { _editor.SetRepeatableValues("background-gradient-point", values); }
         finally { _configService.SuppressWatcher(false); }
         _configService.Reload();
-    }
-
-    private void UpdateAddButtonVisibility()
-    {
-        AddPointButton.IsEnabled = _pointEditors.Count < 5;
     }
 
     private void AnimationMode_Changed(object sender, object e)
@@ -348,90 +302,4 @@ internal sealed partial class AppearancePage : Page
         OnValueChanged("background-gradient-animation", value);
     }
 
-    private sealed class GradientPointEditor
-    {
-        public Slider XSlider { get; }
-        public Slider YSlider { get; }
-        public ColorPickerControl ColorPicker { get; }
-        public Slider RadiusSlider { get; }
-        public Button RemoveButton { get; }
-        public StackPanel Panel { get; }
-
-        public GradientPointEditor(int index, Action onChanged, Action<GradientPointEditor> onRemove)
-        {
-            Panel = new StackPanel
-            {
-                Spacing = 4,
-                Padding = new Thickness(8),
-                BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4)
-            };
-
-            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            header.Children.Add(new TextBlock
-            {
-                Text = $"Point {index + 1}",
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            RemoveButton = new Button { Content = "Remove", Padding = new Thickness(4, 2, 4, 2) };
-            RemoveButton.Click += (_, _) => onRemove(this);
-            header.Children.Add(RemoveButton);
-            Panel.Children.Add(header);
-
-            XSlider = new Slider
-            {
-                Header = "X position",
-                Minimum = 0,
-                Maximum = 1,
-                StepFrequency = 0.05,
-                Value = 0.5
-            };
-            XSlider.ValueChanged += (_, _) => onChanged();
-            Panel.Children.Add(XSlider);
-
-            YSlider = new Slider
-            {
-                Header = "Y position",
-                Minimum = 0,
-                Maximum = 1,
-                StepFrequency = 0.05,
-                Value = 0.5
-            };
-            YSlider.ValueChanged += (_, _) => onChanged();
-            Panel.Children.Add(YSlider);
-
-            // ColorPickerControl has no built-in Header property like TextBox
-            // does, so emit a small caption above it to match the surrounding
-            // sliders' "X position", "Y position" labels.
-            Panel.Children.Add(new TextBlock
-            {
-                Text = "Color",
-                Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["CaptionTextBlockStyle"],
-                Margin = new Thickness(0, 4, 0, 2)
-            });
-            ColorPicker = new ColorPickerControl { Color = "#FF6B35" };
-            ColorPicker.ColorChanged += (_, _) => onChanged();
-            Panel.Children.Add(ColorPicker);
-
-            RadiusSlider = new Slider
-            {
-                Header = "Radius",
-                Minimum = 0.1,
-                Maximum = 1,
-                StepFrequency = 0.05,
-                Value = 0.5
-            };
-            RadiusSlider.ValueChanged += (_, _) => onChanged();
-            Panel.Children.Add(RadiusSlider);
-        }
-
-        public string ToConfigValue()
-        {
-            var color = ColorPicker.Color;
-            if (string.IsNullOrEmpty(color)) color = "#FF6B35";
-            if (!color.StartsWith('#')) color = "#" + color;
-            return $"{XSlider.Value:F2},{YSlider.Value:F2},{color},{RadiusSlider.Value:F2}";
-        }
-    }
 }
