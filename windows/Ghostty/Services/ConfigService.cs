@@ -303,14 +303,47 @@ internal sealed class ConfigService : IConfigService
         DarkTheme = parsedDark;
 
         // Terminal settings (used by settings UI for initial display).
-        CursorStyle = GetString("cursor-style", "block");
-        CursorBlink = GetBool("cursor-style-blink");
-        MouseHideWhileTyping = GetBool("mouse-hide-while-typing");
-        ScrollbackLimit = (int)Math.Clamp(GetDouble("scrollback-limit", 10000.0), 0, 1_000_000);
+        // Read from the config file cache instead of ghostty_config_get:
+        // some keys (booleans, enums, repeatable lists like font-family)
+        // don't round-trip cleanly through the native getter.
+        CursorStyle = GetFileValue("cursor-style", "block");
+        CursorBlink = string.Equals(
+            GetFileValue("cursor-style-blink", "false"),
+            "true", StringComparison.OrdinalIgnoreCase);
+        MouseHideWhileTyping = string.Equals(
+            GetFileValue("mouse-hide-while-typing", "false"),
+            "true", StringComparison.OrdinalIgnoreCase);
+        if (int.TryParse(
+                GetFileValue("scrollback-limit", "10000"),
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var scrollback))
+        {
+            ScrollbackLimit = Math.Clamp(scrollback, 0, 1_000_000);
+        }
+        else
+        {
+            ScrollbackLimit = 10000;
+        }
 
         // Font settings (used by settings UI for initial display).
-        FontFamily = GetString("font-family", "");
-        FontSize = Math.Clamp(GetDouble("font-size", 13.0), 6.0, 72.0);
+        // font-family is a repeatable list in Zig; the file cache gives
+        // us the first user-set value, which is what the settings UI
+        // wants to display. font-size is f32 in Zig, but we parse the
+        // raw string to avoid the f32/f64 reinterpret pitfall.
+        FontFamily = GetFileValue("font-family", "");
+        if (double.TryParse(
+                GetFileValue("font-size", "13"),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var fontSize))
+        {
+            FontSize = Math.Clamp(fontSize, 6.0, 72.0);
+        }
+        else
+        {
+            FontSize = 13.0;
+        }
 
         AnsiPalette = GetAllPaletteColors();
     }
