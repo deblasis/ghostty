@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Ghostty.Core.Settings;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.UI;
@@ -27,6 +28,15 @@ public sealed partial class GradientPointsEditor : UserControl
     // Guard to suppress echo when we programmatically change row inputs
     // (e.g. during drag) so NumberBox.ValueChanged doesn't loop back.
     private bool _suppressRowEcho;
+
+    // -1 means no drag in progress; set to the handle index being dragged.
+    private int _dragIndex = -1;
+
+    // Element instances currently in PointsCanvas.Children, parallel to
+    // _points. RenderCanvas clears and repopulates these. MovePoint
+    // mutates existing instances in place so pointer capture survives.
+    private readonly List<Microsoft.UI.Xaml.Shapes.Ellipse> _falloffs = new();
+    private readonly List<Microsoft.UI.Xaml.Shapes.Ellipse> _handles = new();
 
     public event EventHandler<IReadOnlyList<GradientPointModel>>? PointsChanged;
 
@@ -180,6 +190,8 @@ public sealed partial class GradientPointsEditor : UserControl
     private void RenderCanvas()
     {
         PointsCanvas.Children.Clear();
+        _falloffs.Clear();
+        _handles.Clear();
         var w = PointsCanvas.ActualWidth;
         var h = PointsCanvas.ActualHeight;
         if (w <= 0 || h <= 0) return;
@@ -201,6 +213,7 @@ public sealed partial class GradientPointsEditor : UserControl
             Canvas.SetLeft(falloff, p.X * w - falloffSize / 2);
             Canvas.SetTop(falloff, p.Y * h - falloffSize / 2);
             PointsCanvas.Children.Add(falloff);
+            _falloffs.Add(falloff);
 
             // Handle: a small white-bordered solid dot above the falloff.
             var handle = new Microsoft.UI.Xaml.Shapes.Ellipse
@@ -213,9 +226,87 @@ public sealed partial class GradientPointsEditor : UserControl
                 StrokeThickness = 2,
                 Tag = i,
             };
+            int capturedIndex = i;
+            handle.PointerPressed += (s, e) =>
+            {
+                if (s is not Microsoft.UI.Xaml.Shapes.Ellipse el) return;
+                el.CapturePointer(e.Pointer);
+                _dragIndex = capturedIndex;
+                e.Handled = true;
+            };
+            handle.PointerMoved += (s, e) =>
+            {
+                if (_dragIndex != capturedIndex) return;
+                var pos = e.GetCurrentPoint(PointsCanvas).Position;
+                var w = PointsCanvas.ActualWidth;
+                var h = PointsCanvas.ActualHeight;
+                if (w <= 0 || h <= 0) return;
+                var (nx, ny) = GradientPointsLogic.Clamp(
+                    (float)(pos.X / w), (float)(pos.Y / h));
+                var cur = _points[capturedIndex];
+                _points[capturedIndex] = cur with { X = nx, Y = ny };
+                MovePoint(capturedIndex);
+                SyncRowNumbers(capturedIndex);
+                RaisePointsChanged();
+            };
+            handle.PointerReleased += (s, e) =>
+            {
+                if (_dragIndex == capturedIndex && s is Microsoft.UI.Xaml.Shapes.Ellipse el)
+                    el.ReleasePointerCapture(e.Pointer);
+                _dragIndex = -1;
+            };
+            handle.PointerCaptureLost += (_, _) => _dragIndex = -1;
             Canvas.SetLeft(handle, p.X * w - HandleDiameter / 2);
             Canvas.SetTop(handle, p.Y * h - HandleDiameter / 2);
             PointsCanvas.Children.Add(handle);
+            _handles.Add(handle);
+        }
+    }
+
+    /// <summary>
+    /// Update the visual position (and falloff size) of a single point
+    /// in place, without rebuilding the canvas. Used during drag so
+    /// pointer capture on the handle Ellipse survives the mutation.
+    /// </summary>
+    private void MovePoint(int index)
+    {
+        if (index < 0 || index >= _points.Count) return;
+        if (index >= _handles.Count || index >= _falloffs.Count) return;
+        var w = PointsCanvas.ActualWidth;
+        var h = PointsCanvas.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+
+        var p = _points[index];
+        var falloffSize = 2.0 * p.Radius * Math.Min(w, h);
+
+        var falloff = _falloffs[index];
+        falloff.Width = falloffSize;
+        falloff.Height = falloffSize;
+        Canvas.SetLeft(falloff, p.X * w - falloffSize / 2);
+        Canvas.SetTop(falloff, p.Y * h - falloffSize / 2);
+
+        var handle = _handles[index];
+        Canvas.SetLeft(handle, p.X * w - HandleDiameter / 2);
+        Canvas.SetTop(handle, p.Y * h - HandleDiameter / 2);
+    }
+
+    // Updates the X/Y/R NumberBoxes in a row to match _points[index]
+    // after a canvas drag, without triggering the ValueChanged -> RenderCanvas loop.
+    private void SyncRowNumbers(int index)
+    {
+        if (index < 0 || index >= RowsPanel.Children.Count) return;
+        if (RowsPanel.Children[index] is not StackPanel row) return;
+        _suppressRowEcho = true;
+        try
+        {
+            // Row layout is: swatch, X nb, Y nb, R nb, remove. Indexes 1..3.
+            if (row.Children[1] is NumberBox xn) xn.Value = _points[index].X;
+            if (row.Children[2] is NumberBox yn) yn.Value = _points[index].Y;
+            if (row.Children[3] is NumberBox rn) rn.Value = _points[index].Radius;
+        }
+        finally
+        {
+            _suppressRowEcho = false;
         }
     }
 
