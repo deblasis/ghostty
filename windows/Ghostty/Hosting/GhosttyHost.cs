@@ -266,6 +266,13 @@ internal sealed class GhosttyHost : IDisposable
     /// changed. Mirrors GTK's handleStyleManagerDark which calls
     /// surface.core().colorSchemeCallback() for each surface after
     /// the app-level colorSchemeEvent.
+    ///
+    /// UI thread only. <see cref="Adopt"/> / <see cref="Detach"/>
+    /// mutate <see cref="_surfaces"/> on the UI thread by contract; the
+    /// only background-thread writers that can coexist are the
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/>'s own snapshot
+    /// enumerator guarantees. Called from <c>MainWindow</c> inside a
+    /// <c>DispatcherQueue.TryEnqueue</c> after <c>UISettings.ColorValuesChanged</c>.
     /// </summary>
     internal void NotifyColorSchemeChanged(GhosttyColorScheme scheme)
     {

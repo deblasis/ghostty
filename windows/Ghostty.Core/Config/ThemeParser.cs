@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace Ghostty.Core.Config;
 
@@ -73,17 +74,37 @@ public static class ThemeParser
             var key = trimmed[..eqIndex].Trim();
             if (key != "palette") continue;
 
-            var entry = trimmed[(eqIndex + 1)..].Trim();
-            var entryEq = entry.IndexOf('=');
-            if (entryEq < 0) continue;
-            var idxStr = entry[..entryEq].Trim();
-            if (!int.TryParse(idxStr, out var parsedIdx)) continue;
-            if (parsedIdx is < 0 or >= 16) continue;
-
-            var colorStr = entry[(entryEq + 1)..].Trim();
-            if (TryParseHexRgb(colorStr, out var packed))
-                palette[parsedIdx] = packed;
+            ApplyPaletteEntry(trimmed[(eqIndex + 1)..].Trim(), palette);
         }
+    }
+
+    /// <summary>
+    /// Apply palette entries given as raw "N=#RRGGBB" values (no
+    /// leading "palette =" prefix). Use this when the caller already
+    /// has the values pre-extracted from the config by key and would
+    /// otherwise have to re-prefix them just to let this module
+    /// re-match the key.
+    /// </summary>
+    public static void ApplyPaletteFromValues(IEnumerable<string> values, uint[] palette)
+    {
+        if (palette.Length < 16)
+            throw new ArgumentException("palette must have at least 16 entries", nameof(palette));
+
+        foreach (var value in values)
+            ApplyPaletteEntry(value, palette);
+    }
+
+    private static void ApplyPaletteEntry(string entry, uint[] palette)
+    {
+        var entryEq = entry.IndexOf('=');
+        if (entryEq < 0) return;
+        var idxStr = entry[..entryEq].Trim();
+        if (!int.TryParse(idxStr, out var parsedIdx)) return;
+        if (parsedIdx is < 0 or >= 16) return;
+
+        var colorStr = entry[(entryEq + 1)..].Trim();
+        if (TryParseHexRgb(colorStr, out var packed))
+            palette[parsedIdx] = packed;
     }
 
     /// <summary>
@@ -94,34 +115,54 @@ public static class ThemeParser
     {
         packed = 0;
         if (string.IsNullOrEmpty(value)) return false;
-        var hex = value.TrimStart('#');
-        try
+        var hex = value.AsSpan().TrimStart('#');
+
+        // Uses byte.TryParse over Parse+catch because this runs on
+        // every config reload for up to 16 palette entries plus fg/bg/
+        // cursor; exception-as-control-flow would be wasteful, and
+        // AOT exercises the exception machinery enough as it is.
+        switch (hex.Length)
         {
-            switch (hex.Length)
-            {
-                case 3:
-                    packed = ((uint)byte.Parse(new string(hex[0], 2), System.Globalization.NumberStyles.HexNumber) << 16)
-                           | ((uint)byte.Parse(new string(hex[1], 2), System.Globalization.NumberStyles.HexNumber) << 8)
-                           | byte.Parse(new string(hex[2], 2), System.Globalization.NumberStyles.HexNumber);
-                    return true;
-                case 6:
-                    packed = ((uint)byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber) << 16)
-                           | ((uint)byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber) << 8)
-                           | byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
-                    return true;
-                case 8:
-                    // #AARRGGBB - drop the alpha
-                    packed = ((uint)byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber) << 16)
-                           | ((uint)byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber) << 8)
-                           | byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber);
-                    return true;
-                default:
-                    return false;
-            }
+            case 3:
+                if (!TryParseHexNibble(hex[0], out var r3)) return false;
+                if (!TryParseHexNibble(hex[1], out var g3)) return false;
+                if (!TryParseHexNibble(hex[2], out var b3)) return false;
+                packed = ((uint)r3 << 16) | ((uint)g3 << 8) | b3;
+                return true;
+            case 6:
+                return TryParseRgbBytes(hex[..2], hex[2..4], hex[4..6], out packed);
+            case 8:
+                // #AARRGGBB -- drop the alpha.
+                return TryParseRgbBytes(hex[2..4], hex[4..6], hex[6..8], out packed);
+            default:
+                return false;
         }
-        catch (FormatException)
+    }
+
+    private static bool TryParseRgbBytes(
+        ReadOnlySpan<char> r, ReadOnlySpan<char> g, ReadOnlySpan<char> b, out uint packed)
+    {
+        packed = 0;
+        if (!byte.TryParse(r, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rb)) return false;
+        if (!byte.TryParse(g, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var gb)) return false;
+        if (!byte.TryParse(b, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var bb)) return false;
+        packed = ((uint)rb << 16) | ((uint)gb << 8) | bb;
+        return true;
+    }
+
+    private static bool TryParseHexNibble(char c, out byte value)
+    {
+        // Expand a 3-digit hex shorthand (e.g. 'F' -> 0xFF) without
+        // allocating the "FF" string the old code built.
+        int v = c switch
         {
-            return false;
-        }
+            >= '0' and <= '9' => c - '0',
+            >= 'a' and <= 'f' => c - 'a' + 10,
+            >= 'A' and <= 'F' => c - 'A' + 10,
+            _ => -1,
+        };
+        if (v < 0) { value = 0; return false; }
+        value = (byte)(v * 0x11);
+        return true;
     }
 }

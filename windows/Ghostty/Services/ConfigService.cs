@@ -423,22 +423,11 @@ internal sealed class ConfigService : IConfigService
     }
 
     /// <summary>
-    /// Detect OS dark mode the same way WindowThemeManager does:
-    /// UISettings.Foreground is white in dark mode, black in light.
+    /// Detect OS dark mode via the shared <see cref="OsTheme"/> helper
+    /// so this and <see cref="WindowThemeManager"/> can't drift on the
+    /// "which byte means dark" heuristic.
     /// </summary>
-    private static bool IsOsDark()
-    {
-        try
-        {
-            var ui = new Windows.UI.ViewManagement.UISettings();
-            var fg = ui.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
-            return fg.R > 128;
-        }
-        catch
-        {
-            return true;
-        }
-    }
+    private static bool IsOsDark() => OsTheme.IsDark();
 
     /// <summary>
     /// Read a Windows-only config key directly from the config file.
@@ -561,10 +550,11 @@ internal sealed class ConfigService : IConfigService
                 ThemeParser.ApplyPaletteFromLines(File.ReadLines(themePath), defaults);
         }
 
-        // Then apply user-config palette overrides on top.
-        ThemeParser.ApplyPaletteFromLines(
-            GetAllFileValues("palette").Select(v => "palette = " + v),
-            defaults);
+        // Then apply user-config palette overrides on top. The values
+        // from GetAllFileValues are already raw "N=#RRGGBB" entries,
+        // so use the Values overload instead of re-prefixing every
+        // entry with "palette = " just to let the parser re-match it.
+        ThemeParser.ApplyPaletteFromValues(GetAllFileValues("palette"), defaults);
 
         return defaults;
     }

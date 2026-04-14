@@ -40,10 +40,8 @@ internal sealed partial class ColorsPage : Page
                 PairModeRadio.IsChecked = true;
                 ThemeSearch.Visibility = Visibility.Collapsed;
                 PairThemePanel.Visibility = Visibility.Visible;
-                if (cs.LightTheme is not null)
-                    LightThemeSearch.Text = cs.LightTheme;
-                if (cs.DarkTheme is not null)
-                    DarkThemeSearch.Text = cs.DarkTheme;
+                LightThemeSearch.Text = cs.LightTheme;
+                DarkThemeSearch.Text = cs.DarkTheme;
             }
             else
             {

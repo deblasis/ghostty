@@ -99,6 +99,12 @@ internal sealed partial class AcrylicBackdrop : SystemBackdrop
     /// base class's default-config plumbing. Skipping it avoids the
     /// crash and is safe: our controller is reconfigured whenever the
     /// app state that actually matters to us changes.
+    ///
+    /// We intentionally do not react to XamlRoot theme transitions here
+    /// either -- our tint color and luminosity come from the user's
+    /// config (tint color, tint opacity, luminosity opacity) not from
+    /// system theme resources. A theme change does not change what the
+    /// acrylic should look like.
     /// </summary>
     protected override void OnDefaultSystemBackdropConfigurationChanged(
         ICompositionSupportsSystemBackdrop target,

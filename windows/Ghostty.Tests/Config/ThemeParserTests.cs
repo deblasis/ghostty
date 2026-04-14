@@ -74,7 +74,7 @@ public class ThemeParserTests
     }
 
     [Fact]
-    public void ParseThemePair_EqualsSeparator_AccepteForTypoTolerance()
+    public void ParseThemePair_EqualsSeparator_AcceptedForTypoTolerance()
     {
         // Zig accepts "=" as a typo-tolerance path. We do too on the read side.
         var (light, dark) = ThemeParser.ParseThemePair("light=Latte,dark=Mocha");
