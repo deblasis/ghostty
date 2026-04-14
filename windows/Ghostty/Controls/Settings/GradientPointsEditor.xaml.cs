@@ -4,6 +4,8 @@ using System.Linq;
 using Ghostty.Core.Settings;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Shapes;
 using Windows.UI;
 
 namespace Ghostty.Controls.Settings;
@@ -263,22 +265,32 @@ public sealed partial class GradientPointsEditor : UserControl
             PointsCanvas.Children.Add(falloff);
             _falloffs.Add(falloff);
 
-            // Handle: a small white-bordered circular button above the falloff.
-            // Using Button (a Control) instead of Ellipse (a Shape) so that
-            // IsTabStop and KeyDown are available for keyboard nudge + delete.
-            // CornerRadius = (HandleDiameter + 4) / 2 makes it visually circular.
+            // Handle: a small circular drag target above the falloff.
+            // ContentControl (not Button) so Button's internal pointer template
+            // does not steal PointerPressed before our drag handler can run.
+            // XY focus nav is disabled so Up/Down reach our KeyDown instead of
+            // moving focus to the next control outside the canvas.
             var handleSize = HandleDiameter + 4;
-            var handle = new Button
+            var handle = new ContentControl
             {
                 Width = handleSize,
                 Height = handleSize,
                 Padding = new Microsoft.UI.Xaml.Thickness(0),
-                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(p.Color),
-                BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                    Microsoft.UI.Colors.White),
-                BorderThickness = new Microsoft.UI.Xaml.Thickness(2),
-                CornerRadius = new Microsoft.UI.Xaml.CornerRadius(handleSize / 2),
+                IsTabStop = true,
+                XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Disabled,
                 Tag = i,
+                Content = new Ellipse
+                {
+                    Width = HandleDiameter,
+                    Height = HandleDiameter,
+                    Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(p.Color),
+                    Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                        Microsoft.UI.Colors.White),
+                    StrokeThickness = 2,
+                    IsHitTestVisible = false,
+                },
+                HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center,
+                VerticalContentAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
             };
             int capturedIndex = i;
             handle.KeyDown += (s, e) =>
@@ -317,7 +329,7 @@ public sealed partial class GradientPointsEditor : UserControl
             };
             handle.PointerPressed += (s, e) =>
             {
-                if (s is not Button btn) return;
+                if (s is not ContentControl btn) return;
                 btn.CapturePointer(e.Pointer);
                 _dragIndex = capturedIndex;
                 e.Handled = true;
@@ -339,7 +351,7 @@ public sealed partial class GradientPointsEditor : UserControl
             };
             handle.PointerReleased += (s, e) =>
             {
-                if (_dragIndex == capturedIndex && s is Button btn)
+                if (_dragIndex == capturedIndex && s is ContentControl btn)
                     btn.ReleasePointerCapture(e.Pointer);
                 _dragIndex = -1;
             };
