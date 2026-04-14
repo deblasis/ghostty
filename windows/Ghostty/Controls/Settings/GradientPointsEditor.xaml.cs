@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.UI;
 
@@ -23,6 +24,10 @@ public sealed partial class GradientPointsEditor : UserControl
 
     private readonly List<GradientPointModel> _points = new();
 
+    // Guard to suppress echo when we programmatically change row inputs
+    // (e.g. during drag) so NumberBox.ValueChanged doesn't loop back.
+    private bool _suppressRowEcho;
+
     public event EventHandler<IReadOnlyList<GradientPointModel>>? PointsChanged;
 
     public IReadOnlyList<GradientPointModel> Points => _points;
@@ -42,7 +47,135 @@ public sealed partial class GradientPointsEditor : UserControl
         _points.Clear();
         _points.AddRange(points.Take(MaxPoints));
         RenderCanvas();
+        RebuildRows();
     }
+
+    private void RebuildRows()
+    {
+        RowsPanel.Children.Clear();
+        for (int i = 0; i < _points.Count; i++)
+        {
+            RowsPanel.Children.Add(BuildRow(i));
+        }
+        AddPointButton.IsEnabled = _points.Count < MaxPoints;
+    }
+
+    private StackPanel BuildRow(int index)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Tag = index,
+        };
+
+        var swatch = new Button
+        {
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                _points[index].Color),
+        };
+        // Reuse the existing ColorPickerControl flyout from Phase 2.
+        var picker = new ColorPickerControl
+        {
+            Color = ColorToHex(_points[index].Color),
+        };
+        picker.ColorChanged += (_, _) =>
+        {
+            if (_suppressRowEcho) return;
+            var c = HexToColor(picker.Color) ?? _points[index].Color;
+            var p = _points[index];
+            _points[index] = p with { Color = c };
+            swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(c);
+            RenderCanvas();
+            RaisePointsChanged();
+        };
+        var flyout = new Flyout { Content = picker };
+        swatch.Flyout = flyout;
+        row.Children.Add(swatch);
+
+        row.Children.Add(BuildNumberBox("X", _points[index].X, v =>
+        {
+            var p = _points[index];
+            _points[index] = p with { X = (float)v };
+        }));
+        row.Children.Add(BuildNumberBox("Y", _points[index].Y, v =>
+        {
+            var p = _points[index];
+            _points[index] = p with { Y = (float)v };
+        }));
+        row.Children.Add(BuildNumberBox("R", _points[index].Radius, v =>
+        {
+            var p = _points[index];
+            _points[index] = p with { Radius = (float)v };
+        }));
+
+        var remove = new Button
+        {
+            Content = "\u2715",
+            Padding = new Thickness(6, 2, 6, 2),
+        };
+        remove.Click += (_, _) =>
+        {
+            _points.RemoveAt(index);
+            RenderCanvas();
+            RebuildRows();
+            RaisePointsChanged();
+        };
+        row.Children.Add(remove);
+
+        return row;
+    }
+
+    private NumberBox BuildNumberBox(string header, double value, Action<double> onChanged)
+    {
+        var nb = new NumberBox
+        {
+            Header = header,
+            Minimum = 0,
+            Maximum = 1,
+            SmallChange = 0.05,
+            LargeChange = 0.1,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
+            Width = 80,
+            Value = value,
+        };
+        nb.ValueChanged += (_, args) =>
+        {
+            if (_suppressRowEcho) return;
+            if (double.IsNaN(args.NewValue)) return;
+            var clamped = Math.Clamp(args.NewValue, 0.0, 1.0);
+            onChanged(clamped);
+            RenderCanvas();
+            RaisePointsChanged();
+        };
+        return nb;
+    }
+
+    private static string ColorToHex(Color c) =>
+        $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    private static Color? HexToColor(string hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex)) return null;
+        var s = hex.TrimStart('#');
+        if (s.Length != 6) return null;
+        if (!byte.TryParse(s.AsSpan(0, 2),
+            System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var r)) return null;
+        if (!byte.TryParse(s.AsSpan(2, 2),
+            System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var g)) return null;
+        if (!byte.TryParse(s.AsSpan(4, 2),
+            System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var b)) return null;
+        return Color.FromArgb(0xFF, r, g, b);
+    }
+
+    private void RaisePointsChanged() =>
+        PointsChanged?.Invoke(this, _points.AsReadOnly());
 
     private void RenderCanvas()
     {
