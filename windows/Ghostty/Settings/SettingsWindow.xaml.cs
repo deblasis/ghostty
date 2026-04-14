@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ghostty.Core.Config;
+using Ghostty.Core.Settings;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
 
@@ -12,11 +15,20 @@ namespace Ghostty.Settings;
 
 internal sealed partial class SettingsWindow : Window
 {
+    // 150ms matches the spec; longer than keystroke bursts, shorter
+    // than perceptible lag on a sub-30-item index.
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(150);
+
     private readonly IConfigService _configService;
     private readonly IConfigFileEditor _editor;
     private readonly IKeyBindingsProvider _keybindings;
     private readonly IThemeProvider _theme;
     private readonly Dictionary<string, Page> _pageCache = new();
+    private readonly DispatcherTimer _searchTimer;
+
+    private Pages.SearchResultsPage? _resultsPage;
+    private string _pendingQuery = string.Empty;
+    private string? _prePrevSelectedTag;  // restored when Esc clears search
 
     public SettingsWindow(
         IConfigService configService,
@@ -44,13 +56,21 @@ internal sealed partial class SettingsWindow : Window
         // NSScreen.mainScreen and handles multi-monitor correctly.
         const int width = 1100;
         const int height = 750;
-        var display = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(
-            windowId,
-            Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+        var display = DisplayArea.GetFromWindowId(windowId, DisplayAreaFallback.Primary);
         var work = display.WorkArea;
         var x = work.X + (work.Width - width) / 2;
         var y = work.Y + (work.Height - height) / 2;
         appWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, width, height));
+
+        _searchTimer = new DispatcherTimer { Interval = SearchDebounce };
+        _searchTimer.Tick += OnSearchTimerTick;
+
+        // Ctrl+F from anywhere in the window focuses the search box.
+        // Keyboard accelerator on the root element so it still fires
+        // when focus is inside a Page loaded into ContentFrame.
+        var ctrlF = new KeyboardAccelerator { Key = Windows.System.VirtualKey.F, Modifiers = Windows.System.VirtualKeyModifiers.Control };
+        ctrlF.Invoked += (_, args) => { args.Handled = true; SearchBox.Focus(FocusState.Keyboard); };
+        NavView.KeyboardAccelerators.Add(ctrlF);
 
         Closed += OnClosed;
         NavView.SelectedItem = NavView.MenuItems[0];
@@ -58,6 +78,8 @@ internal sealed partial class SettingsWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        _searchTimer.Stop();
+
         // Unsubscribe providers from ConfigChanged to avoid leaking
         // event subscriptions back to the long-lived ConfigService.
         (_keybindings as IDisposable)?.Dispose();
@@ -69,8 +91,17 @@ internal sealed partial class SettingsWindow : Window
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
+        // Suppress during search: the sidebar stays visible so users
+        // can still read match counts, but a click on a menu item
+        // while searching should leave the results pane alone.
+        if (!string.IsNullOrEmpty(_pendingQuery)) return;
+
         if (args.SelectedItem is not NavigationViewItem item) return;
-        var tag = item.Tag?.ToString();
+        ShowPage(item.Tag?.ToString());
+    }
+
+    private void ShowPage(string? tag)
+    {
         if (tag == null) return;
 
         if (!_pageCache.TryGetValue(tag, out var page))
@@ -92,4 +123,206 @@ internal sealed partial class SettingsWindow : Window
 
         ContentFrame.Content = page;
     }
+
+    // ---- Search ----
+
+    private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+        _pendingQuery = sender.Text ?? string.Empty;
+        _searchTimer.Stop();
+        _searchTimer.Start();
+    }
+
+    private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Escape) return;
+        e.Handled = true;
+        ClearSearch();
+    }
+
+    private void OnSearchTimerTick(object? sender, object e)
+    {
+        _searchTimer.Stop();
+        ApplyQuery(_pendingQuery);
+    }
+
+    private void ApplyQuery(string query)
+    {
+        var trimmed = query.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            ExitSearchMode();
+            return;
+        }
+
+        var hits = SettingsSearch.Search(trimmed, SettingsIndex.All);
+        UpdateSidebarCounts(hits);
+        UpdateResultsPane(trimmed, hits);
+
+        ResultCountText.Text = $"{hits.Count} result{(hits.Count == 1 ? "" : "s")}";
+        ResultCountText.Visibility = Visibility.Visible;
+    }
+
+    private void ExitSearchMode()
+    {
+        _pendingQuery = string.Empty;
+        ClearSidebarCounts();
+        ResultCountText.Visibility = Visibility.Collapsed;
+
+        // Restore the page the user was on before searching.
+        if (_prePrevSelectedTag != null && FindNavItem(_prePrevSelectedTag) is { } prev)
+        {
+            NavView.SelectedItem = prev;
+            ShowPage(_prePrevSelectedTag);
+            _prePrevSelectedTag = null;
+        }
+        else if (NavView.SelectedItem is NavigationViewItem current)
+        {
+            ShowPage(current.Tag?.ToString());
+        }
+    }
+
+    private void ClearSearch()
+    {
+        // Programmatic text change won't re-raise TextChanged with
+        // reason=UserInput, so ExitSearchMode must be called directly.
+        SearchBox.Text = string.Empty;
+        _searchTimer.Stop();
+        ExitSearchMode();
+    }
+
+    private void UpdateResultsPane(string query, IReadOnlyList<SearchHit> hits)
+    {
+        _resultsPage ??= new Pages.SearchResultsPage();
+
+        // Remember where the user was so Esc can restore it.
+        if (_prePrevSelectedTag == null && NavView.SelectedItem is NavigationViewItem current)
+            _prePrevSelectedTag = current.Tag?.ToString();
+
+        _resultsPage.Show(query, hits, OnResultChosen, ClearSearch);
+        ContentFrame.Content = _resultsPage;
+    }
+
+    private void OnResultChosen(string configKey)
+    {
+        // Resolve the entry to its owning page.
+        var entry = SettingsIndex.All.FirstOrDefault(x => x.Key == configKey);
+        if (entry == null) return;
+        var tag = PageTagFor(entry.Page);
+        if (tag == null) return;
+
+        // Leave search mode; select the target nav item; load the page.
+        SearchBox.Text = string.Empty;
+        _pendingQuery = string.Empty;
+        _searchTimer.Stop();
+        ClearSidebarCounts();
+        ResultCountText.Visibility = Visibility.Collapsed;
+        _prePrevSelectedTag = null;
+
+        if (FindNavItem(tag) is { } item)
+            NavView.SelectedItem = item;
+        ShowPage(tag);
+
+        // Defer card discovery until the page has loaded and measured;
+        // on first navigation the visual tree won't exist yet.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (ContentFrame.Content is not FrameworkElement root) return;
+            ScrollAndPulseAfterLoad(root, configKey);
+        });
+    }
+
+    private static void ScrollAndPulseAfterLoad(FrameworkElement root, string configKey)
+    {
+        // The page is already measured if it was cached, but not if
+        // this is the first time it's been navigated to. Hook Loaded
+        // once and defer to DispatcherQueue to run after first layout.
+        if (root.IsLoaded)
+        {
+            DoScrollAndPulse(root, configKey);
+            return;
+        }
+
+        void Handler(object? s, RoutedEventArgs e)
+        {
+            root.Loaded -= Handler;
+            root.DispatcherQueue.TryEnqueue(() => DoScrollAndPulse(root, configKey));
+        }
+        root.Loaded += Handler;
+    }
+
+    private static void DoScrollAndPulse(FrameworkElement root, string configKey)
+    {
+        var card = SettingsCardLocator.FindByConfigKey(root, configKey);
+        if (card == null) return;
+        SettingsCardLocator.ScrollIntoView(card);
+        SettingsCardLocator.Pulse(card);
+    }
+
+    // ---- Sidebar match counts ----
+
+    private void UpdateSidebarCounts(IReadOnlyList<SearchHit> hits)
+    {
+        var counts = hits.GroupBy(h => h.Entry.Page)
+                         .ToDictionary(g => g.Key, g => g.Count());
+
+        SetCount(NavGeneral, "General", counts);
+        SetCount(NavAppearance, "Appearance", counts);
+        SetCount(NavColors, "Colors", counts);
+        SetCount(NavTerminal, "Terminal", counts);
+        SetCount(NavKeybindings, "Keybindings", counts);
+        SetCount(NavAdvanced, "Advanced", counts);
+        // Raw Editor + Diagnostics don't host index entries yet.
+        SetCount(NavRaw, null, counts);
+        SetCount(NavDiagnostics, null, counts);
+    }
+
+    private static void SetCount(NavigationViewItem item, string? pageName, Dictionary<string, int> counts)
+    {
+        int n = pageName != null && counts.TryGetValue(pageName, out var c) ? c : 0;
+        // Dim pages with zero matches rather than collapsing, so the
+        // sidebar layout stays stable while the user edits the query.
+        item.Opacity = n > 0 ? 1.0 : 0.4;
+        item.InfoBadge = n > 0
+            ? new InfoBadge
+            {
+                Value = n,
+                Style = (Style)Application.Current.Resources["AttentionValueInfoBadgeStyle"],
+            }
+            : null;
+    }
+
+    private void ClearSidebarCounts()
+    {
+        foreach (var item in new[] { NavGeneral, NavAppearance, NavColors, NavTerminal, NavKeybindings, NavAdvanced, NavRaw, NavDiagnostics })
+        {
+            item.Opacity = 1.0;
+            item.InfoBadge = null;
+        }
+    }
+
+    private NavigationViewItem? FindNavItem(string tag) => tag switch
+    {
+        "general" => NavGeneral,
+        "appearance" => NavAppearance,
+        "colors" => NavColors,
+        "terminal" => NavTerminal,
+        "keybindings" => NavKeybindings,
+        "advanced" => NavAdvanced,
+        "raw" => NavRaw,
+        "diagnostics" => NavDiagnostics,
+        _ => null,
+    };
+
+    private static string? PageTagFor(string indexPageName) => indexPageName switch
+    {
+        "General" => "general",
+        "Appearance" => "appearance",
+        "Colors" => "colors",
+        "Terminal" => "terminal",
+        "Keybindings" => "keybindings",
+        "Advanced" => "advanced",
+        _ => null,
+    };
 }
