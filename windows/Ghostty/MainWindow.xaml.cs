@@ -92,6 +92,15 @@ public sealed partial class MainWindow : Window
     // skips allocating a new SolidColorBrush when nothing changed.
     private Windows.UI.Color? _lastRootBackground;
 
+    // Last structural gradient config (points, blend, static opacity).
+    // ApplyGradientTint rebuilds the SpriteVisual only when these
+    // change; opacity/animation updates run in place on every reload.
+    // Snapshot the points list into a private List so later config
+    // reloads can't mutate what we are comparing against.
+    private List<Ghostty.Services.GradientPoint>? _lastGradientPoints;
+    private string? _lastGradientBlend;
+    private float _lastGradientOpacity;
+
     // Tracks the last applied caption-button colors so we can skip
     // redundant TitleBar property writes. WinUI 3 marshals each
     // property setter to DWM separately, and rapid sequential writes
@@ -1133,6 +1142,13 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// Create, update, or remove the gradient tint visual based on
     /// the current config. Called on startup and config reload.
+    /// Rebuilds the SpriteVisual only when structural config
+    /// (points, blend, static gradient-opacity) changes; opacity and
+    /// animation updates apply in place. Without this gate, every
+    /// config reload tears down and recreates the visual, which
+    /// visibly re-flashes the gradient on high-frequency reloads
+    /// such as Ctrl+Shift+scroll for users with a gradient
+    /// configured -- same bug class as # 239.
     /// </summary>
     private void ApplyGradientTint()
     {
@@ -1142,29 +1158,38 @@ public sealed partial class MainWindow : Window
         {
             _gradientVisual?.Dispose();
             _gradientVisual = null;
+            _lastGradientPoints = null;
+            _lastGradientBlend = null;
             return;
         }
 
-        var isOverlay = _configService.GradientBlend == "overlay";
+        var blend = _configService.GradientBlend ?? "underlay";
+        var isOverlay = blend == "overlay";
         var gradientOpacity = _configService.GradientOpacity;
 
-        // Recreate if blend mode changed.
-        if (_gradientVisual is not null)
-        {
-            _gradientVisual.Dispose();
-            _gradientVisual = null;
-        }
+        var structuralChange = _gradientVisual is null
+            || _lastGradientBlend != blend
+            || _lastGradientOpacity != gradientOpacity
+            || _lastGradientPoints is null
+            || !_lastGradientPoints.SequenceEqual(points);
 
-        _gradientVisual = new GradientTintVisual(
-            RootGrid, points, isOverlay, gradientOpacity);
+        if (structuralChange)
+        {
+            _gradientVisual?.Dispose();
+            _gradientVisual = new GradientTintVisual(
+                RootGrid, points, isOverlay, gradientOpacity);
+            _lastGradientPoints = [.. points];
+            _lastGradientBlend = blend;
+            _lastGradientOpacity = gradientOpacity;
+        }
 
         // Track opacity if blur-follows-opacity is on.
         if (_configService.BackgroundBlurFollowsOpacity)
-            _gradientVisual.SetOpacity((float)_configService.BackgroundOpacity);
+            _gradientVisual!.SetOpacity((float)_configService.BackgroundOpacity);
         else if (!isOverlay)
-            _gradientVisual.SetOpacity(1f);
+            _gradientVisual!.SetOpacity(1f);
 
-        _gradientVisual.ApplyAnimation(
+        _gradientVisual!.ApplyAnimation(
             _configService.GradientAnimation,
             _configService.GradientSpeed);
     }
