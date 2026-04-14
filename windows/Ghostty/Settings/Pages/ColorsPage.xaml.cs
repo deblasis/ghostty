@@ -33,7 +33,7 @@ internal sealed partial class ColorsPage : Page
         if (configService is ConfigService cs)
         {
             var currentTheme = cs.CurrentTheme;
-            if (cs.LightTheme is not null || cs.DarkTheme is not null)
+            if (cs.LightTheme is not null && cs.DarkTheme is not null)
             {
                 // Pair mode.
                 SingleModeRadio.IsChecked = false;
@@ -62,24 +62,28 @@ internal sealed partial class ColorsPage : Page
 
         if (PairModeRadio.IsChecked == true)
         {
+            // Switching to pair mode: seed both boxes from the current
+            // single theme so the user sees their selection carried over.
+            var current = ThemeSearch.Text.Trim();
+            if (!string.IsNullOrEmpty(current))
+            {
+                LightThemeSearch.Text = current;
+                DarkThemeSearch.Text = current;
+            }
+
             ThemeSearch.Visibility = Visibility.Collapsed;
             PairThemePanel.Visibility = Visibility.Visible;
-            ThemeSearch.Text = "";
         }
         else
         {
-            ThemeSearch.Visibility = Visibility.Visible;
-            PairThemePanel.Visibility = Visibility.Collapsed;
-
-            // Collapse back to single: pick the dark theme as the default
-            // (most users run dark mode). Clear the pair boxes so re-entering
-            // pair mode starts fresh.
+            // Switching to single mode: pick the dark theme as default
+            // (most users run dark mode), falling back to light.
             var fallback = DarkThemeSearch.Text.Trim();
             if (string.IsNullOrEmpty(fallback))
                 fallback = LightThemeSearch.Text.Trim();
 
-            LightThemeSearch.Text = "";
-            DarkThemeSearch.Text = "";
+            ThemeSearch.Visibility = Visibility.Visible;
+            PairThemePanel.Visibility = Visibility.Collapsed;
 
             if (!string.IsNullOrEmpty(fallback))
             {
