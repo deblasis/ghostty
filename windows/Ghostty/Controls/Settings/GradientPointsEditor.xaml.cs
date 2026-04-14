@@ -142,16 +142,25 @@ public sealed partial class GradientPointsEditor : UserControl
         {
             Color = ColorToHex(_points[index].Color),
         };
-        picker.ColorChanged += (_, _) =>
-        {
-            if (_suppressRowEcho) return;
-            var c = HexToColor(picker.Color) ?? _points[index].Color;
-            var p = _points[index];
-            _points[index] = p with { Color = c };
-            swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(c);
-            RenderCanvas();
-            RaisePointsChanged();
-        };
+        // Subscribe to the picker's Color DependencyProperty so slider
+        // drags inside the flyout update the point live. (The
+        // ColorChanged event itself only fires on flyout close.)
+        picker.RegisterPropertyChangedCallback(
+            ColorPickerControl.ColorProperty,
+            (sender, _) =>
+            {
+                if (_suppressRowEcho) return;
+                if (sender is not ColorPickerControl cp) return;
+                var c = HexToColor(cp.Color) ?? _points[index].Color;
+                var existing = _points[index].Color;
+                if (existing.R == c.R && existing.G == c.G && existing.B == c.B)
+                    return;
+                var p = _points[index];
+                _points[index] = p with { Color = c };
+                swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(c);
+                RenderCanvas();
+                RaisePointsChanged();
+            });
         var flyout = new Flyout { Content = picker };
         swatch.Flyout = flyout;
         row.Children.Add(swatch);
@@ -287,7 +296,6 @@ public sealed partial class GradientPointsEditor : UserControl
                     Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Microsoft.UI.Colors.White),
                     StrokeThickness = 2,
-                    IsHitTestVisible = false,
                 },
                 HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center,
                 VerticalContentAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
@@ -327,10 +335,9 @@ public sealed partial class GradientPointsEditor : UserControl
                 RaisePointsChanged();
                 e.Handled = true;
             };
-            handle.PointerPressed += (s, e) =>
+            handle.PointerPressed += (_, e) =>
             {
-                if (s is not ContentControl btn) return;
-                btn.CapturePointer(e.Pointer);
+                handle.CapturePointer(e.Pointer);
                 _dragIndex = capturedIndex;
                 e.Handled = true;
             };
@@ -349,10 +356,10 @@ public sealed partial class GradientPointsEditor : UserControl
                 SyncRowNumbers(capturedIndex);
                 RaisePointsChanged();
             };
-            handle.PointerReleased += (s, e) =>
+            handle.PointerReleased += (_, e) =>
             {
-                if (_dragIndex == capturedIndex && s is ContentControl btn)
-                    btn.ReleasePointerCapture(e.Pointer);
+                if (_dragIndex == capturedIndex)
+                    handle.ReleasePointerCapture(e.Pointer);
                 _dragIndex = -1;
             };
             handle.PointerCaptureLost += (_, _) => _dragIndex = -1;
