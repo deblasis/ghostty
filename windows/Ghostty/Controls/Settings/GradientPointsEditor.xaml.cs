@@ -75,6 +75,10 @@ public sealed partial class GradientPointsEditor : UserControl
     /// </summary>
     public void SetPoints(IReadOnlyList<GradientPointModel> points)
     {
+        // Guard against external re-seeds (e.g. ConfigChanged handler)
+        // happening in the middle of an active drag. A rebuild would
+        // destroy the captured handle and stall the drag.
+        if (_dragIndex != -1) return;
         _points.Clear();
         _points.AddRange(points.Take(MaxPoints));
         RenderCanvas();

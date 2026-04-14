@@ -96,6 +96,13 @@ internal sealed partial class AppearancePage : Page
         }
 
         _loading = false;
+
+        // Re-seed the gradient editor when the config file changes on disk.
+        // The editor's own writes set _loading/SuppressWatcher, so this only
+        // fires for genuine external edits.
+        _configService.ConfigChanged += OnConfigChanged;
+        Unloaded += (_, _) => _configService.ConfigChanged -= OnConfigChanged;
+
         LoadFontsAsync();
     }
 
@@ -300,6 +307,26 @@ internal sealed partial class AppearancePage : Page
 
         var value = parts.Count > 0 ? string.Join(",", parts) : "static";
         OnValueChanged("background-gradient-animation", value);
+    }
+
+    private void OnConfigChanged(IConfigService svc)
+    {
+        if (_loading) return;
+        // GradientPoints is on the concrete ConfigService, not the interface.
+        // Bail silently for any other runtime type (e.g. test fakes).
+        if (svc is not ConfigService cs) return;
+        _loading = true;
+        try
+        {
+            GradientEditor.SetPoints(cs.GradientPoints
+                .Select(p => new Controls.Settings.GradientPointModel(
+                    p.X, p.Y, p.Color, p.Radius))
+                .ToList());
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
 }
