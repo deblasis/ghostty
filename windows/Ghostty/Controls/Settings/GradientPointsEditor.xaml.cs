@@ -247,6 +247,10 @@ public sealed partial class GradientPointsEditor : UserControl
         var h = PointsCanvas.ActualHeight;
         if (w <= 0 || h <= 0) return;
 
+        CanvasBorder.Visibility = _points.Count == 0
+            ? Microsoft.UI.Xaml.Visibility.Collapsed
+            : Microsoft.UI.Xaml.Visibility.Visible;
+
         for (int i = 0; i < _points.Count; i++)
         {
             var p = _points[i];

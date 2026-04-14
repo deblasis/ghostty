@@ -163,6 +163,7 @@
                     <ctrl:SettingsCard Header="Gradient opacity"
                                        ctrl:SettingsCard.ConfigKey="background-gradient-opacity">
                         <Slider x:Name="GradientOpacitySlider"
+                                Width="240"
                                 Minimum="0" Maximum="1" StepFrequency="0.01"
                                 TickFrequency="0.1" TickPlacement="BottomRight"
                                 Value="0.05"
@@ -182,15 +183,22 @@
                         </RadioButtons>
                     </ctrl:SettingsCard>
 
-                    <CheckBox x:Name="BreatheCheck" Content="Breathe (pulsing size)"
-                              Checked="AnimationMode_Changed" Unchecked="AnimationMode_Changed" />
-                    <CheckBox x:Name="ColorCycleCheck" Content="Color cycle (hue rotation)"
-                              Checked="AnimationMode_Changed" Unchecked="AnimationMode_Changed" />
+                    <ctrl:SettingsCard Header="Additional effects"
+                                       Description="Combine with any position animation above.">
+                        <StackPanel Spacing="4">
+                            <CheckBox x:Name="BreatheCheck" Content="Breathe (pulsing size)"
+                                      Checked="AnimationMode_Changed" Unchecked="AnimationMode_Changed" />
+                            <CheckBox x:Name="ColorCycleCheck" Content="Color cycle (hue rotation)"
+                                      Checked="AnimationMode_Changed" Unchecked="AnimationMode_Changed" />
+                        </StackPanel>
+                    </ctrl:SettingsCard>
 
                     <ctrl:SettingsCard Header="Animation speed"
                                        ctrl:SettingsCard.ConfigKey="background-gradient-speed">
                         <Slider x:Name="GradientSpeedSlider"
+                                Width="240"
                                 Minimum="0.1" Maximum="3" StepFrequency="0.1"
+                                TickFrequency="0.5" TickPlacement="BottomRight"
                                 Value="1"
                                 ValueChanged="GradientSpeed_ValueChanged" />
                     </ctrl:SettingsCard>
