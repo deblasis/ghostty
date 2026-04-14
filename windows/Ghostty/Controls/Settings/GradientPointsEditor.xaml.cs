@@ -46,6 +46,27 @@ public sealed partial class GradientPointsEditor : UserControl
     {
         InitializeComponent();
         PointsCanvas.SizeChanged += (_, _) => RenderCanvas();
+        AddPointButton.Click += (_, _) => TryAdd(0.5f, 0.5f);
+        PointsCanvas.DoubleTapped += (_, e) =>
+        {
+            var pos = e.GetPosition(PointsCanvas);
+            var w = PointsCanvas.ActualWidth;
+            var h = PointsCanvas.ActualHeight;
+            if (w <= 0 || h <= 0) return;
+            var (x, y) = GradientPointsLogic.Clamp(
+                (float)(pos.X / w), (float)(pos.Y / h));
+
+            // Don't stack a new point directly on top of an existing handle.
+            // Hit-test in normalized space using the handle's on-canvas radius.
+            var handleNorm = (float)(HandleDiameter / 2.0 / Math.Min(w, h));
+            var existing = _points
+                .Select(p => (p.X, p.Y))
+                .ToList();
+            if (GradientPointsLogic.HitTest(existing, x, y, handleNorm) is not null)
+                return;
+
+            TryAdd(x, y);
+        };
     }
 
     /// <summary>
@@ -58,6 +79,18 @@ public sealed partial class GradientPointsEditor : UserControl
         _points.AddRange(points.Take(MaxPoints));
         RenderCanvas();
         RebuildRows();
+    }
+
+    private void TryAdd(float x, float y)
+    {
+        if (_points.Count >= MaxPoints) return;
+        // Default new point: mid-radius, neutral amber so it's visible
+        // even against dark backgrounds. Consumers can re-color via the row.
+        var color = Color.FromArgb(0xFF, 0xF7, 0xC9, 0x48);
+        _points.Add(new GradientPointModel(x, y, color, 0.4f));
+        RenderCanvas();
+        RebuildRows();
+        RaisePointsChanged();
     }
 
     private void RebuildRows()
