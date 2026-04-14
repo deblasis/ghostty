@@ -13,6 +13,7 @@ using Ghostty.Hosting;
 using Ghostty.Interop;
 using Ghostty.Input;
 using Ghostty.Core.Panes;
+using Ghostty.Core.Shell;
 using Ghostty.Services;
 using Ghostty.Panes;
 using Ghostty.Settings;
@@ -292,11 +293,7 @@ public sealed partial class MainWindow : Window
         _themeManager.ThemeChanged += _ => ApplyTheme();
 
         _shellTheme = new ShellThemeService(configService);
-        _shellTheme.ThemeChanged += () =>
-        {
-            ApplyShellTheme();
-            ApplyRootGridBackground();
-        };
+        _shellTheme.ThemeChanged += OnShellThemeChanged;
         _themePreview = new ThemePreviewService(configService, DispatcherQueue);
         _themePreview.ListThemesRequested += OnListThemesRequested;
 
@@ -1051,8 +1048,8 @@ public sealed partial class MainWindow : Window
         // If the user's configured style is acrylic-based, keep the
         // acrylic backdrop alive even at opacity=1.0 so Ctrl+Shift+Scroll
         // doesn't flash between Mica and acrylic at the boundary.
-        var style = (opacity >= 1.0 && configStyle != "frosted")
-            ? "solid"
+        var style = (opacity >= 1.0 && configStyle != BackdropStyles.Frosted)
+            ? BackdropStyles.Solid
             : configStyle;
 
         // Skip if the effective style hasn't changed.
@@ -1067,21 +1064,21 @@ public sealed partial class MainWindow : Window
 
         switch (style)
         {
-            case "frosted":
+            case BackdropStyles.Frosted:
                 if (DesktopAcrylicController.IsSupported())
                     SystemBackdrop = new AcrylicBackdrop(
                         tintColor, tintOpacity, luminosityOpacity);
                 else
-                    goto case "solid";
+                    goto case BackdropStyles.Solid;
                 ApplyWindowClassBrush(ClassBrushKind.Transparent);
                 break;
 
-            case "crystal":
+            case BackdropStyles.Crystal:
                 SystemBackdrop = new CrystalBackdrop(hwnd);
                 ApplyWindowClassBrush(ClassBrushKind.Transparent);
                 break;
 
-            case "solid":
+            case BackdropStyles.Solid:
             default:
                 if (MicaController.IsSupported())
                     SystemBackdrop = new MicaBackdrop();
@@ -1099,7 +1096,7 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void UpdateAcrylicTuning()
     {
-        if (_currentBackdropStyle != "frosted") return;
+        if (_currentBackdropStyle != BackdropStyles.Frosted) return;
         if (SystemBackdrop is not AcrylicBackdrop current) return;
 
         var (tintColor, tintOpacity, luminosityOpacity) = ResolveAcrylicTuning();
@@ -1158,8 +1155,12 @@ public sealed partial class MainWindow : Window
         {
             _gradientVisual?.Dispose();
             _gradientVisual = null;
+            // Reset the full cache key together so the three fields
+            // never drift out of sync; a later non-empty apply will
+            // trip structuralChange on points==null and rebuild.
             _lastGradientPoints = null;
             _lastGradientBlend = null;
+            _lastGradientOpacity = 0f;
             return;
         }
 
@@ -1203,6 +1204,12 @@ public sealed partial class MainWindow : Window
     /// RootGrid.Background is NOT set here -- that is the job of
     /// <see cref="ApplyRootGridBackground"/>, the single source of
     /// truth for the RootGrid background color.
+    ///
+    /// HBRUSH lifetime: CreateSolidBrush allocates a GDI object
+    /// that is never DeleteObject'd when replaced by a later
+    /// SetClassLongPtr call -- tracked in # 242. The brush cache
+    /// below bounds the leak to one HBRUSH per Transparent/Opaque
+    /// toggle, so in practice it is tiny, but it is still a leak.
     /// </summary>
     private void ApplyWindowClassBrush(ClassBrushKind kind)
     {
@@ -1216,9 +1223,21 @@ public sealed partial class MainWindow : Window
                 Win32Interop.GetStockObject(Win32Interop.NULL_BRUSH),
             ClassBrushKind.Opaque =>
                 CreateSolidBrush(0x000C0C0Cu),
-            _ => IntPtr.Zero,
+            _ => throw new System.Diagnostics.UnreachableException(
+                $"Unknown ClassBrushKind: {kind}"),
         };
         SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, brush);
+    }
+
+    /// <summary>
+    /// ShellThemeService.ThemeChanged handler. Re-applies the shell
+    /// theme (caption buttons, tab hosts, title text) and refreshes
+    /// the single RootGrid.Background source of truth.
+    /// </summary>
+    private void OnShellThemeChanged()
+    {
+        ApplyShellTheme();
+        ApplyRootGridBackground();
     }
 
     /// <summary>
@@ -1237,7 +1256,7 @@ public sealed partial class MainWindow : Window
             ((uint)bg.G << 8) |
             bg.B;
 
-        var argb = Ghostty.Core.Shell.RootBackgroundResolver.Resolve(
+        var argb = RootBackgroundResolver.Resolve(
             _currentBackdropStyle, _shellTheme.IsEnabled, shellBgArgb);
 
         var next = Windows.UI.Color.FromArgb(

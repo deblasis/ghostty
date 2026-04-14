@@ -13,10 +13,10 @@ public sealed class RootBackgroundResolverTests
     private const uint ArbitraryShellBg = 0xFF8040C0u;
 
     [Theory]
-    [InlineData("frosted", false)]
-    [InlineData("frosted", true)]
-    [InlineData("crystal", false)]
-    [InlineData("crystal", true)]
+    [InlineData(BackdropStyles.Frosted, false)]
+    [InlineData(BackdropStyles.Frosted, true)]
+    [InlineData(BackdropStyles.Crystal, false)]
+    [InlineData(BackdropStyles.Crystal, true)]
     public void Transparent_backdrops_always_return_transparent(string style, bool shellThemeEnabled)
     {
         Assert.Equal(
@@ -29,7 +29,7 @@ public sealed class RootBackgroundResolverTests
     {
         Assert.Equal(
             RootBackgroundResolver.OpaqueChromeArgb,
-            RootBackgroundResolver.Resolve("solid", shellThemeEnabled: false, ArbitraryShellBg));
+            RootBackgroundResolver.Resolve(BackdropStyles.Solid, shellThemeEnabled: false, ArbitraryShellBg));
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public sealed class RootBackgroundResolverTests
     {
         Assert.Equal(
             ArbitraryShellBg,
-            RootBackgroundResolver.Resolve("solid", shellThemeEnabled: true, ArbitraryShellBg));
+            RootBackgroundResolver.Resolve(BackdropStyles.Solid, shellThemeEnabled: true, ArbitraryShellBg));
     }
 
     [Theory]
