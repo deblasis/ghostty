@@ -19,6 +19,12 @@ internal sealed partial class AppearancePage : Page
     private readonly IConfigFileEditor _editor;
     private readonly SearchableList _fontList;
     private bool _loading = true;
+    // Counts Reload() invocations we initiated ourselves. Each one will
+    // eventually re-enter OnConfigChanged via the dispatcher queue; we
+    // decrement to skip that re-seed (the editor already has the values
+    // we just wrote). External config file edits never touch this so they
+    // still re-seed normally.
+    private int _expectingOwnReloads;
 
     public AppearancePage(IConfigService configService, IConfigFileEditor editor)
     {
@@ -281,29 +287,22 @@ internal sealed partial class AppearancePage : Page
     private void WriteAllPoints()
     {
         if (_loading) return;
-        // Suppress the re-seed that OnConfigChanged would otherwise do
-        // when our own Reload() fires ConfigChanged synchronously. The
-        // editor already reflects the values we are about to write, so
-        // re-seeding would just rebuild rows and destroy any open flyout
-        // (e.g. the color picker the user is dragging). Inner try/finally
+        // Reload() fires ConfigChanged synchronously; OnConfigChanged
+        // decrements _expectingOwnReloads and skips the re-seed so an
+        // in-progress picker flyout isn't torn down. Inner try/finally
         // on SuppressWatcher keeps the watcher flag balanced if
         // SetRepeatableValues throws.
-        _loading = true;
-        try
+        var values = GradientEditor.Points
+            .Select(p => string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{p.X:0.###},{p.Y:0.###},#{p.Color.R:X2}{p.Color.G:X2}{p.Color.B:X2},{p.Radius:0.###}"))
+            .ToArray();
+        _configService.SuppressWatcher(true);
+        try { _editor.SetRepeatableValues("background-gradient-point", values); }
+        finally { _configService.SuppressWatcher(false); }
+        if (_configService.Reload())
         {
-            var values = GradientEditor.Points
-                .Select(p => string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"{p.X:0.###},{p.Y:0.###},#{p.Color.R:X2}{p.Color.G:X2}{p.Color.B:X2},{p.Radius:0.###}"))
-                .ToArray();
-            _configService.SuppressWatcher(true);
-            try { _editor.SetRepeatableValues("background-gradient-point", values); }
-            finally { _configService.SuppressWatcher(false); }
-            _configService.Reload();
-        }
-        finally
-        {
-            _loading = false;
+            _expectingOwnReloads++;
         }
     }
 
@@ -328,6 +327,14 @@ internal sealed partial class AppearancePage : Page
 
     private void OnConfigChanged(IConfigService svc)
     {
+        // Echo from our own Reload(): editor already reflects these
+        // values, so skip the rebuild (which would tear down any open
+        // row, like a color picker flyout the user is dragging).
+        if (_expectingOwnReloads > 0)
+        {
+            _expectingOwnReloads--;
+            return;
+        }
         if (_loading) return;
         // GradientPoints is on the concrete ConfigService, not the interface.
         // Bail silently for any other runtime type (e.g. test fakes).
