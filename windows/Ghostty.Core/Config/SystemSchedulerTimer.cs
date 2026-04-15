@@ -26,5 +26,15 @@ public sealed class SystemSchedulerTimer : ISchedulerTimer
     public void Cancel()
         => _timer.Change(Timeout.Infinite, Timeout.Infinite);
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose()
+    {
+        // Wait for any in-flight callback to finish before returning
+        // so disposal happens-before the host disposes the config
+        // editor. Without this, a just-fired timer callback could
+        // run SetValue on a disposed editor after ConfigWriteScheduler
+        // (and its consumers) have torn down.
+        using var done = new ManualResetEvent(false);
+        _timer.Dispose(done);
+        done.WaitOne();
+    }
 }
