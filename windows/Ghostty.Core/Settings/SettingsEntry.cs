@@ -25,6 +25,12 @@ public enum SettingType
 /// without pulling in WinUI 3. The Tags and Description fields drive
 /// the future search overlay; Page and Section drive the current
 /// grouped layout.
+///
+/// Tags is a <see cref="string"/>[] which does not participate in
+/// structural value equality -- two entries with the same Key but
+/// different Tags arrays compare as unequal. This is fine because
+/// entries are only ever looked up by Key; the record is not placed
+/// in a hash set and not compared elsewhere.
 /// </summary>
 public sealed record SettingsEntry(
     string Key,

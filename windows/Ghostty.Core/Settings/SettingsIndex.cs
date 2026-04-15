@@ -136,9 +136,9 @@ public static class SettingsIndex
 
         // ----- Terminal -----
         new("scrollback-limit", "Scrollback limit",
-            "Number of lines retained in the scrollback buffer.",
+            "Maximum bytes retained per terminal surface for scrollback (default 10 MB).",
             "Terminal", "Scrollback",
-            new[] { "scrollback", "buffer", "history", "lines" },
+            new[] { "scrollback", "buffer", "history", "bytes", "memory" },
             SettingType.Number),
         new("cursor-style", "Cursor style",
             "Block, bar, or underline cursor shape.",

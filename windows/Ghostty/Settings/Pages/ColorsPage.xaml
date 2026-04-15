@@ -63,25 +63,31 @@
 
             <ctrl:SettingsGroup Header="Terminal Colors"
                                 Description="Override individual colors. Takes precedence over the theme.">
+                <!--
+                  Color boxes are unnamed on purpose: seeding them with
+                  current values is deferred to Phase 2 (ColorPickerControl).
+                  Until then the placeholder text hints at the expected
+                  hex format.
+                -->
                 <ctrl:SettingsCard Header="Foreground"
                                    Description="Default text color."
                                    ctrl:SettingsCard.ConfigKey="foreground">
-                    <TextBox x:Name="ForegroundBox" PlaceholderText="#cdd6f4" MinWidth="160" LostFocus="Foreground_LostFocus" />
+                    <TextBox PlaceholderText="#cdd6f4" MinWidth="160" LostFocus="Foreground_LostFocus" />
                 </ctrl:SettingsCard>
                 <ctrl:SettingsCard Header="Background"
                                    Description="Default background color."
                                    ctrl:SettingsCard.ConfigKey="background">
-                    <TextBox x:Name="BackgroundBox" PlaceholderText="#1e1e2e" MinWidth="160" LostFocus="Background_LostFocus" />
+                    <TextBox PlaceholderText="#1e1e2e" MinWidth="160" LostFocus="Background_LostFocus" />
                 </ctrl:SettingsCard>
                 <ctrl:SettingsCard Header="Cursor color"
                                    Description="Color of the cursor glyph."
                                    ctrl:SettingsCard.ConfigKey="cursor-color">
-                    <TextBox x:Name="CursorColorBox" PlaceholderText="#f5e0dc" MinWidth="160" LostFocus="CursorColor_LostFocus" />
+                    <TextBox PlaceholderText="#f5e0dc" MinWidth="160" LostFocus="CursorColor_LostFocus" />
                 </ctrl:SettingsCard>
                 <ctrl:SettingsCard Header="Selection background"
                                    Description="Background color of selected text."
                                    ctrl:SettingsCard.ConfigKey="selection-background">
-                    <TextBox x:Name="SelectionColorBox" PlaceholderText="#585b70" MinWidth="160" LostFocus="SelectionColor_LostFocus" />
+                    <TextBox PlaceholderText="#585b70" MinWidth="160" LostFocus="SelectionColor_LostFocus" />
                 </ctrl:SettingsCard>
             </ctrl:SettingsGroup>
         </StackPanel>

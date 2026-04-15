@@ -64,16 +64,20 @@ public sealed partial class SettingsCard : UserControl
             string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    // Typed as UIElement (not object) so passing a plain string or a
+    // view-model is a compile error instead of silently rendering as
+    // text inside the ContentPresenter. XAML children still flow in
+    // through the ContentProperty attribute.
     public static readonly DependencyProperty ControlProperty =
         DependencyProperty.Register(
             nameof(Control),
-            typeof(object),
+            typeof(UIElement),
             typeof(SettingsCard),
             new PropertyMetadata(null, OnControlChanged));
 
-    public object? Control
+    public UIElement? Control
     {
-        get => GetValue(ControlProperty);
+        get => (UIElement?)GetValue(ControlProperty);
         set => SetValue(ControlProperty, value);
     }
 

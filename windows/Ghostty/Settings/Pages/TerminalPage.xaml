@@ -10,16 +10,16 @@
 
             <ctrl:SettingsGroup Header="Scrollback">
                 <ctrl:SettingsCard
-                    Header="Scrollback limit"
-                    Description="Number of lines retained in the scrollback buffer."
+                    Header="Scrollback limit (bytes)"
+                    Description="Maximum bytes retained per surface. Ghostty default is 10 MB (10000000)."
                     ctrl:SettingsCard.ConfigKey="scrollback-limit">
                     <NumberBox
                         x:Name="ScrollbackBox"
-                        Value="10000"
+                        Value="10000000"
                         Minimum="0"
-                        Maximum="1000000"
+                        Maximum="2147483647"
                         SpinButtonPlacementMode="Compact"
-                        MinWidth="140"
+                        MinWidth="160"
                         ValueChanged="Scrollback_ValueChanged" />
                 </ctrl:SettingsCard>
             </ctrl:SettingsGroup>

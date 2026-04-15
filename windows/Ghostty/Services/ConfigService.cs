@@ -60,7 +60,9 @@ internal sealed class ConfigService : IConfigService
     public string CursorStyle { get; private set; } = "block";
     public bool CursorBlink { get; private set; }
     public bool MouseHideWhileTyping { get; private set; }
-    public int ScrollbackLimit { get; private set; } = 10000;
+    // scrollback-limit is bytes in ghostty, not lines. Zig default is
+    // 10_000_000 (10 MB) per terminal surface -- see Config.zig.
+    public int ScrollbackLimit { get; private set; } = 10_000_000;
 
     // Font settings snapshot (for settings UI to display current values).
     public string FontFamily { get; private set; } = "";
@@ -314,16 +316,20 @@ internal sealed class ConfigService : IConfigService
             GetFileValue("mouse-hide-while-typing", "false"),
             "true", StringComparison.OrdinalIgnoreCase);
         if (int.TryParse(
-                GetFileValue("scrollback-limit", "10000"),
+                GetFileValue("scrollback-limit", "10000000"),
                 System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out var scrollback))
         {
-            ScrollbackLimit = Math.Clamp(scrollback, 0, 1_000_000);
+            // Upper bound is int.MaxValue (~2 GB) so we don't silently
+            // truncate realistic byte values. Zig uses usize which is
+            // wider, but the settings UI only needs to display what the
+            // user typed; anything bigger than 2 GB is exotic.
+            ScrollbackLimit = Math.Clamp(scrollback, 0, int.MaxValue);
         }
         else
         {
-            ScrollbackLimit = 10000;
+            ScrollbackLimit = 10_000_000;
         }
 
         // Font settings (used by settings UI for initial display).
