@@ -75,6 +75,14 @@
     -->
     <Channel Condition="'$(Channel)' == '' and '$(Configuration)' == 'Debug'">Nightly</Channel>
     <Channel Condition="'$(Channel)' == ''">Stable</Channel>
+    <!-- SPONSOR_BUILD compile gate.
+         When $(SponsorBuild) is 'true' (set by the SPONSOR_BUILD env var or -p:SponsorBuild=true),
+         the SPONSOR_BUILD preprocessor symbol is defined and code under Sponsor/ is compiled in.
+         Otherwise the flag is dormant and the Sponsor/ directory is excluded via <Compile Remove>
+         further down in this file. See docs spec 2026-04-14-sponsor-gated-distribution-design.md
+         section 4.5 for the full design. -->
+    <SponsorBuild Condition="'$(SponsorBuild)'==''">$(SPONSOR_BUILD)</SponsorBuild>
+    <SponsorBuild Condition="'$(SponsorBuild)'==''">false</SponsorBuild>
     <!--
       Channel is part of the path so switching variants (e.g.
       -p:Channel=Nightly after a Stable build) regenerates the icon
@@ -85,6 +93,10 @@
     -->
     <GeneratedBrandingDir>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\$(TargetFramework)\Branding\$(Channel)\</GeneratedBrandingDir>
     <ApplicationIcon>$(GeneratedBrandingDir)ghostty.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SponsorBuild)'=='true'">
+    <DefineConstants>$(DefineConstants);SPONSOR_BUILD</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
