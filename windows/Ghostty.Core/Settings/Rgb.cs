@@ -1,5 +1,5 @@
 using System;
-using System.Globalization;
+using Ghostty.Core.Config;
 
 namespace Ghostty.Core.Settings;
 
@@ -10,31 +10,16 @@ namespace Ghostty.Core.Settings;
 /// </summary>
 public readonly record struct Rgb(byte R, byte G, byte B)
 {
+    // Delegate to ThemeParser so the two hex parsers in Ghostty.Core
+    // don't drift. ThemeParser additionally accepts #AARRGGBB (dropping
+    // alpha); HexBox.MaxLength filters that out at the UI, so the
+    // behavior difference is inert for current callers.
     public static bool TryParseHex(string value, out Rgb rgb)
     {
         rgb = default;
         if (string.IsNullOrWhiteSpace(value)) return false;
-
-        var s = value.Trim();
-        if (s.StartsWith('#')) s = s[1..];
-
-        if (s.Length == 3)
-        {
-            // Expand "abc" -> "aabbcc" (standard CSS short form).
-            Span<char> expanded = stackalloc char[6];
-            expanded[0] = s[0]; expanded[1] = s[0];
-            expanded[2] = s[1]; expanded[3] = s[1];
-            expanded[4] = s[2]; expanded[5] = s[2];
-            s = new string(expanded);
-        }
-
-        if (s.Length != 6) return false;
-
-        if (!byte.TryParse(s.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)) return false;
-        if (!byte.TryParse(s.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)) return false;
-        if (!byte.TryParse(s.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
-
-        rgb = new Rgb(r, g, b);
+        if (!ThemeParser.TryParseHexRgb(value.Trim(), out var packed)) return false;
+        rgb = FromRgb24(packed);
         return true;
     }
 
@@ -47,6 +32,12 @@ public readonly record struct Rgb(byte R, byte G, byte B)
     /// </summary>
     public static Rgb FromRgb24(uint packed)
         => new((byte)((packed >> 16) & 0xFF), (byte)((packed >> 8) & 0xFF), (byte)(packed & 0xFF));
+
+    /// <summary>
+    /// Pack into the 0x00RRGGBB layout used by <c>ConfigService</c>'s
+    /// color properties. Inverse of <see cref="FromRgb24"/>.
+    /// </summary>
+    public uint ToRgb24() => ((uint)R << 16) | ((uint)G << 8) | B;
 
     public Hsv ToHsv()
     {

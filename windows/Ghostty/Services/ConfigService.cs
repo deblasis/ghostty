@@ -534,6 +534,14 @@ internal sealed class ConfigService : IConfigService
             && list.Count > 0;
 
     /// <summary>
+    /// Raw cached first-line value for a config key, or empty if not
+    /// set in the user's file. For UI paths that need to display a
+    /// user-authored override for a key without a typed accessor on
+    /// this service (e.g. selection-background).
+    /// </summary>
+    public string GetRawFileValue(string key) => GetFileValue(key, string.Empty);
+
+    /// <summary>
     /// Read all values for a repeatable Windows-only config key from
     /// the cached snapshot. Returns each matching line's value in file
     /// order.

@@ -17,7 +17,9 @@
                     BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                     BorderThickness="1" />
             <DropDownButton.Flyout>
-                <Flyout x:Name="PickerFlyout" Closed="PickerFlyout_Closed">
+                <Flyout x:Name="PickerFlyout"
+                        Opening="PickerFlyout_Opening"
+                        Closed="PickerFlyout_Closed">
                     <ColorPicker x:Name="Picker"
                                  IsMoreButtonVisible="False"
                                  IsHexInputVisible="True"
@@ -30,6 +32,7 @@
                  MinWidth="110"
                  MaxLength="7"
                  VerticalAlignment="Center"
+                 KeyDown="HexBox_KeyDown"
                  LostFocus="HexBox_LostFocus" />
     </StackPanel>
 </UserControl>

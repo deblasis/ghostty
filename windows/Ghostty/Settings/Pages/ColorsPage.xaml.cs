@@ -45,10 +45,14 @@ internal sealed partial class ColorsPage : Page
                 () => Rgb.FromRgb24(cs.BackgroundColor).ToHex());
             SyncColorOverride("cursor-color", CursorColorPicker, CursorColorResetButton,
                 () => cs.CursorColor is uint cursor ? Rgb.FromRgb24(cursor).ToHex() : "");
-            // selection-background has no typed accessor on ConfigService;
-            // the user's raw file value is enough to seed the picker.
+            // selection-background has no typed accessor on ConfigService,
+            // so parse the user's raw file value directly. Falls back to
+            // empty if the entry is present but unparseable -- same UX
+            // as "unset" -- rather than crashing the settings page.
             SyncColorOverride("selection-background", SelectionColorPicker, SelectionColorResetButton,
-                () => "");
+                () => ThemeParser.TryParseHexRgb(cs.GetRawFileValue("selection-background"), out var packed)
+                    ? Rgb.FromRgb24(packed).ToHex()
+                    : "");
 
             var currentTheme = cs.CurrentTheme;
             if (cs.LightTheme is not null && cs.DarkTheme is not null)
@@ -147,8 +151,8 @@ internal sealed partial class ColorsPage : Page
     {
         if (_loading) return;
         _configService.SuppressWatcher(true);
-        _editor.SetValue(key, value);
-        _configService.SuppressWatcher(false);
+        try { _editor.SetValue(key, value); }
+        finally { _configService.SuppressWatcher(false); }
         _configService.Reload();
     }
 
@@ -198,8 +202,8 @@ internal sealed partial class ColorsPage : Page
     {
         if (_loading) return;
         _configService.SuppressWatcher(true);
-        _editor.RemoveValue(key);
-        _configService.SuppressWatcher(false);
+        try { _editor.RemoveValue(key); }
+        finally { _configService.SuppressWatcher(false); }
         _configService.Reload();
 
         _loading = true;

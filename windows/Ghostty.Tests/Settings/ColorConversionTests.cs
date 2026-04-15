@@ -59,6 +59,18 @@ public class ColorConversionTests
         Assert.Equal(new Rgb((byte)r, (byte)g, (byte)b), Rgb.FromRgb24(packed));
     }
 
+    [Theory]
+    [InlineData(0xFF, 0x6B, 0x35, 0x00FF6B35u)]
+    [InlineData(0x1E, 0x1E, 0x2E, 0x001E1E2Eu)]
+    [InlineData(0, 0, 0, 0x00000000u)]
+    [InlineData(0xFF, 0xFF, 0xFF, 0x00FFFFFFu)]
+    public void ToRgb24_RoundTripsFromRgb24(int r, int g, int b, uint expected)
+    {
+        var rgb = new Rgb((byte)r, (byte)g, (byte)b);
+        Assert.Equal(expected, rgb.ToRgb24());
+        Assert.Equal(rgb, Rgb.FromRgb24(rgb.ToRgb24()));
+    }
+
     // ---------- HSV <-> RGB ----------
 
     [Theory]

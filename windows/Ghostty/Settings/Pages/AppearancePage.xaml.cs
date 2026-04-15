@@ -179,8 +179,8 @@ internal sealed partial class AppearancePage : Page
     {
         if (_loading) return;
         _configService.SuppressWatcher(true);
-        _editor.SetValue(key, value);
-        _configService.SuppressWatcher(false);
+        try { _editor.SetValue(key, value); }
+        finally { _configService.SuppressWatcher(false); }
         _configService.Reload();
     }
 
@@ -256,8 +256,8 @@ internal sealed partial class AppearancePage : Page
         if (!enabled)
         {
             _configService.SuppressWatcher(true);
-            _editor.RemoveValue("background-gradient-point");
-            _configService.SuppressWatcher(false);
+            try { _editor.RemoveValue("background-gradient-point"); }
+            finally { _configService.SuppressWatcher(false); }
             _configService.Reload();
             _pointEditors.Clear();
             PointsPanel.Children.Clear();
@@ -319,8 +319,8 @@ internal sealed partial class AppearancePage : Page
         if (_loading) return;
         var values = _pointEditors.Select(e => e.ToConfigValue()).ToArray();
         _configService.SuppressWatcher(true);
-        _editor.SetRepeatableValues("background-gradient-point", values);
-        _configService.SuppressWatcher(false);
+        try { _editor.SetRepeatableValues("background-gradient-point", values); }
+        finally { _configService.SuppressWatcher(false); }
         _configService.Reload();
     }
 
