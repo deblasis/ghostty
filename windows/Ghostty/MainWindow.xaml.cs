@@ -63,7 +63,7 @@ public sealed partial class MainWindow : Window
     private readonly TabManager _tabManager;
     private readonly PaneActionRouter _router;
     private readonly DialogTracker _dialogs = new();
-    private readonly UiSettings _uiSettings;
+    private readonly WindowState _windowState;
     // Kept as a field so the ColorValuesChanged subscription is not GC'd.
     private readonly Windows.UI.ViewManagement.UISettings _systemUiSettings;
     // Mirrors the current tab-strip orientation so we can detect when
@@ -317,7 +317,7 @@ public sealed partial class MainWindow : Window
             () => _factory.Create(),
             seed: seedTab);
         _router = new PaneActionRouter(_tabManager);
-        _uiSettings = UiSettings.Load();
+        _windowState = WindowState.Load();
         RestoreWindowPlacement();
 
         _horizontalTabHost = new TabHost(_tabManager, _router, _dialogs);
@@ -758,7 +758,7 @@ public sealed partial class MainWindow : Window
             var hwnd = new HWND(WindowNative.GetWindowHandle(this));
             var style = (WINDOW_STYLE)PInvoke.GetWindowLong(hwnd, WINDOW_LONG_PTR_INDEX.GWL_STYLE);
             var isMaximized = (style & WINDOW_STYLE.WS_MAXIMIZE) != 0;
-            _uiSettings.WindowMaximized = isMaximized;
+            _windowState.WindowMaximized = isMaximized;
 
             // Save the restored (non-maximized) bounds so we don't
             // persist a maximized rect that fills the whole monitor.
@@ -767,19 +767,19 @@ public sealed partial class MainWindow : Window
                 var placement = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
                 PInvoke.GetWindowPlacement(hwnd, ref placement);
                 var rc = placement.rcNormalPosition;
-                _uiSettings.WindowX = rc.left;
-                _uiSettings.WindowY = rc.top;
-                _uiSettings.WindowWidth = rc.right - rc.left;
-                _uiSettings.WindowHeight = rc.bottom - rc.top;
+                _windowState.WindowX = rc.left;
+                _windowState.WindowY = rc.top;
+                _windowState.WindowWidth = rc.right - rc.left;
+                _windowState.WindowHeight = rc.bottom - rc.top;
             }
             else
             {
-                _uiSettings.WindowX = AppWindow.Position.X;
-                _uiSettings.WindowY = AppWindow.Position.Y;
-                _uiSettings.WindowWidth = AppWindow.Size.Width;
-                _uiSettings.WindowHeight = AppWindow.Size.Height;
+                _windowState.WindowX = AppWindow.Position.X;
+                _windowState.WindowY = AppWindow.Position.Y;
+                _windowState.WindowWidth = AppWindow.Size.Width;
+                _windowState.WindowHeight = AppWindow.Size.Height;
             }
-            _uiSettings.Save();
+            _windowState.Save();
         }
 
         // Close settings window if open.
@@ -845,7 +845,8 @@ public sealed partial class MainWindow : Window
     /// Toggle between horizontal and vertical tab layouts at runtime.
     /// Triggered by Ctrl+Shift+, (comma), the title-bar icon button, and
     /// the strip context menu. Persists the choice via
-    /// <see cref="UiSettings"/> so it survives the next launch.
+    /// the shared debounced config writer so it survives the next
+    /// launch after the standard reload pipeline picks the key up.
     /// </summary>
     internal void ToggleTabLayout()
     {
@@ -1355,12 +1356,12 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void RestoreWindowPlacement()
     {
-        var w = _uiSettings.WindowWidth;
-        var h = _uiSettings.WindowHeight;
+        var w = _windowState.WindowWidth;
+        var h = _windowState.WindowHeight;
         if (w is null || h is null || w < 200 || h < 150) return;
 
-        var x = _uiSettings.WindowX ?? 0;
-        var y = _uiSettings.WindowY ?? 0;
+        var x = _windowState.WindowX ?? 0;
+        var y = _windowState.WindowY ?? 0;
 
         // Ensure the window's top-left quadrant is on a live monitor.
         // DisplayArea.GetFromPoint returns the nearest display if the
@@ -1382,7 +1383,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(w.Value, h.Value));
         AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
 
-        if (_uiSettings.WindowMaximized)
+        if (_windowState.WindowMaximized)
             PInvoke.ShowWindow(new HWND(WindowNative.GetWindowHandle(this)), SHOW_WINDOW_CMD.SW_SHOWMAXIMIZED);
     }
 

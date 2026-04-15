@@ -293,6 +293,13 @@ public partial class App : Application
             });
         ConfigWriteScheduler = _configWriteScheduler;
 
+        // One-shot migration of the legacy ui-settings.json into the
+        // real config + a placement-only window-state.json. Runs
+        // before the first window opens so MainWindow's initial reads
+        // of VerticalTabs / CommandPalette* see the migrated values.
+        // No-op after the first successful run (detects the new file).
+        Ghostty.Settings.WindowStateMigration.TryRun(_configService, _configEditor);
+
         // One supervisor per process. Threads lifecycle invariants
         // through every host that ever lives, including the bootstrap.
         _lifetimeSupervisor = new HostLifetimeSupervisor();
