@@ -19,16 +19,28 @@ internal sealed partial class SettingsWindow : Window
     // than perceptible lag on a sub-30-item index.
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(150);
 
+    // One row per nav item. Drives three lookups (tag -> NavigationViewItem,
+    // index-page-name -> tag, iteration for sidebar counts) so that page
+    // renames don't require editing three parallel switch statements.
+    // IndexName is null for nav items that don't host SettingsIndex entries.
+    private readonly record struct PageMapping(string Tag, string? IndexName, NavigationViewItem Item);
+
     private readonly IConfigService _configService;
     private readonly IConfigFileEditor _editor;
     private readonly IKeyBindingsProvider _keybindings;
     private readonly IThemeProvider _theme;
     private readonly Dictionary<string, Page> _pageCache = new();
     private readonly DispatcherTimer _searchTimer;
+    private readonly IReadOnlyList<PageMapping> _pageMappings;
 
     private Pages.SearchResultsPage? _resultsPage;
     private string _pendingQuery = string.Empty;
-    private string? _prePrevSelectedTag;  // restored when Esc clears search
+    private string? _preSearchSelectedTag;  // restored when Esc clears search
+
+    // Set while programmatically changing NavView.SelectedItem from search
+    // flows so NavView_SelectionChanged doesn't redundantly call ShowPage
+    // (the caller drives navigation explicitly).
+    private bool _suppressNavSelection;
 
     public SettingsWindow(
         IConfigService configService,
@@ -65,6 +77,19 @@ internal sealed partial class SettingsWindow : Window
         _searchTimer = new DispatcherTimer { Interval = SearchDebounce };
         _searchTimer.Tick += OnSearchTimerTick;
 
+        _pageMappings = new[]
+        {
+            new PageMapping("general", "General", NavGeneral),
+            new PageMapping("appearance", "Appearance", NavAppearance),
+            new PageMapping("colors", "Colors", NavColors),
+            new PageMapping("terminal", "Terminal", NavTerminal),
+            new PageMapping("keybindings", "Keybindings", NavKeybindings),
+            new PageMapping("advanced", "Advanced", NavAdvanced),
+            // Raw Editor + Diagnostics don't host SettingsIndex entries yet.
+            new PageMapping("raw", null, NavRaw),
+            new PageMapping("diagnostics", null, NavDiagnostics),
+        };
+
         // Ctrl+F from anywhere in the window focuses the search box.
         // Keyboard accelerator on the root element so it still fires
         // when focus is inside a Page loaded into ContentFrame.
@@ -95,6 +120,10 @@ internal sealed partial class SettingsWindow : Window
         // can still read match counts, but a click on a menu item
         // while searching should leave the results pane alone.
         if (!string.IsNullOrEmpty(_pendingQuery)) return;
+
+        // Skip when a search-exit flow is driving the selection itself;
+        // that caller calls ShowPage explicitly so we'd otherwise navigate twice.
+        if (_suppressNavSelection) return;
 
         if (args.SelectedItem is not NavigationViewItem item) return;
         ShowPage(item.Tag?.ToString());
@@ -171,11 +200,14 @@ internal sealed partial class SettingsWindow : Window
         ResultCountText.Visibility = Visibility.Collapsed;
 
         // Restore the page the user was on before searching.
-        if (_prePrevSelectedTag != null && FindNavItem(_prePrevSelectedTag) is { } prev)
+        if (_preSearchSelectedTag != null && FindNavItem(_preSearchSelectedTag) is { } prev)
         {
-            NavView.SelectedItem = prev;
-            ShowPage(_prePrevSelectedTag);
-            _prePrevSelectedTag = null;
+            var tag = _preSearchSelectedTag;
+            _preSearchSelectedTag = null;
+            _suppressNavSelection = true;
+            try { NavView.SelectedItem = prev; }
+            finally { _suppressNavSelection = false; }
+            ShowPage(tag);
         }
         else if (NavView.SelectedItem is NavigationViewItem current)
         {
@@ -197,8 +229,8 @@ internal sealed partial class SettingsWindow : Window
         _resultsPage ??= new Pages.SearchResultsPage();
 
         // Remember where the user was so Esc can restore it.
-        if (_prePrevSelectedTag == null && NavView.SelectedItem is NavigationViewItem current)
-            _prePrevSelectedTag = current.Tag?.ToString();
+        if (_preSearchSelectedTag == null && NavView.SelectedItem is NavigationViewItem current)
+            _preSearchSelectedTag = current.Tag?.ToString();
 
         _resultsPage.Show(query, hits, OnResultChosen, ClearSearch);
         ContentFrame.Content = _resultsPage;
@@ -218,10 +250,14 @@ internal sealed partial class SettingsWindow : Window
         _searchTimer.Stop();
         ClearSidebarCounts();
         ResultCountText.Visibility = Visibility.Collapsed;
-        _prePrevSelectedTag = null;
+        _preSearchSelectedTag = null;
 
         if (FindNavItem(tag) is { } item)
-            NavView.SelectedItem = item;
+        {
+            _suppressNavSelection = true;
+            try { NavView.SelectedItem = item; }
+            finally { _suppressNavSelection = false; }
+        }
         ShowPage(tag);
 
         // Defer card discovery until the page has loaded and measured;
@@ -267,62 +303,42 @@ internal sealed partial class SettingsWindow : Window
         var counts = hits.GroupBy(h => h.Entry.Page)
                          .ToDictionary(g => g.Key, g => g.Count());
 
-        SetCount(NavGeneral, "General", counts);
-        SetCount(NavAppearance, "Appearance", counts);
-        SetCount(NavColors, "Colors", counts);
-        SetCount(NavTerminal, "Terminal", counts);
-        SetCount(NavKeybindings, "Keybindings", counts);
-        SetCount(NavAdvanced, "Advanced", counts);
-        // Raw Editor + Diagnostics don't host index entries yet.
-        SetCount(NavRaw, null, counts);
-        SetCount(NavDiagnostics, null, counts);
-    }
-
-    private static void SetCount(NavigationViewItem item, string? pageName, Dictionary<string, int> counts)
-    {
-        int n = pageName != null && counts.TryGetValue(pageName, out var c) ? c : 0;
-        // Dim pages with zero matches rather than collapsing, so the
-        // sidebar layout stays stable while the user edits the query.
-        item.Opacity = n > 0 ? 1.0 : 0.4;
-        item.InfoBadge = n > 0
-            ? new InfoBadge
-            {
-                Value = n,
-                Style = (Style)Application.Current.Resources["AttentionValueInfoBadgeStyle"],
-            }
-            : null;
+        foreach (var m in _pageMappings)
+        {
+            int n = m.IndexName != null && counts.TryGetValue(m.IndexName, out var c) ? c : 0;
+            // Dim pages with zero matches rather than collapsing, so the
+            // sidebar layout stays stable while the user edits the query.
+            m.Item.Opacity = n > 0 ? 1.0 : 0.4;
+            m.Item.InfoBadge = n > 0
+                ? new InfoBadge
+                {
+                    Value = n,
+                    Style = (Style)Application.Current.Resources["AttentionValueInfoBadgeStyle"],
+                }
+                : null;
+        }
     }
 
     private void ClearSidebarCounts()
     {
-        foreach (var item in new[] { NavGeneral, NavAppearance, NavColors, NavTerminal, NavKeybindings, NavAdvanced, NavRaw, NavDiagnostics })
+        foreach (var m in _pageMappings)
         {
-            item.Opacity = 1.0;
-            item.InfoBadge = null;
+            m.Item.Opacity = 1.0;
+            m.Item.InfoBadge = null;
         }
     }
 
-    private NavigationViewItem? FindNavItem(string tag) => tag switch
+    private NavigationViewItem? FindNavItem(string tag)
     {
-        "general" => NavGeneral,
-        "appearance" => NavAppearance,
-        "colors" => NavColors,
-        "terminal" => NavTerminal,
-        "keybindings" => NavKeybindings,
-        "advanced" => NavAdvanced,
-        "raw" => NavRaw,
-        "diagnostics" => NavDiagnostics,
-        _ => null,
-    };
+        foreach (var m in _pageMappings)
+            if (m.Tag == tag) return m.Item;
+        return null;
+    }
 
-    private static string? PageTagFor(string indexPageName) => indexPageName switch
+    private string? PageTagFor(string indexPageName)
     {
-        "General" => "general",
-        "Appearance" => "appearance",
-        "Colors" => "colors",
-        "Terminal" => "terminal",
-        "Keybindings" => "keybindings",
-        "Advanced" => "advanced",
-        _ => null,
-    };
+        foreach (var m in _pageMappings)
+            if (m.IndexName == indexPageName) return m.Tag;
+        return null;
+    }
 }

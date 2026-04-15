@@ -68,7 +68,15 @@ internal static class SettingsCardLocator
         pulse.InsertKeyFrame(0.0f, new Vector3(1.0f, 1.0f, 1.0f));
         pulse.InsertKeyFrame(0.35f, new Vector3(1.02f, 1.02f, 1.0f));
         pulse.InsertKeyFrame(1.0f, new Vector3(1.0f, 1.0f, 1.0f));
+
+        // Wrap in a scoped batch so we can release the compositor's hold
+        // on the Scale property once the keyframes finish. Without the
+        // StopAnimation, setting visual.Scale from code later would be
+        // silently ignored -- the expression system keeps ownership.
+        var batch = compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
         visual.StartAnimation("Scale", pulse);
+        batch.End();
+        batch.Completed += (_, _) => visual.StopAnimation("Scale");
     }
 
     private static T? FindAncestor<T>(DependencyObject start) where T : class

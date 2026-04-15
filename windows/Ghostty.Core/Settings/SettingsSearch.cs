@@ -38,7 +38,9 @@ public static class SettingsSearch
         IEnumerable<SettingsEntry> entries)
     {
         if (string.IsNullOrWhiteSpace(query)) return Array.Empty<SearchHit>();
-        var q = query.Trim().ToLowerInvariant();
+        // Only trim; comparisons below use OrdinalIgnoreCase so we don't
+        // need to lowercase the query or the entry fields on every hit.
+        var q = query.Trim();
 
         var hits = new List<(int InputIndex, SearchHit Hit)>();
         int i = 0;
@@ -61,10 +63,9 @@ public static class SettingsSearch
 
     private static MatchKind Classify(SettingsEntry e, string q)
     {
-        var label = e.Label.ToLowerInvariant();
-        if (label == q) return MatchKind.ExactLabel;
-        if (label.StartsWith(q, StringComparison.Ordinal)) return MatchKind.LabelPrefix;
-        if (label.Contains(q, StringComparison.Ordinal)) return MatchKind.LabelContains;
+        if (e.Label.Equals(q, StringComparison.OrdinalIgnoreCase)) return MatchKind.ExactLabel;
+        if (e.Label.StartsWith(q, StringComparison.OrdinalIgnoreCase)) return MatchKind.LabelPrefix;
+        if (e.Label.Contains(q, StringComparison.OrdinalIgnoreCase)) return MatchKind.LabelContains;
 
         if (e.Description.Contains(q, StringComparison.OrdinalIgnoreCase))
             return MatchKind.DescriptionContains;
@@ -73,28 +74,28 @@ public static class SettingsSearch
         var tagContains = false;
         foreach (var tag in e.Tags)
         {
-            var t = tag.ToLowerInvariant();
-            if (t == q) { tagExact = true; break; }
-            if (t.Contains(q, StringComparison.Ordinal)) tagContains = true;
+            if (tag.Equals(q, StringComparison.OrdinalIgnoreCase)) { tagExact = true; break; }
+            if (tag.Contains(q, StringComparison.OrdinalIgnoreCase)) tagContains = true;
         }
         if (tagExact) return MatchKind.TagExact;
         if (tagContains) return MatchKind.TagContains;
 
-        if (IsSubsequence(q, e.Key.ToLowerInvariant())) return MatchKind.FuzzyKey;
+        if (IsSubsequenceIgnoreCase(q, e.Key)) return MatchKind.FuzzyKey;
 
         return MatchKind.None;
     }
 
     // Characters of needle appear in haystack in order (not necessarily
     // contiguous). Classic fuzzy-finder primitive, kept under the spec's
-    // "under 50 lines" bar.
-    private static bool IsSubsequence(string needle, string haystack)
+    // "under 50 lines" bar. Case-insensitive via char.ToLowerInvariant so
+    // callers don't have to pre-lowercase the inputs.
+    private static bool IsSubsequenceIgnoreCase(string needle, string haystack)
     {
         if (needle.Length == 0) return true;
         int ni = 0;
         foreach (var c in haystack)
         {
-            if (c == needle[ni])
+            if (char.ToLowerInvariant(c) == char.ToLowerInvariant(needle[ni]))
             {
                 ni++;
                 if (ni == needle.Length) return true;
