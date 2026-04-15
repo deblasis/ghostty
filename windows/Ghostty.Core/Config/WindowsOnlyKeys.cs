@@ -28,8 +28,8 @@ public static class WindowsOnlyKeys
 {
     public readonly record struct Entry(string Key, string Description);
 
-    public static readonly IReadOnlyList<Entry> All = new Entry[]
-    {
+    public static readonly IReadOnlyList<Entry> All =
+    [
         new("background-style",
             "Backdrop material preset (solid/frosted/crystal)."),
         new("background-tint-color",
@@ -50,10 +50,18 @@ public static class WindowsOnlyKeys
             "Whether the gradient renders over or under terminal text."),
         new("background-gradient-opacity",
             "Strength of the gradient tint layer."),
-    };
+    ];
 
     public static readonly FrozenSet<string> Set =
         All.Select(e => e.Key).ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Case-insensitive lookup from key to its <see cref="Entry"/>, used
+    /// by the settings UI to surface descriptions (e.g. as tooltips on
+    /// the code pills in Raw Editor).
+    /// </summary>
+    public static readonly FrozenDictionary<string, Entry> ByKey =
+        All.ToFrozenDictionary(e => e.Key, StringComparer.OrdinalIgnoreCase);
 
     public static bool Contains(string key) => Set.Contains(key);
 

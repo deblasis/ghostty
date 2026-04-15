@@ -3,6 +3,29 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <Page.Resources>
+        <!--
+          Inline "code pill" styles for the Windows-only keys list. Kept as
+          XAML Styles so the ThemeResource brushes re-resolve when the OS
+          theme flips while the Settings window is open; a code-behind
+          snapshot via Application.Current.Resources[...] would paint with
+          whatever theme was active at build time (see devhome #3329).
+        -->
+        <Style x:Key="CodePillBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="6,1,6,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="CodePillTextStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, monospace" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="IsTextSelectionEnabled" Value="True" />
+        </Style>
+    </Page.Resources>
+
     <Grid Padding="24" RowDefinitions="Auto,*,Auto,Auto,Auto">
         <TextBlock Text="Raw Config Editor" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,16" />
 

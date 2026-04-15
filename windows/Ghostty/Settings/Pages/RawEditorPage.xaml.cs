@@ -4,7 +4,6 @@ using Ghostty.Core.Config;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI.Xaml.Media;
 
 namespace Ghostty.Settings.Pages;
 
@@ -34,7 +33,12 @@ internal sealed partial class RawEditorPage : Page
         // AOT-safe: populate TextBlock from code-behind instead of
         // {Binding} which relies on reflection that NativeAOT trims.
         DiagList.ContainerContentChanging += OnContainerContentChanging;
-        _configService.ConfigChanged += OnConfigChanged;
+        // ConfigChanged is subscribed in Loaded (not the ctor) so the
+        // subscription lifetime tracks visibility across arbitrary
+        // navigate-away/navigate-back cycles. SettingsWindow caches
+        // page instances, and Unloaded fires every time we swap pages;
+        // if we subscribed in the ctor we'd only receive live updates
+        // on the first visit.
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
 
@@ -44,11 +48,14 @@ internal sealed partial class RawEditorPage : Page
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        _configService.ConfigChanged += OnConfigChanged;
+
         // Re-entering the page (SettingsWindow caches pages). Pull
         // fresh content from disk if the user's buffer is pristine,
         // so they see whatever other settings pages wrote while this
         // page was off-screen. If the buffer is dirty, leave it alone.
         RefreshFromDiskIfPristine();
+        RefreshDiagnostics(isInitialLoad: false);
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -156,7 +163,7 @@ internal sealed partial class RawEditorPage : Page
         WindowsOnlyExpander.Visibility = Visibility.Visible;
     }
 
-    private static RichTextBlock BuildWindowsOnlyContent(IReadOnlyList<string> keys)
+    private RichTextBlock BuildWindowsOnlyContent(IReadOnlyList<string> keys)
     {
         var rtb = new RichTextBlock
         {
@@ -180,26 +187,23 @@ internal sealed partial class RawEditorPage : Page
     }
 
     // Inline "code pill" that mirrors GitHub's backtick rendering: subtle
-    // rounded background, 1px stroke, monospace text. The TextBlock inside
-    // is selectable so the key still copies via Ctrl+C.
-    private static InlineUIContainer BuildCodePill(string key)
+    // rounded background, 1px stroke, monospace text. The Styles live in
+    // XAML (see Page.Resources) so the brushes re-resolve when the OS
+    // theme flips. Hover tooltip carries the registry's description so
+    // the user learns what the key does without leaving Settings.
+    private InlineUIContainer BuildCodePill(string key)
     {
         var border = new Border
         {
-            Background = (Brush)Application.Current.Resources["ControlFillColorSecondaryBrush"],
-            BorderBrush = (Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"],
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 1, 6, 1),
-            VerticalAlignment = VerticalAlignment.Center,
+            Style = (Style)Resources["CodePillBorderStyle"],
             Child = new TextBlock
             {
                 Text = key,
-                FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
-                FontSize = 12,
-                IsTextSelectionEnabled = true,
+                Style = (Style)Resources["CodePillTextStyle"],
             },
         };
+        if (WindowsOnlyKeys.ByKey.TryGetValue(key, out var entry))
+            ToolTipService.SetToolTip(border, entry.Description);
         return new InlineUIContainer { Child = border };
     }
 

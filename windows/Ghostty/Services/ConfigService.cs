@@ -94,11 +94,19 @@ internal sealed class ConfigService : IConfigService
 
     /// <summary>
     /// Windows-only keys that showed up in the user's config during
-    /// the last load. Populated by parsing the "unknown field"
-    /// diagnostics (libghostty's <c>Diagnostic</c> C struct only
-    /// exposes the formatted message, not the separate key field).
+    /// the last load, in file order. Populated by parsing the
+    /// "unknown field" diagnostics (libghostty's <c>Diagnostic</c> C
+    /// struct only exposes the formatted message, not the separate
+    /// key field).
     /// </summary>
     private readonly List<string> _windowsOnlyKeysUsed = new();
+
+    /// <summary>
+    /// Parallel set for O(1) dedup of <see cref="_windowsOnlyKeysUsed"/>
+    /// without scanning the list on every diagnostic.
+    /// </summary>
+    private readonly HashSet<string> _windowsOnlyKeysSeen =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Snapshot of the config file's key/value lines, populated at the
@@ -217,6 +225,7 @@ internal sealed class ConfigService : IConfigService
     {
         _diagnosticMessages.Clear();
         _windowsOnlyKeysUsed.Clear();
+        _windowsOnlyKeysSeen.Clear();
 
         var count = (int)NativeMethods.ConfigDiagnosticsCount(_config);
         for (int i = 0; i < count; i++)
@@ -231,7 +240,7 @@ internal sealed class ConfigService : IConfigService
             if (WindowsOnlyKeys.TryExtractUnknownFieldKey(message, out var key)
                 && WindowsOnlyKeys.Contains(key))
             {
-                if (!_windowsOnlyKeysUsed.Contains(key, StringComparer.OrdinalIgnoreCase))
+                if (_windowsOnlyKeysSeen.Add(key))
                     _windowsOnlyKeysUsed.Add(key);
                 continue;
             }
