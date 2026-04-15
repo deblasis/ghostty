@@ -38,6 +38,26 @@ internal sealed class ConfigService : IConfigService
     public bool AutoReloadEnabled { get; private set; }
     public bool SettingsUiEnabled { get; private set; }
     public double BackgroundOpacity { get; private set; } = 1.0;
+
+    public bool VerticalTabs
+        => WindowsOnlyKeyParsers.ParseBool(
+            GetFileValue("vertical-tabs", "false"),
+            defaultValue: false);
+
+    public bool CommandPaletteGroupCommands
+        => WindowsOnlyKeyParsers.ParseBool(
+            GetFileValue("command-palette-group-commands", "false"),
+            defaultValue: false);
+
+    public string CommandPaletteBackground
+        => WindowsOnlyKeyParsers.ParseStringAllowed(
+            GetFileValue("command-palette-background", "acrylic"),
+            allowed: CommandPaletteBackgroundAllowed,
+            defaultValue: "acrylic");
+
+    private static readonly string[] CommandPaletteBackgroundAllowed =
+        { "acrylic", "mica", "opaque" };
+
     public string BackgroundStyle { get; private set; } = "frosted";
     public Windows.UI.Color? BackgroundTintColor { get; private set; }
     public float? BackgroundTintOpacity { get; private set; }
