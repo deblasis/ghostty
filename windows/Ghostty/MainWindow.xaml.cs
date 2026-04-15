@@ -414,7 +414,7 @@ public sealed partial class MainWindow : Window
 
         _commandPaletteVm = CreateCommandPaletteViewModel();
         CommandPaletteUI.Bind(_commandPaletteVm);
-        CommandPaletteUI.ApplySettings(_uiSettings.CommandPaletteBackground);
+        CommandPaletteUI.ApplySettings(_configService.CommandPaletteBackground);
 
         // When the ViewModel closes itself (e.g. after executing a command),
         // sync the Popup and focus state.
@@ -567,6 +567,12 @@ public sealed partial class MainWindow : Window
 
     private void OnConfigReloaded(IConfigService cfg)
     {
+        // Re-apply the command-palette backdrop live. Group-by and
+        // ViewModel-construction-time settings are picked up the next
+        // time the palette is instantiated, so nothing to do here for
+        // CommandPaletteGroupCommands.
+        CommandPaletteUI.ApplySettings(cfg.CommandPaletteBackground);
+
         var vertical = cfg.VerticalTabs;
         if (_verticalTabsVisible == vertical) return;
         AnimateTabLayoutTo(vertical);
@@ -1498,7 +1504,7 @@ public sealed partial class MainWindow : Window
             sources,
             frecency,
             autoCompleter,
-            groupByCategory: _uiSettings.CommandPaletteGroupCommands);
+            groupByCategory: _configService.CommandPaletteGroupCommands);
     }
 
     private void ExecuteBindingAction(string actionKey)
