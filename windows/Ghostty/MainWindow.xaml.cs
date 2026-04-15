@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Ghostty.Commands;
 using Ghostty.Controls;
+using Ghostty.Core.Config;
 using Ghostty.Core.Hosting;
 using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;
@@ -65,6 +66,10 @@ public sealed partial class MainWindow : Window
     private readonly UiSettings _uiSettings;
     // Kept as a field so the ColorValuesChanged subscription is not GC'd.
     private readonly Windows.UI.ViewManagement.UISettings _systemUiSettings;
+    // Mirrors the current tab-strip orientation so we can detect when
+    // a config reload or settings-toggle callback actually changed the
+    // visible state (vs. echoing the same value we already apply).
+    private bool _verticalTabsVisible;
 
     private readonly TabHost _horizontalTabHost;
     private readonly VerticalTabHost _verticalTabHost;
@@ -374,7 +379,8 @@ public sealed partial class MainWindow : Window
                 ? "Switch to horizontal tabs"
                 : $"Switch to horizontal tabs ({chord})");
 
-        _tabHost = _uiSettings.VerticalTabs ? _verticalTabHost : _horizontalTabHost;
+        _verticalTabsVisible = _configService.VerticalTabs;
+        _tabHost = _verticalTabsVisible ? _verticalTabHost : _horizontalTabHost;
 
         _layout = new LayoutCoordinator(
             StripColumn,
@@ -382,7 +388,7 @@ public sealed partial class MainWindow : Window
             (FrameworkElement)_horizontalTabHost.HostElement,
             _verticalTabHost,
             VerticalTitleBar);
-        _layout.Snap(_uiSettings.VerticalTabs);
+        _layout.Snap(_verticalTabsVisible);
 
         _titleBar = new TitleBarCoordinator(
             this,
@@ -539,7 +545,45 @@ public sealed partial class MainWindow : Window
 
         _tabManager.LastTabClosed += (_, _) => Close();
 
+        // Settings page raises this the moment the user flips the
+        // vertical-tabs toggle so we animate without waiting for the
+        // debounced write + ConfigChanged round-trip. The config
+        // reload handler below runs the same animation for external
+        // edits (raw editor save, file-watcher, external config
+        // change); the _verticalTabsVisible mirror prevents double
+        // animation when both paths observe the same transition.
+        Ghostty.Settings.Pages.GeneralPage.VerticalTabsToggled
+            += OnVerticalTabsToggledFromSettings;
+        _configService.ConfigChanged += OnConfigReloaded;
+
         Closed += OnClosedAsync;
+    }
+
+    private void OnVerticalTabsToggledFromSettings(bool vertical)
+    {
+        if (_verticalTabsVisible == vertical) return;
+        AnimateTabLayoutTo(vertical);
+    }
+
+    private void OnConfigReloaded(IConfigService cfg)
+    {
+        var vertical = cfg.VerticalTabs;
+        if (_verticalTabsVisible == vertical) return;
+        AnimateTabLayoutTo(vertical);
+    }
+
+    private void AnimateTabLayoutTo(bool vertical)
+    {
+        if (_layout.IsSwitching) return;
+        _verticalTabsVisible = vertical;
+        _tabHost = vertical ? _verticalTabHost : _horizontalTabHost;
+        _layout.Animate(vertical, onCompleted: () =>
+        {
+            _titleBar.ApplyForCurrentMode();
+            var leaf = _tabManager.ActiveTab?.PaneHost?.ActiveLeaf;
+            if (leaf is not null)
+                leaf.Terminal().Focus(FocusState.Programmatic);
+        });
     }
 
     /// <summary>
@@ -690,6 +734,17 @@ public sealed partial class MainWindow : Window
 
     private async void OnClosedAsync(object sender, WindowEventArgs args)
     {
+        // Detach from process-global event sources before we tear
+        // down the dispatcher-bound state below. The ConfigService
+        // outlives individual MainWindows, so a lingering subscription
+        // would fire on a dead XamlRoot on the next reload. The
+        // static settings-page event has the same lifetime problem
+        // (multiple windows / detached tabs each leave one dangling
+        // entry if not explicitly removed).
+        Ghostty.Settings.Pages.GeneralPage.VerticalTabsToggled
+            -= OnVerticalTabsToggledFromSettings;
+        _configService.ConfigChanged -= OnConfigReloaded;
+
         // Persist window placement for next launch. Skip when
         // fullscreen -- restore to the normal size instead.
         if (AppWindow.Presenter.Kind != Microsoft.UI.Windowing.AppWindowPresenterKind.FullScreen)
@@ -789,28 +844,16 @@ public sealed partial class MainWindow : Window
     internal void ToggleTabLayout()
     {
         if (_layout.IsSwitching) return;
-        var toVertical = !_uiSettings.VerticalTabs;
-        _uiSettings.VerticalTabs = toVertical;
-        _uiSettings.Save();
-        _tabHost = toVertical ? _verticalTabHost : _horizontalTabHost;
+        var toVertical = !_verticalTabsVisible;
 
-        // SetTitleBar requires the target element to be visible and
-        // in the visual tree. Calling it mid-animation hits
-        // COMException 0x800F1000 because the incoming host is still
-        // at opacity 0 / translated off-screen. Defer to the
-        // Completed callback where Snap() has finalized visibility.
-        //
-        // The crossfade changes tab-host visibility, which causes
-        // WinUI 3's focus manager to move focus away from the
-        // terminal pane. Restore focus to the active terminal after
-        // the animation settles.
-        _layout.Animate(toVertical, onCompleted: () =>
-        {
-            _titleBar.ApplyForCurrentMode();
-            var leaf = _tabManager.ActiveTab?.PaneHost?.ActiveLeaf;
-            if (leaf is not null)
-                leaf.Terminal().Focus(FocusState.Programmatic);
-        });
+        // Persist through the shared debounced scheduler so rapid
+        // toggling (Ctrl+Shift+, held down, or the context-menu
+        // sibling firing at the same time as the settings toggle)
+        // still resolves to one disk write with the last value.
+        Ghostty.App.ConfigWriteScheduler?.Schedule(
+            "vertical-tabs", toVertical ? "true" : "false");
+
+        AnimateTabLayoutTo(toVertical);
     }
 
     /// <summary>
