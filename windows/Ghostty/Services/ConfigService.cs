@@ -80,7 +80,25 @@ internal sealed class ConfigService : IConfigService
     /// </summary>
     public string? DarkTheme { get; private set; }
 
-    public int DiagnosticsCount { get; private set; }
+    public int DiagnosticsCount => _diagnosticMessages.Count;
+
+    public IReadOnlyList<string> WindowsOnlyKeysUsed => _windowsOnlyKeysUsed;
+
+    /// <summary>
+    /// Filtered diagnostic messages from the last load/reload.
+    /// "Unknown field" errors for <see cref="WindowsOnlyKeys"/> are
+    /// excluded; those keys are collected in
+    /// <see cref="_windowsOnlyKeysUsed"/> and surfaced as info.
+    /// </summary>
+    private readonly List<string> _diagnosticMessages = new();
+
+    /// <summary>
+    /// Windows-only keys that showed up in the user's config during
+    /// the last load. Populated by parsing the "unknown field"
+    /// diagnostics (libghostty's <c>Diagnostic</c> C struct only
+    /// exposes the formatted message, not the separate key field).
+    /// </summary>
+    private readonly List<string> _windowsOnlyKeysUsed = new();
 
     /// <summary>
     /// Snapshot of the config file's key/value lines, populated at the
@@ -184,11 +202,8 @@ internal sealed class ConfigService : IConfigService
 
     public string GetDiagnostic(int index)
     {
-        if (index < 0 || index >= DiagnosticsCount) return string.Empty;
-        var diag = NativeMethods.ConfigGetDiagnostic(_config, (uint)index);
-        return diag.Message != IntPtr.Zero
-            ? Marshal.PtrToStringUTF8(diag.Message) ?? string.Empty
-            : string.Empty;
+        if (index < 0 || index >= _diagnosticMessages.Count) return string.Empty;
+        return _diagnosticMessages[index];
     }
 
     /// <summary>
@@ -200,7 +215,29 @@ internal sealed class ConfigService : IConfigService
 
     private void CacheDiagnostics()
     {
-        DiagnosticsCount = (int)NativeMethods.ConfigDiagnosticsCount(_config);
+        _diagnosticMessages.Clear();
+        _windowsOnlyKeysUsed.Clear();
+
+        var count = (int)NativeMethods.ConfigDiagnosticsCount(_config);
+        for (int i = 0; i < count; i++)
+        {
+            var diag = NativeMethods.ConfigGetDiagnostic(_config, (uint)i);
+            if (diag.Message == IntPtr.Zero) continue;
+            var message = Marshal.PtrToStringUTF8(diag.Message);
+            if (string.IsNullOrEmpty(message)) continue;
+
+            // Filter "unknown field" diagnostics for keys we know are
+            // Windows-only; surface them via WindowsOnlyKeysUsed instead.
+            if (WindowsOnlyKeys.TryExtractUnknownFieldKey(message, out var key)
+                && WindowsOnlyKeys.Contains(key))
+            {
+                if (!_windowsOnlyKeysUsed.Contains(key, StringComparer.OrdinalIgnoreCase))
+                    _windowsOnlyKeysUsed.Add(key);
+                continue;
+            }
+
+            _diagnosticMessages.Add(message);
+        }
     }
 
     private void ReadFlags()

@@ -39,7 +39,14 @@ internal sealed class ConfigFileEditor : IConfigFileEditor
 
     public void WriteRaw(string content)
     {
-        WriteAtomic(content);
+        // Normalize line endings to \n. WinUI 3's TextBox exposes
+        // its text with \r separators (and Windows tooling often
+        // inserts \r\n), but libghostty's config parser expects
+        // lines terminated by \n. Writing \r-only content made
+        // the whole file parse as a single ill-formed line, which
+        // silently swallowed every "unknown field" diagnostic.
+        var normalized = content.Replace("\r\n", "\n").Replace('\r', '\n');
+        WriteAtomic(normalized);
     }
 
     public void SetRepeatableValues(string key, string[] values)
