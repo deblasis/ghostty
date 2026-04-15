@@ -184,4 +184,13 @@
       <Visible>false</Visible>
     </Content>
   </ItemGroup>
+
+  <!-- Exclude the Sponsor/ subtree from compilation when the gate is off.
+       All sponsor-gated code must live under Sponsor/ for this one rule to cover it.
+       See docs spec 2026-04-14-sponsor-gated-distribution-design.md section 4.5. -->
+  <ItemGroup Condition="'$(SponsorBuild)'!='true'">
+    <Compile Remove="Sponsor/**/*.cs" />
+    <Page    Remove="Sponsor/**/*.xaml" />
+    <None    Remove="Sponsor/**/*" />
+  </ItemGroup>
 </Project>
