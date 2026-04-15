@@ -14,7 +14,6 @@ internal sealed partial class RawEditorPage : Page
     private readonly IConfigFileEditor _editor;
     private readonly ObservableCollection<string> _diagnostics = new();
     private int _lastDiagnosticCount = -1;
-    private int _lastWindowsOnlyCount = -1;
 
     // Last content we read from disk. Used to detect whether the
     // editor buffer is pristine (matches disk) or dirty (user has
@@ -86,8 +85,12 @@ internal sealed partial class RawEditorPage : Page
 
     private void LoadContent()
     {
-        _lastLoadedText = _editor.ReadAll();
-        Editor.Text = _lastLoadedText;
+        Editor.Text = _editor.ReadAll();
+        // Re-read after assignment: WinUI 3's TextBox canonicalizes line
+        // endings internally (to bare \r), so storing what we read from
+        // disk would drift from Editor.Text and make the pristine-check
+        // in RefreshFromDiskIfPristine always miss.
+        _lastLoadedText = Editor.Text;
         StatusText.Text = $"Loaded from {_configService.ConfigFilePath}";
     }
 
@@ -132,9 +135,9 @@ internal sealed partial class RawEditorPage : Page
         RefreshWindowsOnlyInfo();
     }
 
-    // Windows-only section mirrors the Diagnostics expander's behavior:
-    // hidden when empty, auto-expanded on transition into non-empty,
-    // user's collapse choice preserved during steady state.
+    // Windows-only section: hidden when empty, stays collapsed by
+    // default when present. Unlike the Diagnostics expander these keys
+    // aren't errors, so we don't auto-expand on transition.
     private void RefreshWindowsOnlyInfo()
     {
         var keys = _configService.WindowsOnlyKeysUsed;
@@ -145,18 +148,12 @@ internal sealed partial class RawEditorPage : Page
             WindowsOnlyExpander.Visibility = Visibility.Collapsed;
             WindowsOnlyExpander.IsExpanded = false;
             WindowsOnlyContentSlot.Content = null;
-            _lastWindowsOnlyCount = 0;
             return;
         }
 
         WindowsOnlyCountBadge.Value = count;
         WindowsOnlyContentSlot.Content = BuildWindowsOnlyContent(keys);
         WindowsOnlyExpander.Visibility = Visibility.Visible;
-        // Stay collapsed by default; Windows-only keys aren't errors so
-        // the user shouldn't need to dismiss an open panel on every
-        // settings visit. They can expand manually if curious.
-
-        _lastWindowsOnlyCount = count;
     }
 
     private static RichTextBlock BuildWindowsOnlyContent(IReadOnlyList<string> keys)

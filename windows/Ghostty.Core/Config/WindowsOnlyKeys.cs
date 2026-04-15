@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Ghostty.Core.Config;
 
@@ -50,31 +52,33 @@ public static class WindowsOnlyKeys
             "Strength of the gradient tint layer."),
     };
 
-    public static readonly IReadOnlySet<string> Set =
-        new HashSet<string>(
-            EnumerateKeys(All),
-            StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Set =
+        All.Select(e => e.Key).ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public static bool Contains(string key) => Set.Contains(key);
 
-    private static IEnumerable<string> EnumerateKeys(IReadOnlyList<Entry> entries)
-    {
-        foreach (var e in entries) yield return e.Key;
-    }
-
     /// <summary>
     /// Extract the config key from a libghostty "unknown field"
-    /// diagnostic. The precomputed message format is
-    /// <c>[FILE:LINE:]KEY: unknown field</c>; the key is the last
-    /// colon-separated segment before the trailing suffix. Returns
-    /// empty if the message isn't an "unknown field" diagnostic.
+    /// diagnostic. The precomputed message format (emitted by
+    /// <c>src/cli/diagnostics.zig</c>'s <c>Diagnostic.format</c>) is
+    /// <c>[FILE:LINE:|cli:IDX:]KEY: unknown field</c> when the key is
+    /// populated, or <c>[FILE:LINE:|cli:IDX:] unknown field</c> when
+    /// the diagnostic has no key. Returns false if the message doesn't
+    /// end in the suffix at all; returns true with whatever token sits
+    /// before the suffix otherwise (benign if the token isn't in
+    /// <see cref="Set"/>, since the caller treats non-matches as
+    /// regular diagnostics).
     /// </summary>
     /// <remarks>
     /// Windows paths in the prefix contain colons (e.g. C:\Users\...),
     /// but config keys themselves never do, so splitting on the final
-    /// ':' before the suffix gives the key unambiguously.
+    /// ':' before the suffix gives the key unambiguously. If upstream
+    /// ever changes the formatter (trailing punctuation, different
+    /// separator), the <c>EndsWith</c> check will stop matching and
+    /// every Windows-only diagnostic will surface as a regular error;
+    /// tests in <c>WindowsOnlyKeysTests</c> pin the current shapes.
     /// </remarks>
-    public static bool TryExtractUnknownFieldKey(string message, out string key)
+    public static bool TryExtractUnknownFieldKey(string? message, out string key)
     {
         const string Suffix = ": unknown field";
         if (message is null || !message.EndsWith(Suffix, StringComparison.Ordinal))

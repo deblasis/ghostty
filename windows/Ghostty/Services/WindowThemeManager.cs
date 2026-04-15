@@ -10,14 +10,6 @@ using WinRT.Interop;
 namespace Ghostty.Services;
 
 /// <summary>
-/// Maps the libghostty <c>window-theme</c> config value to WinUI 3
-/// ElementTheme and the DWM immersive dark mode attribute. Handles
-/// "light", "dark", "system" (follows OS), and "auto" (derives from
-/// background color luminance, matching the macOS port).
-///
-/// Subscribe to <see cref="ThemeChanged"/> for live-reload updates.
-/// </summary>
-/// <summary>
 /// How the manager resolves <c>window-theme</c> values that aren't
 /// explicitly <c>light</c> or <c>dark</c> (i.e. <c>auto</c>,
 /// <c>ghostty</c>). MainWindow uses Palette so terminal chrome tracks
@@ -30,6 +22,14 @@ internal enum ThemeFallbackStyle
     System,
 }
 
+/// <summary>
+/// Maps the libghostty <c>window-theme</c> config value to WinUI 3
+/// ElementTheme and the DWM immersive dark mode attribute. Handles
+/// "light", "dark", "system" (follows OS), and "auto" (derives from
+/// background color luminance, matching the macOS port).
+///
+/// Subscribe to <see cref="ThemeChanged"/> for live-reload updates.
+/// </summary>
 internal sealed class WindowThemeManager : IDisposable
 {
     private readonly IConfigService _configService;
