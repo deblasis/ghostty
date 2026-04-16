@@ -9,8 +9,7 @@ namespace Ghostty.Core.Shell;
 /// ConPTY), or is unrecognized (fall back to ConPTY + log).
 ///
 /// No I/O: the path is not resolved on disk, no process is spawned,
-/// no registry is read. Consumers in issue # 112 will combine this
-/// verdict with the <c>conpty-mode</c> config switch.
+/// no registry is read.
 /// </summary>
 public static class ShellDetector
 {
@@ -19,7 +18,7 @@ public static class ShellDetector
     // key is exactly the output of Path.GetFileName -- no suffix
     // stripping, no ambiguity between "pwsh" and "pwsh.exe".
     private static readonly FrozenDictionary<string, ShellCapability> KnownShells =
-        new Dictionary<string, ShellCapability>(StringComparer.OrdinalIgnoreCase)
+        new Dictionary<string, ShellCapability>
         {
             // VT-aware: safe to bypass ConPTY.
             ["pwsh.exe"]   = ShellCapability.VtAware,   // PowerShell 7+
@@ -52,25 +51,16 @@ public static class ShellDetector
         if (string.IsNullOrWhiteSpace(exePath))
             return new ShellDetectionResult(ShellCapability.Unknown, string.Empty);
 
-        string fileName;
-        try
-        {
-            fileName = Path.GetFileName(exePath);
-        }
-        catch (ArgumentException)
-        {
-            // Path.GetFileName stopped throwing on invalid chars in
-            // modern .NET, but guarding is cheap and keeps us safe if
-            // a future runtime reintroduces stricter validation.
-            return new ShellDetectionResult(ShellCapability.Unknown, string.Empty);
-        }
-
+        var fileName = Path.GetFileName(exePath);
         if (string.IsNullOrEmpty(fileName))
             return new ShellDetectionResult(ShellCapability.Unknown, string.Empty);
 
+        // Normalize unconditionally so NormalizedFileName is stable
+        // regardless of input casing. Callers log this verbatim; cheap
+        // cost on a cold path for predictable output.
         var normalized = fileName.ToLowerInvariant();
 
-        return KnownShells.TryGetValue(fileName, out var capability)
+        return KnownShells.TryGetValue(normalized, out var capability)
             ? new ShellDetectionResult(capability, normalized)
             : new ShellDetectionResult(ShellCapability.Unknown, normalized);
     }

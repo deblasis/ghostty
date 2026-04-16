@@ -8,18 +8,16 @@ namespace Ghostty.Core.Shell;
 /// <param name="Capability">VT/Console-API verdict.</param>
 /// <param name="NormalizedFileName">
 /// Lowercase leaf filename (e.g. <c>"pwsh.exe"</c>). Empty string when
-/// the input has no file component. Kept as a stable value so log lines
-/// do not drift with casing (<c>PWSH.EXE</c> and <c>pwsh.exe</c> both
-/// log as <c>pwsh.exe</c>).
+/// the input has no file component. Nullable because <c>default</c>
+/// struct initialization leaves it null; <see cref="ShellDetector.Detect"/>
+/// always returns a non-null value.
 /// </param>
 public readonly record struct ShellDetectionResult(
     ShellCapability Capability,
-    string NormalizedFileName)
+    string? NormalizedFileName)
 {
     /// <summary>
-    /// True if and only if the filename matched the known-shell table
-    /// (equivalently, <see cref="Capability"/> is not <see cref="ShellCapability.Unknown"/>).
-    /// Computed from <see cref="Capability"/> so the two signals cannot drift.
+    /// True when the filename matched the known-shell table.
     /// </summary>
     public bool IsKnown => Capability != ShellCapability.Unknown;
 }

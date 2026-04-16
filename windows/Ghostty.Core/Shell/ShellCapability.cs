@@ -2,8 +2,7 @@ namespace Ghostty.Core.Shell;
 
 /// <summary>
 /// VT/Console-API capability verdict for a Windows shell executable.
-/// Drives the ConPTY-vs-bypass decision in issue # 112. Detection is
-/// a case-insensitive filename heuristic; see <see cref="ShellDetector"/>.
+/// Detection is a case-insensitive filename heuristic; see <see cref="ShellDetector"/>.
 /// </summary>
 public enum ShellCapability
 {

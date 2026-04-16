@@ -81,7 +81,6 @@ public sealed class ShellDetectorTests
         var result = ShellDetector.Detect(fileName);
 
         Assert.True(result.IsKnown);
-        Assert.NotEqual(ShellCapability.Unknown, result.Capability);
         Assert.Equal(fileName.ToLowerInvariant(), result.NormalizedFileName);
     }
 
