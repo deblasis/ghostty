@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
+using System.Runtime.CompilerServices;
 
 namespace Ghostty.Commands;
 
@@ -12,10 +12,7 @@ internal enum PaletteMode
     CommandLine,
 }
 
-// Suppress MVVMTK0045: this ViewModel is internal and accessed from code-behind,
-// never directly x:Bind'd from XAML, so the WinRT-marshalling AOT concern does not apply.
-#pragma warning disable MVVMTK0045
-internal partial class CommandPaletteViewModel : ObservableObject
+internal class CommandPaletteViewModel : INotifyPropertyChanged
 {
     private readonly IReadOnlyList<ICommandSource> _sources;
     private readonly FrecencyStore _frecency;
@@ -23,32 +20,74 @@ internal partial class CommandPaletteViewModel : ObservableObject
     private readonly bool _groupByCategory;
     private List<CommandItem> _allCommands = [];
 
-    [ObservableProperty]
     private bool _isOpen;
+    public bool IsOpen
+    {
+        get => _isOpen;
+        set { if (_isOpen != value) { _isOpen = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private string _searchText = "";
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (_searchText == value) return;
+            _searchText = value;
+            Raise();
+            OnSearchTextChanged(value);
+        }
+    }
 
-    [ObservableProperty]
     private PaletteMode _mode = PaletteMode.Search;
+    public PaletteMode Mode
+    {
+        get => _mode;
+        set { if (_mode != value) { _mode = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private bool _isPinned;
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set { if (_isPinned != value) { _isPinned = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private CommandItem? _selectedCommand;
+    public CommandItem? SelectedCommand
+    {
+        get => _selectedCommand;
+        set { if (_selectedCommand != value) { _selectedCommand = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private List<CommandItem> _filteredCommands = [];
+    public List<CommandItem> FilteredCommands
+    {
+        get => _filteredCommands;
+        set { if (_filteredCommands != value) { _filteredCommands = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private string? _ghostText;
+    public string? GhostText
+    {
+        get => _ghostText;
+        set { if (_ghostText != value) { _ghostText = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private string _statusText = "";
+    public string StatusText
+    {
+        get => _statusText;
+        set { if (_statusText != value) { _statusText = value; Raise(); } }
+    }
 
-    [ObservableProperty]
     private string _modeLabel = "Search";
+    public string ModeLabel
+    {
+        get => _modeLabel;
+        set { if (_modeLabel != value) { _modeLabel = value; Raise(); } }
+    }
 
     public CommandPaletteViewModel(
         IReadOnlyList<ICommandSource> sources,
@@ -92,7 +131,6 @@ internal partial class CommandPaletteViewModel : ObservableObject
         else Open();
     }
 
-    [RelayCommand]
     public void ExecuteSelectedCommand()
     {
         if (SelectedCommand is null) return;
@@ -111,7 +149,7 @@ internal partial class CommandPaletteViewModel : ObservableObject
         }
     }
 
-    partial void OnSearchTextChanged(string value)
+    private void OnSearchTextChanged(string value)
     {
         if (value.StartsWith('>'))
         {
@@ -218,5 +256,10 @@ internal partial class CommandPaletteViewModel : ObservableObject
         idx = Math.Min(FilteredCommands.Count - 1, idx + 1);
         SelectedCommand = FilteredCommands[idx];
     }
+
+    // ── INotifyPropertyChanged ───────────────────────────────────────────────
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Raise([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
-#pragma warning restore MVVMTK0045
