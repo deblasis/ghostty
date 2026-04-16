@@ -13,12 +13,13 @@ namespace Ghostty.Core.Config;
 /// </summary>
 public static class ThemeParser
 {
-    // Two-char set, but SearchValues lets the JIT pick the optimal
-    // path (Vector256 on modern x64) without redoing the array setup
-    // on every config parse.
+    // Cached so the collection-expression `[':', '=']` form does not
+    // allocate a fresh char[] every parse. The JIT then dispatches to
+    // the SearchValues two-char scanner (Char2SearchValues path), which
+    // is the same shape as the specialized `IndexOfAny(char, char)`
+    // overload but reachable from the span-based call site below.
     private static readonly SearchValues<char> ThemePairSeparators =
         SearchValues.Create(":=");
-
 
     /// <summary>
     /// Parse a theme config value into light/dark components.

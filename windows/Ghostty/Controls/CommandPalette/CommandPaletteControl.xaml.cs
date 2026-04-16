@@ -45,6 +45,9 @@ internal sealed partial class CommandPaletteControl : UserControl
     {
         _vm?.PropertyChanged -= OnViewModelPropertyChanged;
 
+        // The subscribe below skips ?. on purpose: _vm was just
+        // assigned the non-nullable viewModel parameter on the
+        // previous line.
         _vm = viewModel;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
 

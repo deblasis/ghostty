@@ -9,9 +9,8 @@ namespace Ghostty.Core.Tabs;
 /// One tab's worth of state. Pure C# (no WinUI types) so the test
 /// project can reference it directly via the Ghostty.Core ProjectReference.
 ///
-/// INPC is hand-rolled here rather than depending on
-/// CommunityToolkit.Mvvm: only two reactive properties, not worth a
-/// NuGet dependency.
+/// INPC is hand-rolled with the C# 14 <c>field</c> keyword: no source
+/// generator dependency, no per-property backing field declarations.
 ///
 /// EffectiveTitle is a computed property; the model raises
 /// PropertyChanged for both UserOverrideTitle and ShellReportedTitle so

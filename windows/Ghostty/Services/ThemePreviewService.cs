@@ -24,8 +24,8 @@ namespace Ghostty.Services;
 internal sealed class ThemePreviewService : IAsyncDisposable, IDisposable
 {
     // Path.GetInvalidFileNameChars() allocates a fresh char[] on each
-    // call; SearchValues caches the set once and picks an optimal
-    // scanner for the ~41 invalid chars on Windows.
+    // call (defensive copy); SearchValues caches the set once and picks
+    // an optimal scanner for the 41 invalid chars on Windows.
     private static readonly SearchValues<char> InvalidFileNameChars =
         SearchValues.Create(Path.GetInvalidFileNameChars());
 

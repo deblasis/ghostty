@@ -14,9 +14,9 @@ internal enum PaletteMode
 
 /// <summary>
 /// Backs the command palette control. Pure code-behind binding
-/// (see <c>CommandPaletteControl.Bind</c>), so the type stays internal
-/// and INPC is hand-rolled for the same reason as <c>TabModel</c>:
-/// not worth a NuGet dependency for one consumer.
+/// (see <c>CommandPaletteControl.Bind</c>), so the type stays internal.
+/// INPC is hand-rolled with the C# 14 <c>field</c> keyword for the
+/// same reason as <c>TabModel</c>: no source generator dependency.
 /// </summary>
 internal class CommandPaletteViewModel : INotifyPropertyChanged
 {
