@@ -14,9 +14,37 @@ namespace Ghostty;
 /// </summary>
 public static partial class Program
 {
+    // Exit codes for Ghostty.exe. Distinct values let callers
+    // (launchers, tests, CI, `just run-win`) tell apart "the app
+    // refused to start" from "the app crashed mid-run":
+    //
+    //   0  normal success; the WinUI message loop returned cleanly,
+    //      or a CLI action (`+...`) completed with exit code 0.
+    //   1  native / corrupted-state crash (access violation, stack
+    //      overflow). Set by Windows when an unhandled SEH exception
+    //      tears down the process before managed code sees it. WER
+    //      captures the minidump under %LOCALAPPDATA%\CrashDumps\.
+    //   2  ghostty_init failed; the native library wrote the reason
+    //      to stderr. No config means no app.
+    //   3  unhandled managed exception in the GUI startup path. The
+    //      catch block in StartGui writes ghostty-crash.log in
+    //      AppContext.BaseDirectory.
+    //   >3 reserved for future distinguishable failure modes.
+    //
+    // CLI actions (`ghostty +list-themes` etc.) return whatever code
+    // the native action produced via Environment.Exit(exitCode) and
+    // bypass this scheme.
+    private const int ExitCodeInitFailed = 2;
+    private const int ExitCodeManagedUnhandled = 3;
+
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool FreeConsole();
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial uint GetConsoleProcessList(
+        [Out] uint[] lpdwProcessList,
+        uint dwProcessCount);
 
     [STAThread]
     static int Main(string[] args)
@@ -45,10 +73,26 @@ public static partial class Program
                 Environment.Exit(exitCode);
         }
 
-        // Detach from the console before starting WinUI. Without this,
-        // a console window would stay visible when launched from Explorer
-        // or Start Menu, and cmd.exe would block until we exit.
-        FreeConsole();
+        // Detach from the console before starting WinUI -- but ONLY
+        // when we are the console's sole owner. When launched from
+        // Explorer / Start Menu, Windows allocates a fresh console
+        // for a console-subsystem app and briefly flashes it; that
+        // is the console we want to close so the user never sees it.
+        // When launched from a terminal (bash, cmd, pwsh), the
+        // terminal shares its console with us; FreeConsole would
+        // detach us from the shared console and silently drop every
+        // Console.Error.WriteLine below, including the diagnostic
+        // logs and the unhandled-exception dump we rely on to debug
+        // startup crashes. GetConsoleProcessList returns >= 2 in the
+        // shared case (the parent terminal process counts as one of
+        // the processes attached to that console), exactly 1 in the
+        // solo case.
+        var consoleProcesses = new uint[4];
+        var consoleProcessCount = GetConsoleProcessList(
+            consoleProcesses,
+            (uint)consoleProcesses.Length);
+        if (consoleProcessCount <= 1)
+            FreeConsole();
 
         return StartGui();
     }
@@ -78,8 +122,10 @@ public static partial class Program
         if (result != 0)
         {
             // ghostty_init failed (e.g. invalid action). The Zig
-            // code logs to stderr. Exit with failure.
-            Environment.Exit(1);
+            // code logs to stderr. Use a distinct exit code so
+            // callers can tell this apart from a later GUI-startup
+            // crash (code 3) or a native access violation (code 1).
+            Environment.Exit(ExitCodeInitFailed);
         }
     }
 
@@ -249,7 +295,7 @@ public static partial class Program
             }
             catch { /* best effort */ }
 
-            return 1;
+            return ExitCodeManagedUnhandled;
         }
     }
 }

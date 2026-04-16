@@ -181,47 +181,60 @@ public partial class App : Application
     {
         InitializeComponent();
 
-        // Surface unhandled exceptions to stderr before the process dies.
-        // Without this, a managed exception on the UI thread silently exits
-        // with a non-descriptive code and we have nothing to debug from.
-        // Stays enabled in Debug builds only -- in Release we want WER to
-        // capture a real crash dump instead.
-#if DEBUG
+        // Surface unhandled exceptions to stderr AND to a file under
+        // %LOCALAPPDATA%\Ghostty\ before the process dies. Without
+        // this, a managed exception on the UI thread silently exits
+        // with a non-descriptive code and we have nothing to debug
+        // from -- especially in Release, where WER captures a dump
+        // but the user is left without a human-readable pointer to
+        // it. The file path is stable across Debug and Release so
+        // the same path works for dev debugging and for a user who
+        // needs to attach logs to a bug report.
         UnhandledException += (s, e) =>
         {
-            try
-            {
-                Console.Error.WriteLine("[Ghostty] UNHANDLED EXCEPTION on UI thread:");
-                Console.Error.WriteLine(e.Exception.ToString());
-                Console.Error.Flush();
-            }
-            catch { /* logging must not throw */ }
-            // Leave Handled=false so the runtime still tears the app down --
-            // we just wanted to see the exception first.
+            LogUnhandled("UI-THREAD UNHANDLED", e.Exception.ToString());
+            // Leave Handled=false so the runtime still tears the app
+            // down -- we just wanted to record the exception first.
         };
 
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
-            try
-            {
-                Console.Error.WriteLine("[Ghostty] UNHANDLED EXCEPTION (AppDomain):");
-                Console.Error.WriteLine(e.ExceptionObject?.ToString() ?? "(null)");
-                Console.Error.Flush();
-            }
-            catch { /* logging must not throw */ }
+            LogUnhandled("APPDOMAIN UNHANDLED", e.ExceptionObject?.ToString() ?? "(null)");
         };
 
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, e) =>
         {
-            try
-            {
-                Console.Error.WriteLine("[Ghostty] UNOBSERVED TASK EXCEPTION:");
-                Console.Error.WriteLine(e.Exception.ToString());
-                Console.Error.Flush();
-            }
-            catch { /* logging must not throw */ }
+            LogUnhandled("UNOBSERVED TASK", e.Exception.ToString());
         };
-#endif
+    }
+
+    private static void LogUnhandled(string tag, string detail)
+    {
+        // stderr mirror for terminal launches (Program.Main's
+        // FreeConsole gate keeps the console attached in that case).
+        try
+        {
+            Console.Error.WriteLine($"[Ghostty] {tag}:");
+            Console.Error.WriteLine(detail);
+            Console.Error.Flush();
+        }
+        catch { /* logging must not throw */ }
+
+        // File log for GUI launches and packaged releases where there
+        // is no readable console. Append so repeated crashes during
+        // one session accumulate into one file.
+        try
+        {
+            var localAppData = Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+            var dir = Path.Combine(localAppData, "Ghostty");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "crash.log");
+            File.AppendAllText(
+                path,
+                $"{DateTimeOffset.UtcNow:O} [{tag}]\n{detail}\n\n");
+        }
+        catch { /* logging must not throw */ }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
