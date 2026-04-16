@@ -12,6 +12,12 @@ internal enum PaletteMode
     CommandLine,
 }
 
+/// <summary>
+/// Backs the command palette control. Pure code-behind binding
+/// (see <c>CommandPaletteControl.Bind</c>), so the type stays internal
+/// and INPC is hand-rolled for the same reason as <c>TabModel</c>:
+/// not worth a NuGet dependency for one consumer.
+/// </summary>
 internal class CommandPaletteViewModel : INotifyPropertyChanged
 {
     private readonly IReadOnlyList<ICommandSource> _sources;
