@@ -27,14 +27,13 @@ internal sealed class TabModel : INotifyPropertyChanged
     /// because the config layer does not exist; reserved for plan 3.</summary>
     public string? ProfileId { get; set; }
 
-    private string? _userOverrideTitle;
     public string? UserOverrideTitle
     {
-        get => _userOverrideTitle;
+        get;
         set
         {
-            if (_userOverrideTitle == value) return;
-            _userOverrideTitle = value;
+            if (field == value) return;
+            field = value;
             Raise();
             // EffectiveTitle is computed; classic bindings listen for
             // the exact property name, so raise it explicitly.
@@ -42,27 +41,24 @@ internal sealed class TabModel : INotifyPropertyChanged
         }
     }
 
-    private string? _shellReportedTitle;
     public string? ShellReportedTitle
     {
-        get => _shellReportedTitle;
+        get;
         set
         {
-            if (_shellReportedTitle == value) return;
-            _shellReportedTitle = value;
+            if (field == value) return;
+            field = value;
             Raise();
             Raise(nameof(EffectiveTitle));
         }
     }
 
-    private TabProgressState _progress = TabProgressState.None;
     public TabProgressState Progress
     {
-        get => _progress;
-        set { if (!_progress.Equals(value)) { _progress = value; Raise(); } }
-    }
+        get;
+        set { if (!field.Equals(value)) { field = value; Raise(); } }
+    } = TabProgressState.None;
 
-    private TabColor _color = TabColor.None;
     /// <summary>
     /// Preset tint applied to this tab's header. In-memory only;
     /// resets to <see cref="TabColor.None"/> on app restart. True
@@ -71,9 +67,9 @@ internal sealed class TabModel : INotifyPropertyChanged
     /// </summary>
     public TabColor Color
     {
-        get => _color;
-        set { if (_color != value) { _color = value; Raise(); } }
-    }
+        get;
+        set { if (field != value) { field = value; Raise(); } }
+    } = TabColor.None;
 
     public string EffectiveTitle =>
         UserOverrideTitle ?? ShellReportedTitle ?? "Ghostty";
