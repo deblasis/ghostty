@@ -14,12 +14,14 @@ public static class WindowsOnlyKeyParsers
 {
     public static bool ParseBool(string? raw, bool defaultValue)
     {
+        // Accept only the canonical true/false spellings that ghostty's
+        // own parser writes and reads; 1/0 are tempting but would mean
+        // our accessors diverge from `ghostty +show-config` output and
+        // from the rest of the config ecosystem.
         if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
         var trimmed = raw.Trim();
-        if (trimmed.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            trimmed == "1") return true;
-        if (trimmed.Equals("false", StringComparison.OrdinalIgnoreCase) ||
-            trimmed == "0") return false;
+        if (trimmed.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (trimmed.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
         return defaultValue;
     }
 

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using Ghostty.Core.Config;
-using Ghostty.Services;
 
 namespace Ghostty.Settings;
 
@@ -24,7 +23,7 @@ namespace Ghostty.Settings;
 /// </summary>
 internal static class WindowStateMigration
 {
-    public static void TryRun(ConfigService configService, IConfigFileEditor editor)
+    public static void TryRun(IConfigService configService, IConfigFileEditor editor)
     {
         try
         {
@@ -54,17 +53,23 @@ internal static class WindowStateMigration
                 CommandPaletteGroupCommands: GetBool("CommandPaletteGroupCommands"),
                 CommandPaletteBackground: GetString("CommandPaletteBackground"));
 
-            // Existing-keys snapshot limited to the three migrated keys:
-            // ConfigService.IsConfiguredInFile is O(1) and the migrator
-            // only ever asks about these three. Keeping the set small
-            // avoids leaking a larger surface from the concrete service.
-            var existing = new HashSet<string>(StringComparer.Ordinal);
-            if (configService.IsConfiguredInFile("vertical-tabs"))
-                existing.Add("vertical-tabs");
-            if (configService.IsConfiguredInFile("command-palette-group-commands"))
-                existing.Add("command-palette-group-commands");
-            if (configService.IsConfiguredInFile("command-palette-background"))
-                existing.Add("command-palette-background");
+            // Read the user's config file directly so we can tell whether
+            // each migrated key is already set. IConfigService exposes
+            // IsConfiguredInFile, but its backing cache is only alive
+            // during ReadFlags() scope and is nulled in the finally, so
+            // calling it from here (outside a reload) returns false for
+            // every key. Scanning three substrings out of a small file
+            // once at startup is cheaper than threading a live snapshot
+            // through the service, and scopes the workaround to this
+            // one-shot migrator; fixing the latent cache bug is a
+            // separate concern tracked by the typed-accessor pattern.
+            var existing = ReadExistingKeysFromConfig(
+                configService.ConfigFilePath,
+                [
+                    "vertical-tabs",
+                    "command-palette-group-commands",
+                    "command-palette-background",
+                ]);
 
             var appends = LegacyUiSettingsMigrator.ComputeAppends(legacy, existing);
             if (appends.Count > 0)
@@ -111,5 +116,42 @@ internal static class WindowStateMigration
         {
             Debug.WriteLine($"WindowStateMigration failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Minimal ini scan over the user's config file, restricted to
+    /// the given interesting keys. Matches ghostty's own parser
+    /// semantics for the things we actually care about: skip blank
+    /// and '#'-prefixed lines, split on the first '=', case-insensitive
+    /// key compare, and treat any non-empty value as "set".
+    /// </summary>
+    private static HashSet<string> ReadExistingKeysFromConfig(
+        string configPath, string[] interesting)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(configPath) || !File.Exists(configPath))
+            return set;
+
+        var lookup = new HashSet<string>(interesting, StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var line in File.ReadLines(configPath))
+            {
+                var trimmed = line.TrimStart();
+                if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
+                var eq = trimmed.IndexOf('=');
+                if (eq <= 0) continue;
+                var key = trimmed[..eq].Trim();
+                if (!lookup.Contains(key)) continue;
+                var value = trimmed[(eq + 1)..].Trim();
+                if (value.Length == 0) continue;
+                set.Add(key);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"WindowStateMigration: config scan failed: {ex.Message}");
+        }
+        return set;
     }
 }

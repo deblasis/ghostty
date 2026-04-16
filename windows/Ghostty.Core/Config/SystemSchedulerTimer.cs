@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Ghostty.Core.Config;
@@ -33,8 +34,14 @@ public sealed class SystemSchedulerTimer : ISchedulerTimer
         // editor. Without this, a just-fired timer callback could
         // run SetValue on a disposed editor after ConfigWriteScheduler
         // (and its consumers) have torn down.
+        //
+        // Bounded wait: callbacks are tiny (a debounced config write)
+        // so 2s is already pathological. A timeout prevents a hung
+        // callback from deadlocking app shutdown, since Dispose runs
+        // on the UI thread.
         using var done = new ManualResetEvent(false);
         _timer.Dispose(done);
-        done.WaitOne();
+        if (!done.WaitOne(TimeSpan.FromSeconds(2)))
+            Debug.WriteLine("[SystemSchedulerTimer] Dispose timed out waiting for callback");
     }
 }

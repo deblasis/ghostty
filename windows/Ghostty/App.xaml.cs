@@ -284,11 +284,20 @@ public partial class App : Application
                 // back; suppress the watcher so our own write does
                 // not trigger a spurious second reload on top of the
                 // one we explicitly request.
+                //
+                // Dispose() explicitly passes signal:false so the
+                // common shutdown path never lands here, but a timer
+                // callback that fires concurrently with Dispose (the
+                // tail race) can still enqueue after _configService
+                // is nulled in the shutdown finally. Re-read the
+                // field on the UI thread and bail if shutdown won.
                 uiDispatcher.TryEnqueue(() =>
                 {
-                    _configService.SuppressWatcher(true);
-                    try { _configService.Reload(); }
-                    finally { _configService.SuppressWatcher(false); }
+                    var cs = _configService;
+                    if (cs is null) return;
+                    cs.SuppressWatcher(true);
+                    try { cs.Reload(); }
+                    finally { cs.SuppressWatcher(false); }
                 });
             });
         ConfigWriteScheduler = _configWriteScheduler;
@@ -358,6 +367,15 @@ public partial class App : Application
                 // supervisor (which throws if anything is still live),
                 // and calls AppFree.
                 _bootstrapHost?.Dispose();
+
+                // Dispose ConfigService last: it outlives every host
+                // (by design, so reload round-trips work across
+                // detached windows) but does own a FileSystemWatcher
+                // thread and the native config handle. Disposing here
+                // stops the watcher before the process exits and frees
+                // the libghostty config struct symmetrically with
+                // ConfigNew + ConfigLoadDefaultFiles.
+                _configService?.Dispose();
             }
             finally
             {
@@ -369,6 +387,8 @@ public partial class App : Application
                 BootstrapHost = null;
                 _lifetimeSupervisor = null;
                 LifetimeSupervisor = null;
+                _configService = null;
+                ConfigService = null;
                 Exit();
             }
         }

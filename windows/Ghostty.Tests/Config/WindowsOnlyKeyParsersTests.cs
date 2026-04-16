@@ -10,8 +10,9 @@ public class WindowsOnlyKeyParsersTests
     [InlineData("TRUE", true, true)]
     [InlineData("false", true, false)]
     [InlineData("FALSE", true, false)]
-    [InlineData("1", true, true)]
-    [InlineData("0", true, false)]
+    [InlineData("1", true, true)]        // non-canonical -> default (true)
+    [InlineData("1", false, false)]      // non-canonical -> default (false)
+    [InlineData("0", true, true)]        // non-canonical -> default
     [InlineData("yes", false, false)]   // unknown token -> default
     [InlineData("", false, false)]
     [InlineData(null, false, false)]

@@ -67,11 +67,87 @@ public class ConfigWriteSchedulerTests
         scheduler.Schedule("command-palette-background", "mica");
         scheduler.Schedule("vertical-tabs", "false");
 
+        // Every Schedule call must rearm the debounce timer so a
+        // steady trickle of writes still flushes at the tail end.
+        Assert.Equal(3, timer.ScheduleCount);
+
         timer.Fire();
 
         Assert.Equal(2, editor.Writes.Count);
         Assert.Contains(("vertical-tabs", "false"), editor.Writes);
         Assert.Contains(("command-palette-background", "mica"), editor.Writes);
+    }
+
+    [Fact]
+    public void Schedule_coalesces_case_insensitively()
+    {
+        var timer = new FakeTimer();
+        var editor = new FakeEditor();
+        using var scheduler = new ConfigWriteScheduler(
+            editor, timer, TimeSpan.FromMilliseconds(100), () => { });
+
+        // Ghostty's config parser is case-insensitive, so the two
+        // spellings must land on the same pending entry with last-wins.
+        scheduler.Schedule("vertical-tabs", "true");
+        scheduler.Schedule("Vertical-Tabs", "false");
+        timer.Fire();
+
+        Assert.Single(editor.Writes);
+        Assert.Equal("false", editor.Writes[0].Value);
+    }
+
+    [Fact]
+    public void Dispose_flushes_writes_but_does_not_signal()
+    {
+        var timer = new FakeTimer();
+        var editor = new FakeEditor();
+        var onFlush = 0;
+        var scheduler = new ConfigWriteScheduler(
+            editor, timer, TimeSpan.FromMilliseconds(200), () => onFlush++);
+
+        scheduler.Schedule("vertical-tabs", "true");
+        scheduler.Dispose();
+
+        // Disk write happens so persistence is not lost on shutdown,
+        // but onFlushed MUST NOT fire: the app-shutdown handler would
+        // enqueue a reload that runs after the bootstrap host has
+        // already freed the ghostty app (use-after-free).
+        Assert.Single(editor.Writes);
+        Assert.Equal(0, onFlush);
+    }
+
+    [Fact]
+    public void WriteBatch_continues_after_SetValue_throws()
+    {
+        var timer = new FakeTimer();
+        var editor = new ThrowingEditor(throwOnKey: "vertical-tabs");
+        var onFlush = 0;
+        using var scheduler = new ConfigWriteScheduler(
+            editor, timer, TimeSpan.FromMilliseconds(50), () => onFlush++);
+
+        scheduler.Schedule("vertical-tabs", "true");    // will throw
+        scheduler.Schedule("command-palette-background", "mica"); // must still land
+        timer.Fire();
+
+        Assert.Contains(("command-palette-background", "mica"), editor.Writes);
+        Assert.Equal(1, onFlush);   // reload signal still fires
+    }
+
+    private sealed class ThrowingEditor : IConfigFileEditor
+    {
+        private readonly string _throwOnKey;
+        public List<(string Key, string Value)> Writes { get; } = new();
+        public string FilePath => "throwing";
+        public ThrowingEditor(string throwOnKey) { _throwOnKey = throwOnKey; }
+        public string ReadAll() => string.Empty;
+        public void SetValue(string key, string value)
+        {
+            if (key == _throwOnKey) throw new InvalidOperationException("boom");
+            Writes.Add((key, value));
+        }
+        public void RemoveValue(string key) { }
+        public void WriteRaw(string content) { }
+        public void SetRepeatableValues(string key, string[] values) { }
     }
 
     [Fact]

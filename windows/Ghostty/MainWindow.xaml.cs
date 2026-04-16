@@ -58,7 +58,11 @@ public sealed partial class MainWindow : Window
 {
     private readonly GhosttyHost _host;
     private readonly ConfigService _configService;
-    private readonly ConfigFileEditor _configEditor;
+    // Single process-wide editor (owned by App). The per-instance
+    // RMW lock only serializes if every writer hits the SAME editor,
+    // so anything in this window that needs to mutate the config file
+    // goes through App.ConfigFileEditor rather than building its own.
+    private readonly IConfigFileEditor _configEditor;
     private readonly PaneHostFactory _factory;
     private readonly TabManager _tabManager;
     private readonly PaneActionRouter _router;
@@ -217,7 +221,10 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         _configService = configService;
-        _configEditor = new ConfigFileEditor(configService.ConfigFilePath);
+        _configEditor = App.ConfigFileEditor
+            ?? throw new InvalidOperationException(
+                "MainWindow: App.ConfigFileEditor is null. " +
+                "App.OnLaunched must initialize it before constructing a window.");
 
         // Build this window's per-window GhosttyHost around the shared
         // app. Each per-window host has its OWN per-window surface
@@ -472,7 +479,7 @@ public sealed partial class MainWindow : Window
             {
                 if (configService.SettingsUiEnabled)
                 {
-                    var editor = new ConfigFileEditor(configService.ConfigFilePath);
+                    var editor = App.ConfigFileEditor!;
                     var keybindings = new KeyBindingsProvider(configService);
                     var themeProvider = new ThemeProvider(configService);
                     // Reuse existing settings window if still open.
