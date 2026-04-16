@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -12,6 +13,13 @@ namespace Ghostty.Core.Config;
 /// </summary>
 public static class ThemeParser
 {
+    // Two-char set, but SearchValues lets the JIT pick the optimal
+    // path (Vector256 on modern x64) without redoing the array setup
+    // on every config parse.
+    private static readonly SearchValues<char> ThemePairSeparators =
+        SearchValues.Create(":=");
+
+
     /// <summary>
     /// Parse a theme config value into light/dark components.
     /// Handles single ("ThemeName") and pair ("light:X,dark:Y") forms.
@@ -33,7 +41,7 @@ public static class ThemeParser
         {
             // Find the first ':' or '='. Match Zig which tolerates spaces
             // around the separator (e.g. "dark : bar").
-            var sepIdx = part.IndexOfAny([':', '=']);
+            var sepIdx = part.AsSpan().IndexOfAny(ThemePairSeparators);
             if (sepIdx <= 0) continue;
 
             var name = part[..sepIdx].Trim();
