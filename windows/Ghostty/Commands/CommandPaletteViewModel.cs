@@ -70,8 +70,10 @@ internal class CommandPaletteViewModel : INotifyPropertyChanged
     private List<CommandItem> _filteredCommands = [];
     public List<CommandItem> FilteredCommands
     {
+        // Always a fresh list from ApplyFilter/ApplyCommandLineFilter,
+        // so no reference-equality guard: it would always pass anyway.
         get => _filteredCommands;
-        set { if (_filteredCommands != value) { _filteredCommands = value; Raise(); } }
+        set { _filteredCommands = value; Raise(); }
     }
 
     private string? _ghostText;
