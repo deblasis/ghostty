@@ -14,28 +14,40 @@ namespace Ghostty;
 /// </summary>
 public static partial class Program
 {
-    // Exit codes for Ghostty.exe. Distinct values let callers
-    // (launchers, tests, CI, `just run-win`) tell apart "the app
-    // refused to start" from "the app crashed mid-run":
-    //
-    //   0  normal success; the WinUI message loop returned cleanly,
-    //      or a CLI action (`+...`) completed with exit code 0.
-    //   1  native / corrupted-state crash (access violation, stack
-    //      overflow). Set by Windows when an unhandled SEH exception
-    //      tears down the process before managed code sees it. WER
-    //      captures the minidump under %LOCALAPPDATA%\CrashDumps\.
-    //   2  ghostty_init failed; the native library wrote the reason
-    //      to stderr. No config means no app.
-    //   3  unhandled managed exception in the GUI startup path. The
-    //      catch block in StartGui writes ghostty-crash.log in
-    //      AppContext.BaseDirectory.
-    //   >3 reserved for future distinguishable failure modes.
-    //
-    // CLI actions (`ghostty +list-themes` etc.) return whatever code
-    // the native action produced via Environment.Exit(exitCode) and
-    // bypass this scheme.
-    private const int ExitCodeInitFailed = 2;
-    private const int ExitCodeManagedUnhandled = 3;
+    /// <summary>
+    /// Exit codes for Ghostty.exe. Distinct values let callers
+    /// (launchers, tests, CI, <c>just run-win</c>) tell apart "refused
+    /// to start" from "crashed mid-run". CLI actions
+    /// (<c>ghostty +list-themes</c> etc.) bypass this scheme and
+    /// return whatever the native action produced via
+    /// <c>Environment.Exit(exitCode)</c>.
+    /// </summary>
+    private enum ExitCode
+    {
+        /// <summary>WinUI message loop returned cleanly, or a CLI
+        /// action completed with exit code 0.</summary>
+        Success = 0,
+
+        /// <summary>Native / corrupted-state crash (AV, stack overflow).
+        /// Not set by our code; this is what Windows returns when an
+        /// unhandled SEH exception tears the process down before
+        /// managed code sees it. WER captures the minidump under
+        /// <c>%LOCALAPPDATA%\CrashDumps\</c>.</summary>
+        NativeCrash = 1,
+
+        /// <summary><c>ghostty_init</c> failed. The native library
+        /// already wrote the reason to stderr; no config means no
+        /// app.</summary>
+        InitFailed = 2,
+
+        /// <summary>Unhandled managed exception in the GUI startup
+        /// path. <see cref="StartGui"/>'s catch block writes
+        /// <c>ghostty-crash.log</c> in <c>AppContext.BaseDirectory</c>.
+        /// (A future PR should converge this with the
+        /// <c>%LOCALAPPDATA%\Ghostty\crash.log</c> path used by the
+        /// App-level unhandled-exception handlers.)</summary>
+        ManagedUnhandled = 3,
+    }
 
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -73,20 +85,21 @@ public static partial class Program
                 Environment.Exit(exitCode);
         }
 
-        // Detach from the console before starting WinUI -- but ONLY
-        // when we are the console's sole owner. When launched from
-        // Explorer / Start Menu, Windows allocates a fresh console
-        // for a console-subsystem app and briefly flashes it; that
-        // is the console we want to close so the user never sees it.
-        // When launched from a terminal (bash, cmd, pwsh), the
-        // terminal shares its console with us; FreeConsole would
-        // detach us from the shared console and silently drop every
-        // Console.Error.WriteLine below, including the diagnostic
-        // logs and the unhandled-exception dump we rely on to debug
-        // startup crashes. GetConsoleProcessList returns >= 2 in the
-        // shared case (the parent terminal process counts as one of
-        // the processes attached to that console), exactly 1 in the
-        // solo case.
+        // Detach from the console before starting WinUI, but ONLY
+        // when we are the console's sole owner. Explorer / Start
+        // Menu allocates a fresh console for a console-subsystem app
+        // and briefly flashes it; that's the console we want to
+        // close. A terminal launch (bash, cmd, pwsh) shares the
+        // terminal's console with us, and FreeConsole would detach
+        // us from that shared console and silently drop every
+        // Console.Error.WriteLine below (which is how we lose
+        // startup diagnostics and the unhandled-exception dump).
+        //
+        // GetConsoleProcessList returns >= 2 in the shared case (the
+        // parent terminal process counts), exactly 1 in the solo
+        // case, and 0 if the probe fails (no attached console). The
+        // `<= 1` guard treats a probe failure as solo, which matches
+        // the pre-gating behavior and never worse.
         var consoleProcesses = new uint[4];
         var consoleProcessCount = GetConsoleProcessList(
             consoleProcesses,
@@ -122,10 +135,9 @@ public static partial class Program
         if (result != 0)
         {
             // ghostty_init failed (e.g. invalid action). The Zig
-            // code logs to stderr. Use a distinct exit code so
-            // callers can tell this apart from a later GUI-startup
-            // crash (code 3) or a native access violation (code 1).
-            Environment.Exit(ExitCodeInitFailed);
+            // code logs to stderr. Distinct exit code per the
+            // ExitCode enum above.
+            Environment.Exit((int)ExitCode.InitFailed);
         }
     }
 
@@ -295,7 +307,7 @@ public static partial class Program
             }
             catch { /* best effort */ }
 
-            return ExitCodeManagedUnhandled;
+            return (int)ExitCode.ManagedUnhandled;
         }
     }
 }

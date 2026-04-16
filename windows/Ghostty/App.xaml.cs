@@ -223,6 +223,20 @@ public partial class App : Application
         // File log for GUI launches and packaged releases where there
         // is no readable console. Append so repeated crashes during
         // one session accumulate into one file.
+        //
+        // Three handlers (UI thread, AppDomain, TaskScheduler) can
+        // fire on three different threads in quick succession during
+        // a cascading crash; serialize the write or they race on the
+        // file open and at least one `AppendAllText` throws an
+        // `IOException`. A dead crash logger silently swallowing the
+        // exception we were trying to record is exactly the failure
+        // mode this whole helper was built to prevent.
+        //
+        // LocalApplicationData is a per-user folder. For packaged
+        // (MSIX) builds Windows virtualizes this to the package's
+        // private app-data directory; the file still lands somewhere
+        // the user can find via the Settings app, just not the literal
+        // `%LOCALAPPDATA%\Ghostty\`.
         try
         {
             var localAppData = Environment.GetFolderPath(
@@ -230,12 +244,17 @@ public partial class App : Application
             var dir = Path.Combine(localAppData, "Ghostty");
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, "crash.log");
-            File.AppendAllText(
-                path,
-                $"{DateTimeOffset.UtcNow:O} [{tag}]\n{detail}\n\n");
+            lock (_crashLogLock)
+            {
+                File.AppendAllText(
+                    path,
+                    $"{DateTimeOffset.UtcNow:O} [{tag}]\n{detail}\n\n");
+            }
         }
         catch { /* logging must not throw */ }
     }
+
+    private static readonly object _crashLogLock = new();
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
