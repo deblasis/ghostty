@@ -17,6 +17,7 @@ namespace Ghostty.Bench.Transports;
 //   our copies immediately after CreatePseudoConsole returns,
 //   otherwise the child's stdout pipe never gets EOF on exit and
 //   the reader hangs forever.
+// Audited against microsoft/terminal/samples/ConPTY/MiniTerm on 2026-04-17.
 [SupportedOSPlatform("windows")]
 public sealed class ConPtyTransport : ITransport
 {
@@ -79,12 +80,11 @@ public sealed class ConPtyTransport : ITransport
             throw new TransportException($"InitializeProcThreadAttributeList failed: 0x{initErr:X8}");
         }
 
-        IntPtr hpconValue = _hpcon;
         if (!UpdateProcThreadAttribute(
                 _attrList,
                 0,
                 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                ref hpconValue,
+                _hpcon,
                 (IntPtr)IntPtr.Size,
                 IntPtr.Zero,
                 IntPtr.Zero))
@@ -240,7 +240,7 @@ public sealed class ConPtyTransport : ITransport
         IntPtr lpAttributeList,
         uint dwFlags,
         IntPtr Attribute,
-        ref IntPtr lpValue,
+        IntPtr lpValue,
         IntPtr cbSize,
         IntPtr lpPreviousValue,
         IntPtr lpReturnSize);
