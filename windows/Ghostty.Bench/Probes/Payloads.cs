@@ -9,7 +9,7 @@ namespace Ghostty.Bench.Probes;
 // return stream for that pattern; any in-payload occurrence of the prefix
 // would risk a false match and cut the measurement short. The current three
 // factories satisfy this trivially (ASCII 'A', SGR+short text, DCS/OSC/APC
-// sequences interleaved with " printable " markers — none contain the
+// sequences interleaved with " printable " markers, none contain the
 // prefix). New payloads must preserve the invariant.
 //
 // INVARIANT (implicit, not pinned by a test): payloads must end in a
