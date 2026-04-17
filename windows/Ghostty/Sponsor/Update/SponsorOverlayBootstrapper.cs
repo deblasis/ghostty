@@ -116,4 +116,42 @@ internal sealed class SponsorOverlayBootstrapper : IDisposable
         _pillVm.Dispose();
         _service.Dispose();
     }
+
+#if DEBUG
+    /// <summary>
+    /// Debug-only: Ctrl+Shift+Alt+1..8 hotkeys that drive the simulator
+    /// through the full state machine for manual QA.
+    /// </summary>
+    public static void AttachSimulatorShortcuts(Window window, UpdateSimulator sim)
+    {
+        if (window.Content is not Microsoft.UI.Xaml.UIElement root) return;
+
+        void Bind(Windows.System.VirtualKey key, Ghostty.Core.Sponsor.Update.UpdateState state, string? version = null, double? progress = null, string? err = null)
+        {
+            var accel = new Microsoft.UI.Xaml.Input.KeyboardAccelerator
+            {
+                Key = key,
+                Modifiers = Windows.System.VirtualKeyModifiers.Control
+                          | Windows.System.VirtualKeyModifiers.Shift
+                          | Windows.System.VirtualKeyModifiers.Menu,
+                ScopeOwner = root,
+            };
+            accel.Invoked += (s, e) =>
+            {
+                sim.Simulate(state, version, progress, err);
+                e.Handled = true;
+            };
+            root.KeyboardAccelerators.Add(accel);
+        }
+
+        Bind(Windows.System.VirtualKey.Number1, Ghostty.Core.Sponsor.Update.UpdateState.Idle);
+        Bind(Windows.System.VirtualKey.Number2, Ghostty.Core.Sponsor.Update.UpdateState.NoUpdatesFound);
+        Bind(Windows.System.VirtualKey.Number3, Ghostty.Core.Sponsor.Update.UpdateState.UpdateAvailable, version: "1.4.2");
+        Bind(Windows.System.VirtualKey.Number4, Ghostty.Core.Sponsor.Update.UpdateState.Downloading, progress: 0.42);
+        Bind(Windows.System.VirtualKey.Number5, Ghostty.Core.Sponsor.Update.UpdateState.Extracting);
+        Bind(Windows.System.VirtualKey.Number6, Ghostty.Core.Sponsor.Update.UpdateState.Installing);
+        Bind(Windows.System.VirtualKey.Number7, Ghostty.Core.Sponsor.Update.UpdateState.RestartPending);
+        Bind(Windows.System.VirtualKey.Number8, Ghostty.Core.Sponsor.Update.UpdateState.Error, err: "Simulated failure");
+    }
+#endif
 }

@@ -419,6 +419,10 @@ public partial class App : Application
 #if SPONSOR_BUILD
         _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
             window, _configService, DispatcherQueue.GetForCurrentThread());
+#if DEBUG
+        Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.AttachSimulatorShortcuts(
+            window, _sponsorOverlay.Simulator);
+#endif
 #endif
     }
 
