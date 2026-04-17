@@ -201,12 +201,12 @@ public class HarnessTests
         });
         byte[] scratch = new byte[64 * 1024];
 
-        var ex = Assert.ThrowsAny<Exception>(() =>
+        // Harness converts the internal OCE from the cancelled ReadAsync
+        // into TimeoutException. Asserting the strict type catches a
+        // regression if the conversion ever silently leaks.
+        Assert.Throws<TimeoutException>(() =>
             Harness.RunThroughputIteration(
                 t, payload, terminator, TimeSpan.FromMilliseconds(250), scratch));
-        Assert.True(
-            ex is TimeoutException || ex is OperationCanceledException,
-            $"expected TimeoutException or OperationCanceledException, got {ex.GetType().Name}");
 
         gate.Set();   // let the scripted responder unwind
     }

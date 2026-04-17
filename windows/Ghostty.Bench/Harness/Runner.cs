@@ -161,10 +161,12 @@ public static class Runner
                 if (idx >= 0)
                     return emit;
 
-                // Carry over the last (terminator.Length - 1) bytes so a
-                // terminator that straddles the boundary between this read
-                // and the next is still detectable. Span.CopyTo is memmove-
-                // safe for overlapping source/destination in the same buffer.
+                // Carry over the last (terminator.Length - 1) bytes: that is
+                // the largest suffix that could form the prefix of a terminator
+                // straddling this read and the next. Anything shorter loses
+                // cross-boundary matches; anything longer wastes space.
+                // Span.CopyTo is memmove-safe for overlapping source and
+                // destination in the same buffer.
                 int keep = Math.Min(tailLen, scanLen);
                 if (keep > 0)
                     scratch.AsSpan(scanLen - keep, keep).CopyTo(scratch.AsSpan(0, keep));
@@ -180,10 +182,21 @@ public static class Runner
         long emitBytes;
         try
         {
+            // GetResult is safe here: Task.Run dispatches the async lambda on
+            // the threadpool with no captured SynchronizationContext, so no
+            // deadlock can form regardless of the caller's context. xunit's
+            // test host has no context, console / bench host has none either.
             emitBytes = reader.GetAwaiter().GetResult();
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
+            // Only convert cancellations caused by OUR deadline CTS. The guard
+            // isn't perfect: any OCE raised after the CTS has fired looks the
+            // same from here. In practice, ReadAsync on NamedPipeClientStream /
+            // anonymous pipes only cancels via the caller's token, so the
+            // conversion is correct. If a future transport raises OCE for a
+            // different reason, revisit: split the wait into a timeout vs
+            // exception path using `cts.Token.WaitHandle`.
             throw new TimeoutException(
                 $"throughput terminator not observed within {deadline.TotalSeconds:F1}s");
         }
