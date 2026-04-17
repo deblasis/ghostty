@@ -85,4 +85,19 @@ public class PayloadsTests
         var b = Payloads.Ascii100Mb();
         Assert.Equal(a.Span.Slice(0, 1024).ToArray(), b.Span.Slice(0, 1024).ToArray());
     }
+
+    // The throughput probe appends a "\r\n~ENDOFBURST_<nonce>~" terminator
+    // after the payload and scans conhost's emitted VT stream for it. If a
+    // payload factory ever emitted the literal "~ENDOFBURST_" substring,
+    // the probe could false-match mid-payload and stop the measurement
+    // early. This test pins the invariant so new payloads must preserve it.
+    [Fact]
+    public void Payloads_DoNotContainTerminatorPrefix()
+    {
+        byte[] marker = System.Text.Encoding.ASCII.GetBytes("~ENDOFBURST_");
+
+        Assert.Equal(-1, Payloads.Ascii100Mb().Span.IndexOf(marker));
+        Assert.Equal(-1, Payloads.Sgr100Mb().Span.IndexOf(marker));
+        Assert.Equal(-1, Payloads.Stress100Mb().Span.IndexOf(marker));
+    }
 }

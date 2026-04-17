@@ -117,7 +117,7 @@ public class HarnessTests
             "\r\n~ENDOFBURST_" + Guid.NewGuid().ToString("N").Substring(0, 16) + "~");
         byte[] scratch = new byte[64 * 1024];
 
-        var (elapsedTicks, emitBytes) = Harness.RunThroughputIteration(
+        var (elapsedTicks, emitBytes) = Runner.RunThroughputIteration(
             t, payload, terminator, TimeSpan.FromSeconds(5), scratch);
 
         Assert.True(elapsedTicks > 0, "elapsed must be positive");
@@ -153,7 +153,7 @@ public class HarnessTests
         });
         byte[] scratch = new byte[64 * 1024];
 
-        var (_, emitBytes) = Harness.RunThroughputIteration(
+        var (_, emitBytes) = Runner.RunThroughputIteration(
             t, payload, terminator, TimeSpan.FromSeconds(5), scratch);
 
         Assert.Equal(combined.Length, emitBytes);
@@ -177,7 +177,7 @@ public class HarnessTests
         byte[] scratch = new byte[64 * 1024];
 
         Assert.Throws<EndOfStreamException>(() =>
-            Harness.RunThroughputIteration(
+            Runner.RunThroughputIteration(
                 t, payload, terminator, TimeSpan.FromSeconds(5), scratch));
     }
 
@@ -205,7 +205,7 @@ public class HarnessTests
         // into TimeoutException. Asserting the strict type catches a
         // regression if the conversion ever silently leaks.
         Assert.Throws<TimeoutException>(() =>
-            Harness.RunThroughputIteration(
+            Runner.RunThroughputIteration(
                 t, payload, terminator, TimeSpan.FromMilliseconds(250), scratch));
 
         gate.Set();   // let the scripted responder unwind
@@ -233,7 +233,7 @@ public class HarnessTests
         });
         byte[] scratch = new byte[64 * 1024];
 
-        var (_, emitBytes) = Harness.RunThroughputIteration(
+        var (_, emitBytes) = Runner.RunThroughputIteration(
             t, payload, terminator, TimeSpan.FromSeconds(5), scratch);
 
         Assert.Equal(wrongTerminator.Length + terminator.Length, emitBytes);
@@ -252,7 +252,7 @@ public class HarnessTests
         using var t = new FakeTransport();   // echo mode
         byte[] smallScratch = new byte[128];
 
-        var (_, emitBytes) = Harness.RunThroughputIteration(
+        var (_, emitBytes) = Runner.RunThroughputIteration(
             t, payload, terminator, TimeSpan.FromSeconds(5), smallScratch);
 
         Assert.Equal(payload.Length + terminator.Length, emitBytes);
