@@ -9,6 +9,7 @@
 // user32
 ClientToScreen
 GetCursorPos
+GetForegroundWindow
 GetKeyState
 GetSystemMenu
 GetWindowLong
