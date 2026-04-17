@@ -55,6 +55,9 @@ public partial class App : Application
     private Microsoft.Extensions.Logging.ILoggerFactory? _loggerFactory;
     private Ghostty.Core.Logging.FileLoggerProvider? _fileLogSink;
     private Ghostty.Core.Logging.FilterState? _logFilters;
+#if SPONSOR_BUILD
+    private Ghostty.Sponsor.Update.SponsorOverlayBootstrapper? _sponsorOverlay;
+#endif
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
     // singular RootWindow and the earlier List<Window> draft: XamlRoot
@@ -413,6 +416,10 @@ public partial class App : Application
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor, factory);
         window.Closed += OnAnyWindowClosedInternal;
         window.Activate();
+#if SPONSOR_BUILD
+        _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
+            window, _configService, DispatcherQueue.GetForCurrentThread());
+#endif
     }
 
     private void OnConfigChanged_ApplyLogFilters(Ghostty.Core.Config.IConfigService cfg)
@@ -457,6 +464,10 @@ public partial class App : Application
                 // _hostBySurface (asserts empty), notifies the
                 // supervisor (which throws if anything is still live),
                 // and calls AppFree.
+#if SPONSOR_BUILD
+                _sponsorOverlay?.Dispose();
+                _sponsorOverlay = null;
+#endif
                 _bootstrapHost?.Dispose();
 
                 // Dispose ConfigService last: it outlives every host
