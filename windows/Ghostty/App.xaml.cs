@@ -57,6 +57,7 @@ public partial class App : Application
     private Ghostty.Core.Logging.FilterState? _logFilters;
 #if SPONSOR_BUILD
     private Ghostty.Sponsor.Update.SponsorOverlayBootstrapper? _sponsorOverlay;
+    internal Ghostty.Sponsor.Update.SponsorOverlayBootstrapper? SponsorOverlay => _sponsorOverlay;
 #endif
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
@@ -415,8 +416,11 @@ public partial class App : Application
 
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor, factory);
         window.Closed += OnAnyWindowClosedInternal;
-        window.Activate();
 #if SPONSOR_BUILD
+        // Wire before Activate so the simulator is non-null when
+        // MainWindow's ctor-time CreateCommandPaletteViewModel runs.
+        // WinUI 3 parses XAML in the MainWindow ctor so the tree is
+        // available here; AppWindow is not yet shown but is accessible.
         _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
             window, _configService, DispatcherQueue.GetForCurrentThread());
 #if DEBUG
@@ -424,6 +428,7 @@ public partial class App : Application
             window, _sponsorOverlay.Simulator);
 #endif
 #endif
+        window.Activate();
     }
 
     private void OnConfigChanged_ApplyLogFilters(Ghostty.Core.Config.IConfigService cfg)

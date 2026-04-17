@@ -1524,6 +1524,18 @@ public sealed partial class MainWindow : Window
 
         var sources = new List<ICommandSource> { builtIn, jump, config };
 
+#if SPONSOR_BUILD && DEBUG
+        // The sponsor overlay is wired in App.OnLaunched after new MainWindow()
+        // returns, so the simulator may be null at ctor time. The null guard
+        // here means simulator commands are silently skipped on first open;
+        // a future task will re-register sources post-wire.
+        var sim = (Microsoft.UI.Xaml.Application.Current as App)?.SponsorOverlay?.Simulator;
+        if (sim is not null)
+        {
+            sources.Add(new Ghostty.Sponsor.Update.SponsorUpdateCommandSource(sim));
+        }
+#endif
+
         // Build the action autocompleter with a minimal set of action schemas.
         var schemas = new Dictionary<string, ActionSchema>
         {
