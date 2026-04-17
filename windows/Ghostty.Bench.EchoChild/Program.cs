@@ -61,7 +61,23 @@ try
 {
     using var stdin = Console.OpenStandardInput();
     using var stdout = Console.OpenStandardOutput();
-    stdin.CopyTo(stdout);
+
+    // Manual copy loop with an explicit Flush after each Write, rather than
+    // Stream.CopyTo. Under ConPTY, Console.OpenStandardOutput's stream can
+    // hold the final partial chunk of a large burst (e.g., the ~31-byte
+    // terminator after a 1 MB throughput payload) in an internal buffer
+    // until the next full block or process exit. That delays the parent's
+    // terminator observation past the probe's wall-clock budget. DirectPipe
+    // does not exhibit this because its anonymous pipe backing is unbuffered.
+    // 81920 is Stream.CopyTo's default buffer size; keep parity for round-
+    // trip throughput characteristics.
+    byte[] buf = new byte[81920];
+    int n;
+    while ((n = stdin.Read(buf, 0, buf.Length)) > 0)
+    {
+        stdout.Write(buf, 0, n);
+        stdout.Flush();
+    }
 }
 catch (IOException)
 {

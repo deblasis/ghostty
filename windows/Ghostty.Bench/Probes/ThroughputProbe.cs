@@ -10,15 +10,16 @@ public sealed class ThroughputProbe : Probe
 {
     private const int Samples = 3;
 
-    // 120 s per iteration. Generous enough for 100 MB payloads under
-    // conhost's slowest parser path on a cold machine, tight enough to
-    // catch a stuck pipe within one iteration instead of burning the
-    // outer harness watchdog. See spec § decisions.
-    private static readonly TimeSpan IterationDeadline = TimeSpan.FromSeconds(120);
+    // 60 s per iteration. At ConPTY's measured scroll-ASCII throughput of
+    // ~100 KB/s, 1 MB takes ~10 s. 60 s gives 6x headroom for slow
+    // machines, SGR / stress parser cost, and cold-start warmup. Tight
+    // enough to catch a stuck pipe within one iteration instead of
+    // burning the outer harness watchdog.
+    private static readonly TimeSpan IterationDeadline = TimeSpan.FromSeconds(60);
 
     // 64 KB read buffer. Large enough to amortize Read syscalls over
-    // 100 MB payloads (~1600 reads rather than ~100k at 1 KB), small
-    // enough that the per-iteration scratch footprint is negligible.
+    // 1 MB payloads while staying small enough that the per-iteration
+    // scratch footprint is negligible.
     private const int ScratchSize = 64 * 1024;
 
     private readonly ReadOnlyMemory<byte> _payload;
@@ -64,7 +65,7 @@ public sealed class ThroughputProbe : Probe
             // Ingest counts only the payload bytes: the 31-byte terminator
             // is scan infrastructure, not user data. Emit counts every byte
             // read during the window, including any that arrived alongside
-            // the terminator in the final read; at 100 MB scale that is
+            // the terminator in the final read; at 1 MB scale that is
             // noise.
             ingestMBps[i] = payloadMB / seconds;
             emitMBps[i] = emitMB / seconds;

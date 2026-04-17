@@ -103,13 +103,13 @@ public static class Runner
     // transport, reads output until the terminator substring is observed in
     // the return stream, returns (elapsedTicks, emitBytes). Emit counts every
     // byte read during the window including the terminator and any bytes
-    // that arrived in the same read as the terminator's last byte; at 100 MB
+    // that arrived in the same read as the terminator's last byte; at 1 MB
     // payload scale this is ~31 bytes of noise.
     //
     // `scratch` is caller-owned and reused across iterations. The method
     // uses the first (terminator.Length - 1) bytes of scratch as cross-read
     // carryover storage, so scratch.Length must be > terminator.Length. The
-    // recommended size is 64 KB to amortize Read syscalls over 100 MB
+    // recommended size is 64 KB to amortize Read syscalls over 1 MB
     // payloads.
     //
     // Throws:
