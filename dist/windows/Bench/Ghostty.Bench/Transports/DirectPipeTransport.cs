@@ -37,25 +37,6 @@ public sealed class DirectPipeTransport : ITransport
         {
             throw new TransportException($"DirectPipeTransport spawn failed: {ex.Message}", ex);
         }
-
-        // Drain output until we see the child's ready sentinel (0x01).
-        // The child emits this byte after SetConsoleMode (no-op on a pipe)
-        // and before entering the echo loop.
-        DrainUntilReady(_proc.StandardOutput.BaseStream);
-    }
-
-    private static void DrainUntilReady(Stream output)
-    {
-        const byte ReadySentinel = 0x01;
-        const int MaxDrainBytes = 4096;
-        Span<byte> buf = stackalloc byte[1];
-        for (int i = 0; i < MaxDrainBytes; i++)
-        {
-            int n = output.Read(buf);
-            if (n == 0) throw new TransportException("child exited before sending ready sentinel");
-            if (buf[0] == ReadySentinel) return;
-        }
-        throw new TransportException($"ready sentinel not seen after draining {MaxDrainBytes} bytes");
     }
 
     public Stream Input => _proc.StandardInput.BaseStream;
