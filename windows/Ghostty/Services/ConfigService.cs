@@ -47,6 +47,8 @@ internal sealed class ConfigService : IConfigService
     public bool VerticalTabs { get; private set; }
     public bool CommandPaletteGroupCommands { get; private set; }
     public string CommandPaletteBackground { get; private set; } = "acrylic";
+    public string LogLevel { get; private set; } = "info";
+    public string LogFilter { get; private set; } = string.Empty;
 
     private static readonly string[] CommandPaletteBackgroundAllowed =
         { "acrylic", "mica", "opaque" };
@@ -310,6 +312,11 @@ internal sealed class ConfigService : IConfigService
             GetFileValue("command-palette-background", ""),
             allowed: CommandPaletteBackgroundAllowed,
             defaultValue: "acrylic");
+        // Windows-only logger keys. Parsing into LogLevel/filter rules
+        // happens in LoggingBootstrap; here we just surface the raw
+        // strings so reloads can re-read them without parser knowledge.
+        LogLevel = GetFileValue("log-level", "info");
+        LogFilter = GetFileValue("log-filter", string.Empty);
 
         // background-style is a Windows-only key not in the Zig config
         // schema, so we read it directly from the config file.

@@ -51,6 +51,9 @@ public partial class App : Application
     private ConfigWriteScheduler? _configWriteScheduler;
     private GhosttyHost? _bootstrapHost;
     private HostLifetimeSupervisor? _lifetimeSupervisor;
+    private Microsoft.Extensions.Logging.ILoggerFactory? _loggerFactory;
+    private Ghostty.Core.Logging.FileLoggerProvider? _fileLogSink;
+    private Ghostty.Core.Logging.FilterState? _logFilters;
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
     // singular RootWindow and the earlier List<Window> draft: XamlRoot
@@ -70,6 +73,13 @@ public partial class App : Application
 
     internal static GhosttyHost? BootstrapHost { get; private set; }
     internal static ConfigService? ConfigService { get; private set; }
+
+    /// <summary>
+    /// Process-wide logger factory built at startup from Ghostty config.
+    /// Null before OnLaunched runs; null after OnAnyWindowClosedInternal
+    /// tears services down.
+    /// </summary>
+    internal static Microsoft.Extensions.Logging.ILoggerFactory? LoggerFactory { get; private set; }
 
     /// <summary>
     /// Process-wide debounced config write scheduler. All settings-UI
@@ -351,6 +361,24 @@ public partial class App : Application
         // host libghostty invokes. Its callback bodies consult
         // _hostBySurface to forward to whichever per-window host owns
         // the target surface.
+        // #259 logging: build the factory from Ghostty config before any
+        // other service constructs an ILogger<T>. Log directory under the
+        // same %LOCALAPPDATA%\Ghostty root that App.LogUnhandled already
+        // uses for crash.log, so a user reporting a bug only has one
+        // folder to attach.
+        var logDir = System.IO.Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+            "Ghostty", "logs");
+        var (factory, fileSink, filters) = Ghostty.Core.Logging.LoggingBootstrap.Build(
+            logLevel: _configService.LogLevel,
+            logFilter: _configService.LogFilter,
+            fileLogDirectory: logDir);
+        _loggerFactory = factory;
+        _fileLogSink = fileSink;
+        _logFilters = filters;
+        LoggerFactory = factory;
+        _configService.ConfigChanged += OnConfigChanged_ApplyLogFilters;
+
         _bootstrapHost = new GhosttyHost(
             DispatcherQueue.GetForCurrentThread(),
             _configService.ConfigHandle,
@@ -361,6 +389,13 @@ public partial class App : Application
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor);
         window.Closed += OnAnyWindowClosedInternal;
         window.Activate();
+    }
+
+    private void OnConfigChanged_ApplyLogFilters(Ghostty.Core.Config.IConfigService cfg)
+    {
+        if (_logFilters is null) return;
+        Ghostty.Core.Logging.LoggingBootstrap.ApplyFilters(
+            _logFilters, cfg.LogLevel, cfg.LogFilter);
     }
 
     /// <summary>
@@ -408,6 +443,19 @@ public partial class App : Application
                 // the libghostty config struct symmetrically with
                 // ConfigNew + ConfigLoadDefaultFiles.
                 _configService?.Dispose();
+
+                // #259 logging: dispose the factory after the config
+                // service so any ConfigChanged callbacks fired during
+                // ConfigService.Dispose don't race a disposed factory.
+                // FileLoggerProvider.DisposeAsync flushes its channel
+                // with a 2-second cap; block synchronously so the final
+                // batch of log records lands on disk before process exit.
+                if (_fileLogSink is not null)
+                {
+                    try { _fileLogSink.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+                    catch { /* best-effort */ }
+                }
+                _loggerFactory?.Dispose();
             }
             finally
             {
@@ -421,6 +469,11 @@ public partial class App : Application
                 LifetimeSupervisor = null;
                 _configService = null;
                 ConfigService = null;
+
+                _fileLogSink = null;
+                _loggerFactory = null;
+                LoggerFactory = null;
+
                 Exit();
             }
         }
