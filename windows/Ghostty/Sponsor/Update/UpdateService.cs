@@ -67,6 +67,7 @@ internal sealed class UpdateService : IDisposable
     public Task DownloadAsync() => _driver.DownloadAsync(_cts.Token);
     public Task ApplyAndRestartAsync() => _driver.ApplyAndRestartAsync();
     public Task DismissAsync() => _driver.DismissAsync(_cts.Token);
+    public Task CancelDownloadAsync() => _driver.CancelDownloadAsync(_cts.Token);
 
     private void OnDriverStateChanged(object? sender, UpdateStateSnapshot snap)
     {
