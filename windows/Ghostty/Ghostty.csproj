@@ -97,6 +97,14 @@
 
   <PropertyGroup Condition="'$(SponsorBuild)'=='true'">
     <DefineConstants>$(DefineConstants);SPONSOR_BUILD</DefineConstants>
+    <!--
+      FocusSessionManager (Windows.UI.Shell) was introduced in Windows 11 (SDK 22000).
+      The base TFM uses the 19041 projection which doesn't include it. Sponsor builds
+      need the 26100 projection so FocusAssistProbe.cs can reference it statically.
+      The type is guarded at runtime by IsSupported + a try/catch so the binary still
+      runs on Win10 19041 devices.
+    -->
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>

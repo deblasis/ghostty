@@ -41,6 +41,8 @@ TBPFLAG
 
 // shell32
 SetCurrentProcessExplicitAppUserModelID
+SHQueryUserNotificationState
+QUERY_USER_NOTIFICATION_STATE
 
 // ole32
 PropVariantClear
