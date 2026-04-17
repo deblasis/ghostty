@@ -98,4 +98,97 @@ public static class Runner
 
     public static double TicksToMicroseconds(long ticks) =>
         ticks * 1_000_000.0 / Stopwatch.Frequency;
+
+    // Runs one timed throughput iteration: writes payload + terminator to the
+    // transport, reads output until the terminator substring is observed in
+    // the return stream, returns (elapsedTicks, emitBytes). Emit counts every
+    // byte read during the window including the terminator and any bytes
+    // that arrived in the same read as the terminator's last byte; at 100 MB
+    // payload scale this is ~31 bytes of noise.
+    //
+    // `scratch` is caller-owned and reused across iterations. The method
+    // uses the first (terminator.Length - 1) bytes of scratch as cross-read
+    // carryover storage, so scratch.Length must be > terminator.Length. The
+    // recommended size is 64 KB to amortize Read syscalls over 100 MB
+    // payloads.
+    //
+    // Throws:
+    //  - EndOfStreamException if Output reaches EOF before the terminator.
+    //  - TimeoutException / OperationCanceledException if `deadline` elapses.
+    //  - The reader task's exception propagates via Task.Wait on the CTS.
+    public static (long elapsedTicks, long emitBytes) RunThroughputIteration(
+        ITransport transport,
+        ReadOnlyMemory<byte> payload,
+        ReadOnlyMemory<byte> terminator,
+        TimeSpan deadline,
+        byte[] scratch)
+    {
+        ArgumentNullException.ThrowIfNull(transport);
+        ArgumentNullException.ThrowIfNull(scratch);
+        if (terminator.Length == 0)
+            throw new ArgumentException("terminator must not be empty", nameof(terminator));
+        if (scratch.Length <= terminator.Length)
+            throw new ArgumentException(
+                $"scratch.Length ({scratch.Length}) must be greater than terminator.Length ({terminator.Length})",
+                nameof(scratch));
+
+        using var cts = new CancellationTokenSource(deadline);
+        var ct = cts.Token;
+
+        // ReadAsync with a CancellationToken is the only way to abort a
+        // blocking pipe read on deadline. Stream.Read (synchronous) does
+        // not observe the token, so a stuck transport would hang past the
+        // deadline forever. NamedPipeClientStream + anonymous pipes both
+        // support ReadAsync(Memory<byte>, CancellationToken) on .NET 10.
+        var reader = Task.Run<long>(async () =>
+        {
+            int tailLen = terminator.Length - 1;
+            int carryoverLen = 0;
+            long emit = 0;
+
+            while (true)
+            {
+                int n = await transport.Output.ReadAsync(
+                    scratch.AsMemory(carryoverLen, scratch.Length - carryoverLen),
+                    ct).ConfigureAwait(false);
+                if (n == 0)
+                    throw new EndOfStreamException("peer closed during throughput read");
+
+                emit += n;
+                int scanLen = carryoverLen + n;
+
+                int idx = scratch.AsSpan(0, scanLen).IndexOf(terminator.Span);
+                if (idx >= 0)
+                    return emit;
+
+                // Carry over the last (terminator.Length - 1) bytes so a
+                // terminator that straddles the boundary between this read
+                // and the next is still detectable. Span.CopyTo is memmove-
+                // safe for overlapping source/destination in the same buffer.
+                int keep = Math.Min(tailLen, scanLen);
+                if (keep > 0)
+                    scratch.AsSpan(scanLen - keep, keep).CopyTo(scratch.AsSpan(0, keep));
+                carryoverLen = keep;
+            }
+        }, ct);
+
+        long start = Stopwatch.GetTimestamp();
+        transport.Input.Write(payload.Span);
+        transport.Input.Write(terminator.Span);
+        transport.Input.Flush();
+
+        long emitBytes;
+        try
+        {
+            emitBytes = reader.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"throughput terminator not observed within {deadline.TotalSeconds:F1}s");
+        }
+
+        long elapsed = Stopwatch.GetTimestamp() - start;
+        return (elapsed, emitBytes);
+    }
 }
