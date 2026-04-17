@@ -24,12 +24,20 @@ public sealed class UpdateSkipList
         _skipped = Load(path);
     }
 
+    /// <summary>
+    /// Raised after <see cref="Skip"/> actually adds a new version.
+    /// The pill ViewModel listens so it can re-project and hide itself
+    /// when the user dismisses the currently-announced update.
+    /// </summary>
+    public event EventHandler? Changed;
+
     /// <summary>Add a version to the skip list and persist.</summary>
     public void Skip(string version)
     {
         if (_skipped.Add(version))
         {
             Save();
+            Changed?.Invoke(this, EventArgs.Empty);
         }
     }
 

@@ -65,7 +65,7 @@ internal sealed class SponsorOverlayBootstrapper : IDisposable
         var skipPath = Path.Combine(localAppData, "Ghostty", "update-skips.json");
         var skipList = new UpdateSkipList(skipPath);
 
-        var pillVm = new UpdatePillViewModel(service, dispatcher);
+        var pillVm = new UpdatePillViewModel(service, dispatcher, skipList);
         var popoverVm = new UpdatePopoverViewModel(service, skipList, dispatcher);
 
         // Inject the pill into the title bar overlay presenter.

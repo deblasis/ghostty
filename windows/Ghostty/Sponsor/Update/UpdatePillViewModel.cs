@@ -14,13 +14,17 @@ internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
 {
     private readonly UpdateService _service;
     private readonly DispatcherQueue _dispatcher;
+    private readonly UpdateSkipList _skipList;
+    private UpdateStateSnapshot _last = UpdateStateSnapshot.Idle();
 
-    public UpdatePillViewModel(UpdateService service, DispatcherQueue dispatcher)
+    public UpdatePillViewModel(UpdateService service, DispatcherQueue dispatcher, UpdateSkipList skipList)
     {
         _service = service;
         _dispatcher = dispatcher;
+        _skipList = skipList;
         TogglePopoverCommand = new RelayCommand(() => IsPopoverOpen = !IsPopoverOpen);
         _service.StateChanged += OnStateChanged;
+        _skipList.Changed += OnSkipListChanged;
         Project(_service.Current);
     }
 
@@ -74,10 +78,23 @@ internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
         _dispatcher.TryEnqueue(() => Project(snap));
     }
 
+    private void OnSkipListChanged(object? sender, EventArgs e)
+    {
+        // Re-evaluate visibility against the last snapshot so Skip takes
+        // effect immediately. The popover's Flyout dismisses automatically
+        // once the pill button goes Collapsed.
+        _dispatcher.TryEnqueue(() => Project(_last));
+    }
+
     private void Project(UpdateStateSnapshot snap)
     {
+        _last = snap;
         var d = PillDisplayModel.MapFromState(snap);
-        IsVisible = d.IsVisible;
+        var skipped = snap.State == UpdateState.UpdateAvailable
+            && !string.IsNullOrEmpty(snap.TargetVersion)
+            && _skipList.IsSkipped(snap.TargetVersion);
+        IsVisible = d.IsVisible && !skipped;
+        if (skipped) IsPopoverOpen = false;
         Label = d.Label;
         IconGlyph = d.IconGlyph;
         ThemeBrushKey = d.ThemeBrushKey;
@@ -88,5 +105,6 @@ internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
     public void Dispose()
     {
         _service.StateChanged -= OnStateChanged;
+        _skipList.Changed -= OnSkipListChanged;
     }
 }
