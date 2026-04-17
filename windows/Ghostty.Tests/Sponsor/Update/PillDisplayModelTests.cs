@@ -50,7 +50,7 @@ public class PillDisplayModelTests
         var d = MapFromState(Snap(UpdateState.Extracting));
         Assert.True(d.IsVisible);
         Assert.True(d.ShowProgressRing);
-        Assert.Equal("Preparing...", d.Label);
+        Assert.Equal("Preparing update...", d.Label);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class PillDisplayModelTests
         var d = MapFromState(Snap(UpdateState.Installing));
         Assert.True(d.IsVisible);
         Assert.True(d.ShowProgressRing);
-        Assert.Equal("Installing...", d.Label);
+        Assert.Equal("Installing update...", d.Label);
     }
 
     [Fact]

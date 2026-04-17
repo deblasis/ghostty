@@ -67,7 +67,7 @@ public static class PillDisplayModel
 
         UpdateState.Extracting => new PillDisplay(
             IsVisible: true,
-            Label: "Preparing...",
+            Label: "Preparing update...",
             IconGlyph: GlyphBoxArrow,
             ThemeBrushKey: BrushNeutral,
             ShowProgressRing: true,
@@ -75,7 +75,7 @@ public static class PillDisplayModel
 
         UpdateState.Installing => new PillDisplay(
             IsVisible: true,
-            Label: "Installing...",
+            Label: "Installing update...",
             IconGlyph: GlyphGear,
             ThemeBrushKey: BrushNeutral,
             ShowProgressRing: true,

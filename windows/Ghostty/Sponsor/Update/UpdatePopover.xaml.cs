@@ -71,6 +71,10 @@ internal sealed partial class UpdatePopover : UserControl
         UpdateState.UpdateAvailable => "Update Available",
         UpdateState.RestartPending => "Restart to Finish Updating",
         UpdateState.Error => "Update Error",
+        UpdateState.NoUpdatesFound => "Up to date",
+        UpdateState.Downloading => "Downloading update",
+        UpdateState.Extracting => "Preparing update",
+        UpdateState.Installing => "Installing update",
         _ => string.Empty,
     };
 
@@ -79,6 +83,10 @@ internal sealed partial class UpdatePopover : UserControl
         UpdateState.UpdateAvailable => $"Version {v ?? "?"} is ready to install.",
         UpdateState.RestartPending => "Restart to apply the downloaded update.",
         UpdateState.Error => err ?? "Something went wrong checking for updates.",
+        UpdateState.NoUpdatesFound => "You are running the latest version of wintty.",
+        UpdateState.Downloading => "Retrieving the update package from the release server.",
+        UpdateState.Extracting => "Verifying and extracting the downloaded package.",
+        UpdateState.Installing => "Applying the update to the on-disk install. This usually takes a few seconds.",
         _ => string.Empty,
     };
 
