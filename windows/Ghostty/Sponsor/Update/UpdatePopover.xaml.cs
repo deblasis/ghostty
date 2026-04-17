@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows.Input;
 using Ghostty.Core.Sponsor.Update;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -28,13 +29,26 @@ internal sealed partial class UpdatePopover : UserControl
         }
 
         _vm = vm;
-        SkipButton.Command = vm.SkipCommand;
-        InstallButton.Command = vm.InstallAndRelaunchCommand;
-        RestartButton.Command = vm.RestartNowCommand;
-        RetryButton.Command = vm.RetryCommand;
+        // Click+CanExecuteChanged instead of Button.Command -- WinUI 3 +
+        // CsWinRT CCW tables aren't emitted for managed ICommand impls
+        // assigned in code-behind. See UpdatePill.WireCommand.
+        WireCommand(SkipButton,    vm.SkipCommand);
+        WireCommand(InstallButton, vm.InstallAndRelaunchCommand);
+        WireCommand(RestartButton, vm.RestartNowCommand);
+        WireCommand(RetryButton,   vm.RetryCommand);
 
         vm.PropertyChanged += OnVmPropertyChanged;
         Refresh();
+    }
+
+    private static void WireCommand(Microsoft.UI.Xaml.Controls.Primitives.ButtonBase button, ICommand command)
+    {
+        button.Click += (_, _) =>
+        {
+            if (command.CanExecute(null)) command.Execute(null);
+        };
+        button.IsEnabled = command.CanExecute(null);
+        command.CanExecuteChanged += (_, _) => button.IsEnabled = command.CanExecute(null);
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e) => Refresh();

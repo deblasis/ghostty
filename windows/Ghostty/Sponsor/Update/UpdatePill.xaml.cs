@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -29,11 +30,27 @@ internal sealed partial class UpdatePill : UserControl
         }
 
         _vm = pillVm;
-        PillButton.Command = pillVm.TogglePopoverCommand;
+        // Click+CanExecuteChanged instead of Button.Command: WinUI 3 +
+        // CsWinRT needs a CCW table entry for the concrete command type,
+        // which isn't emitted for managed ICommand impls assigned in
+        // code-behind (only for XAML-bound {Binding}/x:Bind). Click is
+        // equivalent for our one-way invocation and keeps the Mvvm
+        // primitives assembly-internal.
+        WireCommand(PillButton, pillVm.TogglePopoverCommand);
         PillPopover.Bind(popoverVm);
 
         pillVm.PropertyChanged += OnVmPropertyChanged;
         Refresh();
+    }
+
+    private static void WireCommand(Microsoft.UI.Xaml.Controls.Primitives.ButtonBase button, ICommand command)
+    {
+        button.Click += (_, _) =>
+        {
+            if (command.CanExecute(null)) command.Execute(null);
+        };
+        button.IsEnabled = command.CanExecute(null);
+        command.CanExecuteChanged += (_, _) => button.IsEnabled = command.CanExecute(null);
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e) => Refresh();

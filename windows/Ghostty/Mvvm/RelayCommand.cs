@@ -6,7 +6,8 @@ namespace Ghostty.Mvvm;
 /// <summary>
 /// Lightweight synchronous <see cref="ICommand"/>. Delegate-backed.
 /// Callers invoke <see cref="RaiseCanExecuteChanged"/> when any
-/// predicate input changes so XAML-bound buttons re-query.
+/// predicate input changes so code-behind-wired buttons can re-query
+/// via <c>CanExecuteChanged</c>.
 /// </summary>
 internal sealed class RelayCommand : ICommand
 {
