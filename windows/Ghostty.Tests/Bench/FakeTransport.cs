@@ -50,6 +50,11 @@ public sealed class FakeTransport : ITransport
     public Stream Input  => _inputClient;   // harness writes here
     public Stream Output => _outputClient;  // harness reads here
 
+    // No-op: the in-process fake has no preamble. Scripted-mode support
+    // lands in Task 4; for now, both existing echo-mode and the not-yet-
+    // existing scripted-mode have nothing to "wait" for.
+    public void WaitReady(TimeSpan timeout) { }
+
     private void EchoLoop()
     {
         byte[] buf = new byte[4096];

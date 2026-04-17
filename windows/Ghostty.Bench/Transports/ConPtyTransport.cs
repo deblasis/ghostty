@@ -171,6 +171,11 @@ public sealed class ConPtyTransport : ITransport
         }
     }
 
+    // Temporary stub; real implementation lands in Task 3 after EchoChild
+    // learns to emit the "RDY" sentinel (Task 2).
+    public void WaitReady(TimeSpan timeout) =>
+        throw new NotImplementedException("ConPty WaitReady lands in Task 3");
+
     // --- Win32 types and imports ---
 
     [StructLayout(LayoutKind.Sequential)]
