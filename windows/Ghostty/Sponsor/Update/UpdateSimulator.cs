@@ -25,9 +25,17 @@ internal sealed class UpdateSimulator : IUpdateDriver
     /// Push a synthetic state snapshot. Used by keyboard shortcut and
     /// command-palette triggers.
     /// </summary>
-    public void Simulate(UpdateState state, string? version = null, double? progress = null, string? error = null)
+    public void Simulate(
+        UpdateState state,
+        string? version = null,
+        double? progress = null,
+        string? error = null,
+        string? releaseNotesUrl = null)
     {
-        var snap = new UpdateStateSnapshot(state, version, progress, error, DateTimeOffset.UtcNow);
+        var snap = new UpdateStateSnapshot(state, version, progress, error, DateTimeOffset.UtcNow)
+        {
+            ReleaseNotesUrl = releaseNotesUrl,
+        };
         _current = snap;
         Debug.WriteLine($"[sponsor/update] sim -> {state}");
         StateChanged?.Invoke(this, snap);
@@ -48,6 +56,12 @@ internal sealed class UpdateSimulator : IUpdateDriver
     public Task ApplyAndRestartAsync()
     {
         Debug.WriteLine("[sponsor/update] simulator.ApplyAndRestartAsync (no-op)");
+        return Task.CompletedTask;
+    }
+
+    public Task DismissAsync(CancellationToken cancellationToken = default)
+    {
+        Simulate(UpdateState.Idle);
         return Task.CompletedTask;
     }
 }

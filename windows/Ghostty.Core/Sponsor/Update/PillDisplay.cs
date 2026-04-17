@@ -13,11 +13,13 @@ namespace Ghostty.Core.Sponsor.Update;
 /// Theme dictionaries supply Light/Dark/HighContrast variants.
 /// </param>
 /// <param name="ShowProgressRing">Whether to overlay a ProgressRing on the icon.</param>
-/// <param name="ProgressValue">Progress 0..1 when <see cref="ShowProgressRing"/> is true.</param>
+/// <param name="ProgressValue">Progress 0..1 when <see cref="ShowProgressRing"/> is true and <see cref="IsIndeterminate"/> is false.</param>
+/// <param name="IsIndeterminate">True for states without a meaningful progress value (Extracting, Installing). The ring spins instead of filling.</param>
 public readonly record struct PillDisplay(
     bool IsVisible,
     string Label,
     string IconGlyph,
     string ThemeBrushKey,
     bool ShowProgressRing,
-    double ProgressValue);
+    double ProgressValue,
+    bool IsIndeterminate = false);

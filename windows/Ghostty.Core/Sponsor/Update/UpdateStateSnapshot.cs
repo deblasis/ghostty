@@ -18,6 +18,14 @@ public sealed record UpdateStateSnapshot(
     string? ErrorMessage,
     DateTimeOffset Timestamp)
 {
+    /// <summary>
+    /// Absolute URL to the release notes page (GitHub Releases, appcast
+    /// link, or similar). Populated by the driver for UpdateAvailable /
+    /// RestartPending when a notes URL is known. The popover surfaces
+    /// it as a "See what's new" link.
+    /// </summary>
+    public string? ReleaseNotesUrl { get; init; }
+
     /// <summary>Idle snapshot with a now-timestamp.</summary>
     public static UpdateStateSnapshot Idle() =>
         new(UpdateState.Idle, null, null, null, DateTimeOffset.UtcNow);

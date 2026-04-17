@@ -34,4 +34,14 @@ public interface IUpdateDriver
     /// Does not return under normal operation (process replaces itself).
     /// </summary>
     Task ApplyAndRestartAsync();
+
+    /// <summary>
+    /// Return the driver to a quiet state. For the simulator this means
+    /// emitting an Idle snapshot so the pill disappears. For the real
+    /// Velopack driver (D.2) this clears any transient Error state; the
+    /// next scheduled poll may discover an update again. Used by the
+    /// popover's Dismiss button when the user wants to stop seeing a
+    /// stuck Error without waiting for the next check cycle.
+    /// </summary>
+    Task DismissAsync(CancellationToken cancellationToken = default);
 }

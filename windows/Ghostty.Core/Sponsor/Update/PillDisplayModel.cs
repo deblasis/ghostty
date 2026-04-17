@@ -71,7 +71,8 @@ public static class PillDisplayModel
             IconGlyph: GlyphBoxArrow,
             ThemeBrushKey: BrushNeutral,
             ShowProgressRing: true,
-            ProgressValue: 0),
+            ProgressValue: 0,
+            IsIndeterminate: true),
 
         UpdateState.Installing => new PillDisplay(
             IsVisible: true,
@@ -79,7 +80,8 @@ public static class PillDisplayModel
             IconGlyph: GlyphGear,
             ThemeBrushKey: BrushNeutral,
             ShowProgressRing: true,
-            ProgressValue: 0),
+            ProgressValue: 0,
+            IsIndeterminate: true),
 
         UpdateState.RestartPending => new PillDisplay(
             IsVisible: true,
