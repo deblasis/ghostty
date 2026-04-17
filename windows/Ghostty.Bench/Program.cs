@@ -116,6 +116,12 @@ public static class Program
             _ => throw new TransportException($"unknown transport label: {transportLabel}"),
         };
 
+        // Drain any startup preamble (conhost VT preamble on ConPTY, no-op
+        // on direct pipe) before the probe starts timing iterations. 2s is
+        // ~10x a warm-machine conhost startup; longer means a broken spawn
+        // or raw-mode activation, which deserves a fast distinct error.
+        t.WaitReady(TimeSpan.FromSeconds(2));
+
         return probeName switch
         {
             "conpty-roundtrip" => new RoundTripProbe("conpty_roundtrip", "conpty").Run(t, host, ts),
