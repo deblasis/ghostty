@@ -34,6 +34,12 @@ internal sealed class FileLoggerProvider : ILoggerProvider, IAsyncDisposable
 
     private long _droppedCount;
 
+    // Reused across FormatRecord calls on the single writer task. Not
+    // thread-safe, which is fine: only WriterLoopAsync touches it.
+    // Caching it removes the per-record StringBuilder allocation the
+    // previous implementation paid.
+    private readonly StringBuilder _formatBuilder = new(256);
+
     public FileLoggerProvider(FileLoggerOptions options)
         : this(options, SystemClock.Instance, RealFileSystem.Instance) { }
 
@@ -59,8 +65,14 @@ internal sealed class FileLoggerProvider : ILoggerProvider, IAsyncDisposable
         _writer = _channel.Writer;
         _reader = _channel.Reader;
 
-        _fs.CreateDirectory(_opts.Directory);
-        SweepRetention();
+        // Best-effort directory prep + startup retention sweep. A locked
+        // stale log file (second Ghostty instance running, revoked ACLs)
+        // would throw IOException/UnauthorizedAccessException out of the
+        // ctor and crash App.OnLaunched for a non-critical cleanup task.
+        // Log retention is not worth failing app startup for; mirror the
+        // writer-loop rollover sweep which is already try/catched.
+        try { _fs.CreateDirectory(_opts.Directory); } catch { /* best-effort */ }
+        try { SweepRetention(); } catch { /* best-effort */ }
         _writerTask = Task.Run(WriterLoopAsync);
     }
 
@@ -210,11 +222,17 @@ internal sealed class FileLoggerProvider : ILoggerProvider, IAsyncDisposable
                         // Shutdown signal: let it propagate to the outer handler.
                         throw;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // Last-resort guard: a record-level failure (broken
                         // Exception.Message getter, formatter bug, etc.) must
-                        // never kill the writer loop.
+                        // never kill the writer loop. We can't log through
+                        // ILogger here without recursing back into ourselves,
+                        // but Debug.WriteLine surfaces the detail when a
+                        // debugger is attached so infra failures aren't 100%
+                        // silent during development.
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[FileLoggerProvider] record-level failure: {ex}");
                     }
                 }
                 try { stream?.Flush(); } catch (IOException) { /* drop */ }
@@ -253,12 +271,16 @@ internal sealed class FileLoggerProvider : ILoggerProvider, IAsyncDisposable
         return Path.Combine(_opts.Directory, name);
     }
 
-    private static int FormatRecord(in LogRecord r, byte[] buffer)
+    private int FormatRecord(in LogRecord r, byte[] buffer)
     {
         // 2026-04-17T14:23:17.042Z | Warn  | 2100 | Category | Message\r\n
         //   [indented stack lines on exception]
-        var sb = new StringBuilder(256);
-        sb.Append(r.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture))
+        var sb = _formatBuilder;
+        sb.Clear();
+        // AppendFormat writes the timestamp directly into sb's buffer,
+        // skipping the intermediate DateTime.ToString() allocation the
+        // previous implementation paid per record.
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:yyyy-MM-ddTHH:mm:ss.fffZ}", r.Timestamp)
           .Append(" | ")
           .Append(LevelTag(r.Level))
           .Append(" | ")
@@ -329,6 +351,11 @@ internal sealed class FileLoggerProvider : ILoggerProvider, IAsyncDisposable
         }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        // Per-category level filtering is applied upstream by the
+        // LoggerFactory filter delegate wired in LoggingBootstrap.Build.
+        // By the time this is called, the call has already passed the
+        // configured threshold, so we only reject the explicit off level.
         public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
         public void Log<TState>(

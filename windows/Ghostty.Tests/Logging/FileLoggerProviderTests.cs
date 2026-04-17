@@ -86,7 +86,7 @@ public class FileLoggerProviderTests : IDisposable
     {
         var clock = new FakeClock(new DateTime(2026, 4, 17, 12, 0, 0, DateTimeKind.Utc));
         // Capacity=1 so any burst overflows (DropOldest discards the oldest).
-        var opts = NewOptions(_tempDir) with { ChannelCapacity = 1, BatchMaxRecords = 1, BatchMaxMs = 1 };
+        var opts = NewOptions(_tempDir) with { ChannelCapacity = 1, BatchMaxRecords = 1 };
         await using var sink = new FileLoggerProvider(opts, clock, RealFileSystem.Instance);
         var logger = sink.CreateLogger("Cat");
 
@@ -143,7 +143,6 @@ public class FileLoggerProviderTests : IDisposable
     {
         Directory = dir,
         BatchMaxRecords = 64,
-        BatchMaxMs = 25,
         RetentionDays = 14,
         ChannelCapacity = 4096,
         MaxBytesPerFile = 16 * 1024 * 1024,

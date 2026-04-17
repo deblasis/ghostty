@@ -11,12 +11,16 @@ with two sinks wired at startup.
 `EventSourceLoggerProvider`. Capture with:
 
 ```
-dotnet-trace collect -n Ghostty
+dotnet-trace collect -n Ghostty --providers Microsoft-Extensions-Logging
 ```
 
-Add `--providers Microsoft-Extensions-Logging` if you need to narrow the
-trace to just the logging events. The same provider is visible in PerfView
-and Windows Performance Analyzer.
+The same provider is visible in PerfView and Windows Performance Analyzer.
+
+> Known issue (# 269): the provider is registered and the file sink
+> captures events end-to-end, but `dotnet-trace` does not currently
+> surface our events. If you hit empty output, the file sink below is
+> the reliable channel until # 269 lands. PerfView is a useful
+> independent check.
 
 ### Rolling file
 

@@ -105,22 +105,11 @@ public class LoggingBootstrapTests
         using var factory = LoggerFactory.Create(b =>
         {
             b.AddProvider(capture);
+            // Go through the production filter path so a regression in
+            // FilterState.Replace cache invalidation or the shared
+            // LoggingBootstrap.IsEnabled helper surfaces here.
             b.AddFilter((providerName, category, level) =>
-            {
-                if (category is null) return level >= filters.Options.MinLevel;
-
-                LoggerFilterRule? best = null;
-                foreach (var rule in filters.Options.Rules)
-                {
-                    if (rule.CategoryName is null) continue;
-                    if (!category.StartsWith(rule.CategoryName, StringComparison.Ordinal))
-                        continue;
-                    if (best is null || rule.CategoryName.Length > best.CategoryName!.Length)
-                        best = rule;
-                }
-                var threshold = best?.LogLevel ?? filters.Options.MinLevel;
-                return level >= threshold;
-            });
+                LoggingBootstrap.IsEnabled(filters, category, level));
         });
         var logger = factory.CreateLogger("Ghostty.Services.ThemePreviewService");
 
@@ -150,22 +139,11 @@ public class LoggingBootstrapTests
         using var factory = LoggerFactory.Create(b =>
         {
             b.AddProvider(capture);
+            // Go through the production filter path so a regression in
+            // FilterState.Replace cache invalidation or the shared
+            // LoggingBootstrap.IsEnabled helper surfaces here.
             b.AddFilter((providerName, category, level) =>
-            {
-                if (category is null) return level >= filters.Options.MinLevel;
-
-                LoggerFilterRule? best = null;
-                foreach (var rule in filters.Options.Rules)
-                {
-                    if (rule.CategoryName is null) continue;
-                    if (!category.StartsWith(rule.CategoryName, StringComparison.Ordinal))
-                        continue;
-                    if (best is null || rule.CategoryName.Length > best.CategoryName!.Length)
-                        best = rule;
-                }
-                var threshold = best?.LogLevel ?? filters.Options.MinLevel;
-                return level >= threshold;
-            });
+                LoggingBootstrap.IsEnabled(filters, category, level));
         });
         var logger = factory.CreateLogger("Ghostty.Services.ThemePreviewService");
 

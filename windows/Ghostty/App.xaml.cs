@@ -473,6 +473,11 @@ public partial class App : Application
                 // FileLoggerProvider.DisposeAsync flushes its channel
                 // with a 2-second cap; block synchronously so the final
                 // batch of log records lands on disk before process exit.
+                //
+                // Sync-over-async here is intentional and deadlock-free:
+                // FileLoggerProvider's writer loop runs on Task.Run and
+                // awaits throughout with ConfigureAwait(false), so no
+                // continuation resumes on this UI SynchronizationContext.
                 if (_fileLogSink is not null)
                 {
                     try { _fileLogSink.DisposeAsync().AsTask().GetAwaiter().GetResult(); }

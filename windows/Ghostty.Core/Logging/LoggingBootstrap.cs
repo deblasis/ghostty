@@ -103,24 +103,11 @@ internal static class LoggingBootstrap
         {
             // Single filter delegate closes over FilterState so
             // ApplyFilters(filters, ...) can swap in a new rule set
-            // without rebuilding the factory.
-            builder.AddFilter((providerName, category, level) =>
-            {
-                if (category is null) return level >= filters.Options.MinLevel;
-
-                // Longest matching category prefix wins; falls back to MinLevel.
-                LoggerFilterRule? best = null;
-                foreach (var rule in filters.Options.Rules)
-                {
-                    if (rule.CategoryName is null) continue;
-                    if (!category.StartsWith(rule.CategoryName, StringComparison.Ordinal))
-                        continue;
-                    if (best is null || rule.CategoryName.Length > best.CategoryName!.Length)
-                        best = rule;
-                }
-                var threshold = best?.LogLevel ?? filters.Options.MinLevel;
-                return level >= threshold;
-            });
+            // without rebuilding the factory. The per-category resolve
+            // result is memoized in FilterState.Cache; Replace() swaps
+            // the cache instance so stale thresholds cannot outlive a
+            // config reload.
+            builder.AddFilter((providerName, category, level) => IsEnabled(filters, category, level));
             builder.AddEventSourceLogger();
             builder.AddProvider(fileSink);
         });
@@ -135,4 +122,40 @@ internal static class LoggingBootstrap
     /// </summary>
     internal static void ApplyFilters(FilterState filters, string? logLevel, string? logFilter)
         => filters.Replace(ParseFilterOptions(logLevel, logFilter));
+
+    /// <summary>
+    /// Evaluates whether a log call should pass through, using the
+    /// memoized per-category cache on <see cref="FilterState"/>. Shared
+    /// by the production filter delegate in <see cref="Build"/> and by
+    /// tests so any regression in cache invalidation surfaces through
+    /// the same code path as production.
+    /// </summary>
+    internal static bool IsEnabled(FilterState filters, string? category, LogLevel level)
+    {
+        if (category is null) return level >= filters.Options.MinLevel;
+        var threshold = filters.Cache.GetOrAdd(category, ResolveThreshold, filters);
+        return level >= threshold;
+    }
+
+    /// <summary>
+    /// Longest matching category prefix wins; falls back to
+    /// <see cref="LoggerFilterOptions.MinLevel"/>. Called once per
+    /// previously-unseen category per filter-rule set via
+    /// <see cref="ConcurrentDictionary{TKey,TValue}.GetOrAdd"/>. Kept
+    /// as a <c>static</c> method so the delegate is cached and the
+    /// dictionary doesn't close over the delegate instance.
+    /// </summary>
+    private static LogLevel ResolveThreshold(string category, FilterState state)
+    {
+        LoggerFilterRule? best = null;
+        foreach (var rule in state.Options.Rules)
+        {
+            if (rule.CategoryName is null) continue;
+            if (!category.StartsWith(rule.CategoryName, StringComparison.Ordinal))
+                continue;
+            if (best is null || rule.CategoryName.Length > best.CategoryName!.Length)
+                best = rule;
+        }
+        return best?.LogLevel ?? state.Options.MinLevel;
+    }
 }

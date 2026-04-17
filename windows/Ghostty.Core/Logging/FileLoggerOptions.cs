@@ -12,5 +12,4 @@ internal sealed record FileLoggerOptions
     public int RetentionDays { get; init; } = 14;
     public int ChannelCapacity { get; init; } = 4096;
     public int BatchMaxRecords { get; init; } = 64;
-    public int BatchMaxMs { get; init; } = 250;
 }
