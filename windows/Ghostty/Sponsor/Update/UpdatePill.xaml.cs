@@ -77,6 +77,7 @@ internal sealed partial class UpdatePill : UserControl
         PillIcon.Glyph = _vm.IconGlyph;
         PillIcon.Visibility = _vm.ShowProgressRing ? Visibility.Collapsed : Visibility.Visible;
         PillProgress.Visibility = _vm.ShowProgressRing ? Visibility.Visible : Visibility.Collapsed;
+        PillProgress.IsIndeterminate = _vm.IsIndeterminate;
         PillProgress.Value = _vm.ProgressValue;
     }
 }

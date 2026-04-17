@@ -12,10 +12,15 @@ namespace Ghostty.Sponsor.Update;
 /// </summary>
 internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
 {
+    // "No Updates Found" is a positive acknowledgement, not a call to
+    // action. Upstream Ghostty (macOS) auto-dismisses after 3s; we match.
+    private static readonly TimeSpan NoUpdatesAutoDismissDelay = TimeSpan.FromSeconds(3);
+
     private readonly UpdateService _service;
     private readonly DispatcherQueue _dispatcher;
     private readonly UpdateSkipList _skipList;
     private UpdateStateSnapshot _last = UpdateStateSnapshot.Idle();
+    private DispatcherQueueTimer? _autoDismissTimer;
 
     public UpdatePillViewModel(UpdateService service, DispatcherQueue dispatcher, UpdateSkipList skipList)
     {
@@ -64,6 +69,12 @@ internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
         private set { if (field == value) return; field = value; Raise(); }
     }
 
+    public bool IsIndeterminate
+    {
+        get;
+        private set { if (field == value) return; field = value; Raise(); }
+    }
+
     /// <summary>Popover open flag, toggled by the pill click command.</summary>
     public bool IsPopoverOpen
     {
@@ -100,11 +111,38 @@ internal sealed class UpdatePillViewModel : NotifyBase, IDisposable
         ThemeBrushKey = d.ThemeBrushKey;
         ShowProgressRing = d.ShowProgressRing;
         ProgressValue = d.ProgressValue;
+        IsIndeterminate = d.IsIndeterminate;
+
+        ScheduleAutoDismissIfNeeded(snap.State);
+    }
+
+    private void ScheduleAutoDismissIfNeeded(UpdateState state)
+    {
+        _autoDismissTimer?.Stop();
+        _autoDismissTimer = null;
+
+        if (state != UpdateState.NoUpdatesFound) return;
+
+        _autoDismissTimer = _dispatcher.CreateTimer();
+        _autoDismissTimer.Interval = NoUpdatesAutoDismissDelay;
+        _autoDismissTimer.IsRepeating = false;
+        _autoDismissTimer.Tick += (_, _) =>
+        {
+            // Only hide if the state hasn't moved on in the meantime.
+            if (_last.State == UpdateState.NoUpdatesFound)
+            {
+                IsVisible = false;
+                IsPopoverOpen = false;
+            }
+        };
+        _autoDismissTimer.Start();
     }
 
     public void Dispose()
     {
         _service.StateChanged -= OnStateChanged;
         _skipList.Changed -= OnSkipListChanged;
+        _autoDismissTimer?.Stop();
+        _autoDismissTimer = null;
     }
 }

@@ -29,7 +29,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         // doing its work. The pill control translates the event into a
         // Flyout.Hide() call, so clicks feel responsive even while the
         // underlying driver operation is still running.
-        SkipCommand = new RelayCommand(() => { Skip(); RaiseClose(); }, CanSkip);
+        SkipCommand = new RelayCommand(() => { RaiseClose(); Skip(); }, CanSkip);
         InstallAndRelaunchCommand = new AsyncRelayCommand(async () =>
         {
             RaiseClose();
@@ -50,6 +50,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         State = c.State;
         TargetVersion = c.TargetVersion;
         ErrorMessage = c.ErrorMessage;
+        ReleaseNotesUrl = c.ReleaseNotesUrl;
 
         _service.StateChanged += OnStateChanged;
     }
@@ -72,6 +73,12 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         private set { if (field == value) return; field = value; Raise(); }
     }
 
+    public string? ReleaseNotesUrl
+    {
+        get;
+        private set { if (field == value) return; field = value; Raise(); }
+    }
+
     public RelayCommand SkipCommand { get; }
     public AsyncRelayCommand InstallAndRelaunchCommand { get; }
     public AsyncRelayCommand RestartNowCommand { get; }
@@ -85,6 +92,22 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
     public event EventHandler? CloseRequested;
 
     private void RaiseClose() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Close the popover and tell the driver to clear its current state.
+    /// Used by the Dismiss button (Error state) so the user can stop
+    /// seeing a stuck Error without waiting for the next check cycle.
+    /// </summary>
+    public void DismissRequested()
+    {
+        RaiseClose();
+        _ = _service.DismissAsync();
+    }
+
+    /// <summary>Close the popover without doing anything else. Used by
+    /// code-behind before showing a ContentDialog so the Flyout doesn't
+    /// fight the dialog's modal layer.</summary>
+    public void RequestClose() => RaiseClose();
 
     private void Skip()
     {
@@ -108,6 +131,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
             State = snap.State;
             TargetVersion = snap.TargetVersion;
             ErrorMessage = snap.ErrorMessage;
+            ReleaseNotesUrl = snap.ReleaseNotesUrl;
             SkipCommand.RaiseCanExecuteChanged();
             InstallAndRelaunchCommand.RaiseCanExecuteChanged();
             RestartNowCommand.RaiseCanExecuteChanged();
