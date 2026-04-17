@@ -62,9 +62,9 @@ public partial class App : Application
     // (which runs inside the MainWindow ctor, before _sponsorOverlay is
     // wired below) can still see a live simulator and register its
     // palette commands. The bootstrapper reuses this same instance.
-    private Ghostty.Sponsor.Update.UpdateSimulator? _sharedSimulator;
-    internal Ghostty.Sponsor.Update.UpdateSimulator SharedSimulator =>
-        _sharedSimulator ??= new Ghostty.Sponsor.Update.UpdateSimulator();
+    private Ghostty.Core.Sponsor.Update.UpdateSimulator? _sharedSimulator;
+    internal Ghostty.Core.Sponsor.Update.UpdateSimulator SharedSimulator =>
+        _sharedSimulator ??= new Ghostty.Core.Sponsor.Update.UpdateSimulator();
 #endif
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
