@@ -414,6 +414,35 @@ public partial class App : Application
         BootstrapHost = _bootstrapHost;
         _configService.SetApp(_bootstrapHost.App);
 
+        Uri? activationUri = null;
+        try
+        {
+            var activated = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
+            if (activated.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol
+                && activated.Data is Windows.ApplicationModel.Activation.IProtocolActivatedEventArgs proto)
+            {
+                activationUri = proto.Uri;
+            }
+            else
+            {
+                // Unpackaged fallback: command line --uri <url>.
+                var argv = Environment.GetCommandLineArgs();
+                for (int i = 0; i < argv.Length - 1; i++)
+                {
+                    if (string.Equals(argv[i], "--uri", StringComparison.Ordinal)
+                        && Uri.TryCreate(argv[i + 1], UriKind.Absolute, out var u))
+                    {
+                        activationUri = u;
+                        break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[app] protocol activation probe failed: {ex.Message}");
+        }
+
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor, factory);
         window.Closed += OnAnyWindowClosedInternal;
 #if SPONSOR_BUILD
@@ -427,6 +456,10 @@ public partial class App : Application
         Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.AttachSimulatorShortcuts(
             window, _sponsorOverlay.Simulator);
 #endif
+        if (activationUri is not null)
+        {
+            _sponsorOverlay?.Router.HandleUri(activationUri);
+        }
 #endif
         window.Activate();
     }
