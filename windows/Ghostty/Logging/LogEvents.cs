@@ -9,7 +9,8 @@ internal static class LogEvents
     // 2000-2099: Startup
     internal static class Startup
     {
-        // Populated in Task 4.5.
+        public const int AumidFailed    = 2000;
+        public const int JumpListFailed = 2001;
     }
 
     // 2100-2199: Clipboard
@@ -38,7 +39,11 @@ internal static class LogEvents
     // 2300-2399: WindowState + migration
     internal static class WindowState
     {
-        // Populated in Tasks 4.3 / 4.4.
+        public const int LoadFailed                    = 2300;
+        public const int SaveFailed                    = 2301;
+        public const int MigrationFailed               = 2302;
+        public const int MigrationLegacyDeleteFailed   = 2303;
+        public const int MigrationScanFailed           = 2304;
     }
 
     // 2400-2499: Shell (taskbar, backdrop)
@@ -58,6 +63,6 @@ internal static class LogEvents
     // 2600-2699: Settings UI
     internal static class SettingsUi
     {
-        // Populated in Task 4.6.
+        public const int ConfigOpenFailed = 2600;
     }
 }

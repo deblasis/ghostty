@@ -280,7 +280,14 @@ public partial class App : Application
         }
         catch (System.Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to set AUMID: {ex.Message}");
+            // StaticLoggers.App is NullLogger until Initialize(factory)
+            // runs further down in OnLaunched; AUMID + jump-list both
+            // run before the factory exists (AUMID must be set before
+            // any shell interop per the MSDN contract above), so these
+            // warnings are silently dropped until the factory is built.
+            // Same behavior as the pre-migration trace-only path which
+            // only wrote to the IDE output window.
+            Ghostty.Logging.StaticLoggers.App.LogAumidFailed(ex);
         }
 
         // Build the jump list once at startup.
@@ -300,7 +307,8 @@ public partial class App : Application
         }
         catch (System.Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to build jump list: {ex.Message}");
+            // See AumidFailed above: NullLogger until factory builds.
+            Ghostty.Logging.StaticLoggers.App.LogJumpListFailed(ex);
         }
 
         _configService = new ConfigService(DispatcherQueue.GetForCurrentThread());
@@ -493,4 +501,19 @@ public partial class App : Application
             }
         }
     }
+}
+
+internal static partial class AppLogExtensions
+{
+    [LoggerMessage(EventId = Ghostty.Logging.LogEvents.Startup.AumidFailed,
+                   Level = LogLevel.Warning,
+                   Message = "Failed to set AUMID")]
+    internal static partial void LogAumidFailed(
+        this ILogger<App> logger, System.Exception ex);
+
+    [LoggerMessage(EventId = Ghostty.Logging.LogEvents.Startup.JumpListFailed,
+                   Level = LogLevel.Warning,
+                   Message = "Failed to build jump list")]
+    internal static partial void LogJumpListFailed(
+        this ILogger<App> logger, System.Exception ex);
 }
