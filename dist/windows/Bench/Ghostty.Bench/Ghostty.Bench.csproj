@@ -12,7 +12,7 @@
     <IsPublishable>false</IsPublishable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
-    <NoWarn>CA1416</NoWarn>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Ghostty.Bench.EchoChild\Ghostty.Bench.EchoChild.csproj"
