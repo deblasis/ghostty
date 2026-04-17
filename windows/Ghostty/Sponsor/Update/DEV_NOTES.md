@@ -9,27 +9,25 @@ $env:SPONSOR_BUILD='true'
 just run-win
 ```
 
-## Keyboard shortcuts (drive the UpdateSimulator)
-
-| Shortcut | State |
-|---|---|
-| `Ctrl+Shift+Alt+1` | Idle |
-| `Ctrl+Shift+Alt+2` | NoUpdatesFound |
-| `Ctrl+Shift+Alt+3` | UpdateAvailable (v1.4.2) |
-| `Ctrl+Shift+Alt+4` | Downloading (42%) |
-| `Ctrl+Shift+Alt+5` | Extracting |
-| `Ctrl+Shift+Alt+6` | Installing |
-| `Ctrl+Shift+Alt+7` | RestartPending |
-| `Ctrl+Shift+Alt+8` | Error |
-
 ## Command palette (Ctrl+Shift+P)
 
-Entries under the "Custom" category mirror the shortcuts. D.1 limitation: the
-palette is built inside `MainWindow`'s constructor, which runs before the
-sponsor bootstrapper wires `_sponsorOverlay`. On the first window the sponsor
-source is therefore skipped. The keyboard shortcuts always work because they
-attach post-construction. Re-registering the palette after `Wire` completes is
-deferred to D.3.
+Drive the simulator from the palette. Entries live under the "Custom" category:
+
+| Palette title | State |
+|---|---|
+| Simulate: Idle | Idle |
+| Simulate: No Updates | NoUpdatesFound |
+| Simulate: Update Available | UpdateAvailable (v1.4.2) |
+| Simulate: Downloading 42% | Downloading (42%) |
+| Simulate: Extracting | Extracting |
+| Simulate: Installing | Installing |
+| Simulate: Restart Pending | RestartPending |
+| Simulate: Error | Error |
+
+The palette is built inside `MainWindow`'s constructor. Simulator availability
+is ensured by lazily materializing `App.SharedSimulator` on first access, so
+the palette registration and the bootstrapper's later `Wire()` call both see
+the same instance.
 
 ## What each state should show
 
@@ -46,7 +44,6 @@ deferred to D.3.
 - `auto-update` mode interplay - deferred to D.3.
 - Release notes links - deferred to D.3.
 - "Unobtrusive target" check (no-tab suppression) - deferred to D.3.
-- Command palette sponsor entries on first-window init (see note above).
 
 ## Threading contract
 

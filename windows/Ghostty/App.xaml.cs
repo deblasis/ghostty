@@ -58,6 +58,13 @@ public partial class App : Application
 #if SPONSOR_BUILD
     private Ghostty.Sponsor.Update.SponsorOverlayBootstrapper? _sponsorOverlay;
     internal Ghostty.Sponsor.Update.SponsorOverlayBootstrapper? SponsorOverlay => _sponsorOverlay;
+    // Eagerly-initialized so MainWindow.CreateCommandPaletteViewModel
+    // (which runs inside the MainWindow ctor, before _sponsorOverlay is
+    // wired below) can still see a live simulator and register its
+    // palette commands. The bootstrapper reuses this same instance.
+    private Ghostty.Sponsor.Update.UpdateSimulator? _sharedSimulator;
+    internal Ghostty.Sponsor.Update.UpdateSimulator SharedSimulator =>
+        _sharedSimulator ??= new Ghostty.Sponsor.Update.UpdateSimulator();
 #endif
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
@@ -446,16 +453,12 @@ public partial class App : Application
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor, factory);
         window.Closed += OnAnyWindowClosedInternal;
 #if SPONSOR_BUILD
-        // Wire before Activate so the simulator is non-null when
-        // MainWindow's ctor-time CreateCommandPaletteViewModel runs.
-        // WinUI 3 parses XAML in the MainWindow ctor so the tree is
-        // available here; AppWindow is not yet shown but is accessible.
+        // SharedSimulator was already materialized during MainWindow's
+        // ctor (CreateCommandPaletteViewModel reads it to register the
+        // palette commands). Pass that same instance to Wire so there's
+        // one simulator driving both the palette and the update pipeline.
         _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
-            window, _configService, DispatcherQueue.GetForCurrentThread());
-#if DEBUG
-        Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.AttachSimulatorShortcuts(
-            window, _sponsorOverlay.Simulator);
-#endif
+            window, _configService, DispatcherQueue.GetForCurrentThread(), SharedSimulator);
         if (activationUri is not null)
         {
             _sponsorOverlay?.Router.HandleUri(activationUri);
