@@ -329,6 +329,13 @@ public partial class App : Application
         // static methods that can't take a ctor-injected logger).
         Ghostty.Core.Logging.CoreStaticLoggers.Initialize(factory);
 
+        // #259 logging: populate Ghostty-project static logger accessors
+        // for types that construct before ctor-injection is possible
+        // (e.g., ConfigService is built above BEFORE the factory exists,
+        // and cannot receive a logger through its ctor) and for call
+        // sites inside static scopes.
+        Ghostty.Logging.StaticLoggers.Initialize(factory);
+
         // One editor + one scheduler per process. Keeping them here
         // (instead of per-settings-window) means rapid edits coalesce
         // across window lifetimes and the file watcher sees a single

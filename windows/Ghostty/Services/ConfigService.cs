@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Ghostty.Core.Config;
 using Ghostty.Interop;
+using Ghostty.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 
 namespace Ghostty.Services;
@@ -197,7 +198,7 @@ internal sealed class ConfigService : IConfigService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ConfigService] Reload failed to create new config: {ex.Message}");
+            StaticLoggers.ConfigService.LogReloadFailed(ex);
             return false;
         }
 
@@ -858,4 +859,16 @@ internal sealed class ConfigService : IConfigService
         if (_config.Handle != IntPtr.Zero)
             NativeMethods.ConfigFree(_config);
     }
+}
+
+internal static partial class ConfigServiceLogExtensions
+{
+    // LogLevel.Error (not Warning) because a failed reload leaves the
+    // previous config in place; the user's edit silently stops being
+    // applied, which is a genuine functional degradation.
+    [LoggerMessage(EventId = Ghostty.Core.Logging.LogEvents.Config.ReloadFailed,
+                   Level = LogLevel.Error,
+                   Message = "[ConfigService] Reload failed to create new config")]
+    internal static partial void LogReloadFailed(
+        this ILogger<ConfigService> logger, System.Exception ex);
 }
