@@ -10,5 +10,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <IsPackable>false</IsPackable>
     <IsPublishable>false</IsPublishable>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 </Project>
