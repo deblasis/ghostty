@@ -194,4 +194,11 @@
     <Page    Remove="Sponsor/**/*.xaml" />
     <None    Remove="Sponsor/**/*" />
   </ItemGroup>
+
+  <!-- Sponsor/Update placeholder taskbar overlay icons, D.1; final art in D.3 -->
+  <ItemGroup Condition="'$(SponsorBuild)' == 'true'">
+    <Content Include="Sponsor/Update/Assets/*.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
