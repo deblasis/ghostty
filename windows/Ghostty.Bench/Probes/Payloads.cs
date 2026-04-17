@@ -1,5 +1,22 @@
 namespace Ghostty.Bench.Probes;
 
+// Payload factories for throughput probes. Each returns exactly
+// Payloads.TargetBytes (100 MB) of content.
+//
+// INVARIANT (enforced by PayloadsTests.Payloads_DoNotContainTerminatorPrefix):
+// no payload may contain the literal substring "~ENDOFBURST_". The throughput
+// probe appends "\r\n~ENDOFBURST_<nonce>~" after each payload and scans the
+// return stream for that pattern; any in-payload occurrence of the prefix
+// would risk a false match and cut the measurement short. The current three
+// factories satisfy this trivially (ASCII 'A', SGR+short text, DCS/OSC/APC
+// sequences interleaved with " printable " markers — none contain the
+// prefix). New payloads must preserve the invariant.
+//
+// INVARIANT (implicit, not pinned by a test): payloads must end in a
+// cleanly-parsed VT state. No unterminated DCS / OSC / APC / SOS / PM
+// sequence may straddle the payload -> terminator boundary, or the parser
+// (conhost) could consume the terminator's leading "\r\n" as part of the
+// lingering state.
 public static class Payloads
 {
     public const int TargetBytes = 100 * 1024 * 1024;
