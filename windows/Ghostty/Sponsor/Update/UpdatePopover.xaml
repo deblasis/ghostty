@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Ghostty.Sponsor.Update.UpdatePopover"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    MinWidth="280">
+    <StackPanel Spacing="12" Padding="12">
+        <TextBlock x:Name="HeaderBlock" FontWeight="SemiBold" FontSize="14"/>
+        <TextBlock x:Name="BodyBlock" TextWrapping="Wrap" FontSize="12"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button x:Name="SkipButton" Content="Skip"/>
+            <Button x:Name="InstallButton" Content="Install and Relaunch"
+                    Style="{ThemeResource AccentButtonStyle}"/>
+            <Button x:Name="RestartButton" Content="Restart Now"
+                    Style="{ThemeResource AccentButtonStyle}"/>
+            <Button x:Name="RetryButton" Content="Retry"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>
