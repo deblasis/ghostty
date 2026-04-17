@@ -65,9 +65,16 @@ public sealed partial class MainWindow : Window
     // so anything in this window that needs to mutate the config file
     // goes through App.ConfigFileEditor rather than building its own.
     private readonly IConfigFileEditor _configEditor;
-    // Held so AcrylicBackdrop rebuilds in ApplyBackdropStyle() can get a
-    // fresh ILogger<T> without reaching into static accessors.
-    private readonly ILoggerFactory _loggerFactory;
+    // Narrower than holding ILoggerFactory: AcrylicBackdrop is rebuilt
+    // per backdrop-style change in ApplyBackdropStyle(), and that is
+    // the ONLY reason this window needed a way to mint loggers after
+    // construction. Capturing the delegate once keeps the logger
+    // surface on MainWindow honest about its scope and avoids a
+    // field that a future reader could reach into for unrelated
+    // things. The detach-to-new-window path reads App.LoggerFactory
+    // statically (same shape as App.BootstrapHost / App.LifetimeSupervisor
+    // just above it in DetachTabToNewWindow).
+    private readonly Func<ILogger<AcrylicBackdrop>> _newAcrylicLogger;
     private readonly ILogger<MainWindow> _logger;
     private readonly PaneHostFactory _factory;
     private readonly TabManager _tabManager;
@@ -240,7 +247,7 @@ public sealed partial class MainWindow : Window
             ?? throw new InvalidOperationException(
                 "MainWindow: App.ConfigFileEditor is null. " +
                 "App.OnLaunched must initialize it before constructing a window.");
-        _loggerFactory = loggerFactory;
+        _newAcrylicLogger = loggerFactory.CreateLogger<AcrylicBackdrop>;
         _logger = loggerFactory.CreateLogger<MainWindow>();
 
         // Build this window's per-window GhosttyHost around the shared
@@ -717,8 +724,15 @@ public sealed partial class MainWindow : Window
         // built inside the new window. RehostTo is what actually moves
         // the surface entries out of this window's _surfaces into the
         // new window's _surfaces AND rewrites App._hostBySurface.
+        // Same App.* static-read shape as the bootstrap/supervisor
+        // pulls just above: the detach path is an App-level concern
+        // (moves a tab between windows that the App owns), so reaching
+        // into App for the process-wide factory is consistent.
+        var factory = App.LoggerFactory
+            ?? throw new InvalidOperationException(
+                "DetachTabToWindow: no logger factory; App.OnLaunched did not run.");
         var newWindow = MainWindow.CreateForAdoption(
-            _configService, bootstrap, supervisor, _loggerFactory, detached);
+            _configService, bootstrap, supervisor, factory, detached);
         var newHost = newWindow._host;
         ((Panes.PaneHost)detached.PaneHost).RehostTo(newHost);
 
@@ -1158,7 +1172,7 @@ public sealed partial class MainWindow : Window
                 if (DesktopAcrylicController.IsSupported())
                     SystemBackdrop = new AcrylicBackdrop(
                         tintColor, tintOpacity, luminosityOpacity,
-                        _loggerFactory.CreateLogger<AcrylicBackdrop>());
+                        _newAcrylicLogger());
                 else
                     goto case BackdropStyles.Solid;
                 ApplyWindowClassBrush(ClassBrushKind.Transparent);

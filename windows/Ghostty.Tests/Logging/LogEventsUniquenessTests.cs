@@ -13,6 +13,19 @@ namespace Ghostty.Tests.Logging;
 /// and one [LoggerMessage(EventId = ...)] attribute." When someone
 /// renames an event or forgets to migrate a call site, this test fires
 /// before the drift lands on main.
+///
+/// Known edge cases:
+///   - `using static Ghostty.Logging.LogEvents;` would let consumers
+///     write `Clipboard.ReadFailed` without the `LogEvents.` prefix.
+///     The needle here is `.ClassName.ConstName`, so the leading dot
+///     is missing in that form -- the test reports a false 0 and
+///     FAILS rather than silently missing drift, which is the right
+///     failure mode (prompts the author to decide: either drop the
+///     `using static` or update the scanner).
+///   - Computed EventIds like `Clipboard.ReadFailed + 1` are treated
+///     as one reference, not two. The sibling they add to is not
+///     counted. We don't have any such uses today; grep fires if one
+///     lands.
 /// </summary>
 public class LogEventsUniquenessTests
 {
@@ -45,10 +58,13 @@ public class LogEventsUniquenessTests
         // those references are not drift — they are the safety net.
         var ghosttyDir = Path.Combine(windowsRoot, "Ghostty");
         var coreDir = Path.Combine(windowsRoot, "Ghostty.Core");
+        var sep = Path.DirectorySeparatorChar;
+        var objSegment = $"{sep}obj{sep}";
+        var binSegment = $"{sep}bin{sep}";
         var allCsFiles = Directory.EnumerateFiles(ghosttyDir, "*.cs", SearchOption.AllDirectories)
             .Concat(Directory.EnumerateFiles(coreDir, "*.cs", SearchOption.AllDirectories))
-            .Where(p => !p.Contains(Path.Combine("obj", ""), StringComparison.OrdinalIgnoreCase))
-            .Where(p => !p.Contains(Path.Combine("bin", ""), StringComparison.OrdinalIgnoreCase))
+            .Where(p => !p.Contains(objSegment, StringComparison.OrdinalIgnoreCase))
+            .Where(p => !p.Contains(binSegment, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         var failures = new List<string>();
@@ -85,9 +101,11 @@ public class LogEventsUniquenessTests
     private static IEnumerable<string> CollectQualifiedConstants(string path)
     {
         var src = File.ReadAllText(path);
-        // Strip block comments before scanning so inline code samples in
-        // docstrings aren't mistaken for definitions.
+        // Strip block AND line comments before scanning so inline code
+        // samples in docstrings and commented-out definitions aren't
+        // mistaken for real `public const int` entries.
         src = Regex.Replace(src, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+        src = Regex.Replace(src, @"//.*$", string.Empty, RegexOptions.Multiline);
 
         string? currentClass = null;
         foreach (var rawLine in src.Split('\n'))
