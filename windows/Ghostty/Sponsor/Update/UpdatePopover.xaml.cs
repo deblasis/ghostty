@@ -82,13 +82,23 @@ internal sealed partial class UpdatePopover : UserControl
     {
         UpdateState.UpdateAvailable => $"Version {v ?? "?"} is ready to install.",
         UpdateState.RestartPending => "Restart to apply the downloaded update.",
-        UpdateState.Error => err ?? "Something went wrong checking for updates.",
+        UpdateState.Error => FriendlyError(err),
         UpdateState.NoUpdatesFound => "You are running the latest version of wintty.",
         UpdateState.Downloading => "Retrieving the update package from the release server.",
         UpdateState.Extracting => "Verifying and extracting the downloaded package.",
         UpdateState.Installing => "Applying the update to the on-disk install. This usually takes a few seconds.",
         _ => string.Empty,
     };
+
+    // Lead with a plain-language sentence. Driver-supplied detail (network
+    // code, HTTP status, simulator label) appears on a second line so the
+    // user still has something to paste into a bug report without having
+    // to read it first. Empty err just shows the friendly line.
+    private static string FriendlyError(string? err)
+    {
+        const string friendly = "We couldn't finish downloading the update. Check your internet connection and try Retry.";
+        return string.IsNullOrWhiteSpace(err) ? friendly : $"{friendly}\n\nDetails: {err}";
+    }
 
     private static Visibility ShowFor(UpdateState current, UpdateState expected) =>
         current == expected ? Visibility.Visible : Visibility.Collapsed;
