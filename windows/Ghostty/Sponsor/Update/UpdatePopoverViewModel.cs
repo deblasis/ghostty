@@ -25,10 +25,26 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         _skipList = skipList;
         _dispatcher = dispatcher;
 
-        SkipCommand = new RelayCommand(Skip, CanSkip);
-        InstallAndRelaunchCommand = new AsyncRelayCommand(_service.DownloadAsync, CanInstallNow);
-        RestartNowCommand = new AsyncRelayCommand(_service.ApplyAndRestartAsync, CanRestart);
-        RetryCommand = new AsyncRelayCommand(_service.CheckNowAsync, CanRetry);
+        // Every command dismisses the popover via CloseRequested before
+        // doing its work. The pill control translates the event into a
+        // Flyout.Hide() call, so clicks feel responsive even while the
+        // underlying driver operation is still running.
+        SkipCommand = new RelayCommand(() => { Skip(); RaiseClose(); }, CanSkip);
+        InstallAndRelaunchCommand = new AsyncRelayCommand(async () =>
+        {
+            RaiseClose();
+            await _service.DownloadAsync();
+        }, CanInstallNow);
+        RestartNowCommand = new AsyncRelayCommand(async () =>
+        {
+            RaiseClose();
+            await _service.ApplyAndRestartAsync();
+        }, CanRestart);
+        RetryCommand = new AsyncRelayCommand(async () =>
+        {
+            RaiseClose();
+            await _service.CheckNowAsync();
+        }, CanRetry);
 
         var c = _service.Current;
         State = c.State;
@@ -60,6 +76,15 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
     public AsyncRelayCommand InstallAndRelaunchCommand { get; }
     public AsyncRelayCommand RestartNowCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
+
+    /// <summary>
+    /// Raised when the popover should be dismissed. The pill control
+    /// listens and calls <c>Flyout.Hide()</c>; the VM stays decoupled
+    /// from the Flyout instance.
+    /// </summary>
+    public event EventHandler? CloseRequested;
+
+    private void RaiseClose() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
     private void Skip()
     {

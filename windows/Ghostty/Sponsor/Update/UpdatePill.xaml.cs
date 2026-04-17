@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
@@ -16,6 +17,7 @@ namespace Ghostty.Sponsor.Update;
 internal sealed partial class UpdatePill : UserControl
 {
     private UpdatePillViewModel? _vm;
+    private UpdatePopoverViewModel? _popoverVm;
 
     public UpdatePill()
     {
@@ -28,8 +30,13 @@ internal sealed partial class UpdatePill : UserControl
         {
             _vm.PropertyChanged -= OnVmPropertyChanged;
         }
+        if (_popoverVm is not null)
+        {
+            _popoverVm.CloseRequested -= OnPopoverCloseRequested;
+        }
 
         _vm = pillVm;
+        _popoverVm = popoverVm;
         // Click+CanExecuteChanged instead of Button.Command: WinUI 3 +
         // CsWinRT needs a CCW table entry for the concrete command type,
         // which isn't emitted for managed ICommand impls assigned in
@@ -40,7 +47,13 @@ internal sealed partial class UpdatePill : UserControl
         PillPopover.Bind(popoverVm);
 
         pillVm.PropertyChanged += OnVmPropertyChanged;
+        popoverVm.CloseRequested += OnPopoverCloseRequested;
         Refresh();
+    }
+
+    private void OnPopoverCloseRequested(object? sender, EventArgs e)
+    {
+        PillButton.Flyout?.Hide();
     }
 
     private static void WireCommand(Microsoft.UI.Xaml.Controls.Primitives.ButtonBase button, ICommand command)
