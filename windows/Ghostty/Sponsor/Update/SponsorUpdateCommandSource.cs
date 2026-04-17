@@ -40,14 +40,17 @@ internal sealed class SponsorUpdateCommandSource : ICommandSource
             });
         }
 
-        Add("sponsor.sim.idle",            "Simulate: Idle",             UpdateState.Idle);
-        Add("sponsor.sim.no-updates",      "Simulate: No Updates",       UpdateState.NoUpdatesFound);
-        Add("sponsor.sim.available",       "Simulate: Update Available", UpdateState.UpdateAvailable, version: "1.4.2");
-        Add("sponsor.sim.downloading",     "Simulate: Downloading 42%",  UpdateState.Downloading, progress: 0.42);
-        Add("sponsor.sim.extracting",      "Simulate: Extracting",       UpdateState.Extracting);
-        Add("sponsor.sim.installing",      "Simulate: Installing",       UpdateState.Installing);
-        Add("sponsor.sim.restart-pending", "Simulate: Restart Pending",  UpdateState.RestartPending);
-        Add("sponsor.sim.error",           "Simulate: Error",            UpdateState.Error, error: "Simulated failure");
+        Add("sponsor.sim.idle",            "Simulate: Idle",                       UpdateState.Idle);
+        Add("sponsor.sim.no-updates",      "Simulate: No Updates",                 UpdateState.NoUpdatesFound);
+        Add("sponsor.sim.available",       "Simulate: Update Available (1.4.2)",   UpdateState.UpdateAvailable, version: "1.4.2");
+        // Separate palette entry with a newer version so QA can verify
+        // that Skip on 1.4.2 does NOT suppress 1.5.0 (per-version skip).
+        Add("sponsor.sim.available-new",   "Simulate: Update Available (1.5.0)",   UpdateState.UpdateAvailable, version: "1.5.0");
+        Add("sponsor.sim.downloading",     "Simulate: Downloading 42%",            UpdateState.Downloading, progress: 0.42);
+        Add("sponsor.sim.extracting",      "Simulate: Extracting",                 UpdateState.Extracting);
+        Add("sponsor.sim.installing",      "Simulate: Installing",                 UpdateState.Installing);
+        Add("sponsor.sim.restart-pending", "Simulate: Restart Pending",            UpdateState.RestartPending);
+        Add("sponsor.sim.error",           "Simulate: Error",                      UpdateState.Error, error: "Simulated failure");
         return list;
     }
 }
