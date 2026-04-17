@@ -11,12 +11,16 @@ internal static class LogEvents
     // 1000-1099: Config
     internal static class Config
     {
-        // Populated in Task 2.3 / 2.4.
+        public const int ReloadFailed      = 1000; // reserved, populated in Phase 3 (ConfigService)
+        public const int WriteSchedulerErr = 1001;
+        public const int TimerDisposeSlow  = 1002;
     }
 
     // 1100-1199: Frecency / command history
     internal static class Frecency
     {
-        // Populated in Task 2.2.
+        public const int ParseFailed = 1100;
+        public const int LoadFailed  = 1101;
+        public const int SaveFailed  = 1102;
     }
 }

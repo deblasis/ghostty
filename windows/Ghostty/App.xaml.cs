@@ -10,6 +10,7 @@ using Ghostty.Core.Config;
 using Ghostty.Core.Hosting;
 using Ghostty.Hosting;
 using Ghostty.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -305,6 +306,29 @@ public partial class App : Application
         _configService = new ConfigService(DispatcherQueue.GetForCurrentThread());
         ConfigService = _configService;
 
+        // #259 logging: build the factory from Ghostty config before any
+        // other service constructs an ILogger<T>. Log directory under the
+        // same %LOCALAPPDATA%\Ghostty root that App.LogUnhandled already
+        // uses for crash.log, so a user reporting a bug only has one
+        // folder to attach.
+        var logDir = System.IO.Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+            "Ghostty", "logs");
+        var (factory, fileSink, filters) = Ghostty.Core.Logging.LoggingBootstrap.Build(
+            logLevel: _configService.LogLevel,
+            logFilter: _configService.LogFilter,
+            fileLogDirectory: logDir);
+        _loggerFactory = factory;
+        _fileLogSink = fileSink;
+        _logFilters = filters;
+        LoggerFactory = factory;
+        _configService.ConfigChanged += OnConfigChanged_ApplyLogFilters;
+
+        // #259 logging: populate Core-side static logger accessors
+        // for types whose call sites are static (e.g., FrecencyStore
+        // static methods that can't take a ctor-injected logger).
+        Ghostty.Core.Logging.CoreStaticLoggers.Initialize(factory);
+
         // One editor + one scheduler per process. Keeping them here
         // (instead of per-settings-window) means rapid edits coalesce
         // across window lifetimes and the file watcher sees a single
@@ -317,7 +341,7 @@ public partial class App : Application
         var uiDispatcher = DispatcherQueue.GetForCurrentThread();
         _configWriteScheduler = new ConfigWriteScheduler(
             _configEditor,
-            new SystemSchedulerTimer(),
+            new SystemSchedulerTimer(factory.CreateLogger<SystemSchedulerTimer>()),
             debounce: TimeSpan.FromMilliseconds(150),
             onFlushed: () =>
             {
@@ -341,7 +365,8 @@ public partial class App : Application
                     try { cs.Reload(); }
                     finally { cs.SuppressWatcher(false); }
                 });
-            });
+            },
+            logger: factory.CreateLogger<ConfigWriteScheduler>());
         ConfigWriteScheduler = _configWriteScheduler;
 
         // One-shot migration of the legacy ui-settings.json into the
@@ -361,23 +386,6 @@ public partial class App : Application
         // host libghostty invokes. Its callback bodies consult
         // _hostBySurface to forward to whichever per-window host owns
         // the target surface.
-        // #259 logging: build the factory from Ghostty config before any
-        // other service constructs an ILogger<T>. Log directory under the
-        // same %LOCALAPPDATA%\Ghostty root that App.LogUnhandled already
-        // uses for crash.log, so a user reporting a bug only has one
-        // folder to attach.
-        var logDir = System.IO.Path.Combine(
-            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-            "Ghostty", "logs");
-        var (factory, fileSink, filters) = Ghostty.Core.Logging.LoggingBootstrap.Build(
-            logLevel: _configService.LogLevel,
-            logFilter: _configService.LogFilter,
-            fileLogDirectory: logDir);
-        _loggerFactory = factory;
-        _fileLogSink = fileSink;
-        _logFilters = filters;
-        LoggerFactory = factory;
-        _configService.ConfigChanged += OnConfigChanged_ApplyLogFilters;
 
         _bootstrapHost = new GhosttyHost(
             DispatcherQueue.GetForCurrentThread(),
