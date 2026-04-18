@@ -136,6 +136,7 @@ pub const exp = struct {
     pub const PROC_THREAD_ATTRIBUTE_ADDITIVE = 0x00040000;
 
     pub const ProcThreadAttributeNumber = enum(windows.DWORD) {
+        ProcThreadAttributeHandleList = 2,
         ProcThreadAttributePseudoConsole = 22,
         _,
     };
@@ -154,4 +155,5 @@ pub const exp = struct {
     }
 
     pub const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = ProcThreadAttributeValue(.ProcThreadAttributePseudoConsole, false, true, false);
+    pub const PROC_THREAD_ATTRIBUTE_HANDLE_LIST = ProcThreadAttributeValue(.ProcThreadAttributeHandleList, false, true, false);
 };
