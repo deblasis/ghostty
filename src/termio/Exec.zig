@@ -571,6 +571,13 @@ pub const Config = struct {
     resources_dir: ?[]const u8,
     term: []const u8,
 
+    /// Windows ConPTY transport mode. Resolved at spawn time against the
+    /// shell classifier (see `resolveConptyMode`). Ignored on POSIX.
+    conpty_mode: if (builtin.os.tag == .windows)
+        configpkg.Config.ConptyMode
+    else
+        void = if (builtin.os.tag == .windows) .auto else {},
+
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
 };
@@ -590,6 +597,13 @@ const Subprocess = struct {
     screen_size: renderer.ScreenSize,
     pty: ?Pty = null,
     process: ?Process = null,
+
+    /// Captured from Config.conpty_mode at init time; resolved against
+    /// the shell classifier at spawn time. Ignored on POSIX.
+    conpty_mode: if (builtin.os.tag == .windows)
+        configpkg.Config.ConptyMode
+    else
+        void = if (builtin.os.tag == .windows) .auto else {},
 
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
@@ -865,6 +879,8 @@ const Subprocess = struct {
             .cwd = cwd,
             .args = args,
 
+            .conpty_mode = cfg.conpty_mode,
+
             .rt_pre_exec_info = cfg.rt_pre_exec_info,
             .rt_post_fork_info = cfg.rt_post_fork_info,
 
@@ -897,6 +913,13 @@ const Subprocess = struct {
         // process).
         var in_child: bool = false;
 
+        // Resolve the transport mode from config + shell classification.
+        // Windows-only; POSIX ignores opts.mode.
+        const mode: ptypkg.Mode = if (comptime builtin.os.tag == .windows)
+            resolveConptyMode(self.conpty_mode, self.args[0])
+        else
+            .conpty;
+
         // Create our pty
         var pty = try Pty.open(.{
             .size = .{
@@ -905,6 +928,7 @@ const Subprocess = struct {
                 .ws_xpixel = @intCast(self.screen_size.width),
                 .ws_ypixel = @intCast(self.screen_size.height),
             },
+            .mode = mode,
         });
         self.pty = pty;
         errdefer if (!in_child) {
@@ -924,6 +948,24 @@ const Subprocess = struct {
                 // side. This prevents the slave fd from being leaked to
                 // future children.
                 _ = posix.close(pty.slave);
+            } else {
+                // In bypass mode the child holds its own inherited dup of
+                // `in_pipe_pty` / `out_pipe_pty`. Close our parent copies
+                // so EOF propagates on `out_pipe` when the child exits.
+                // In ConPTY mode the pseudoconsole owns those handles
+                // internally and we keep them alive until `Pty.deinit`.
+                if (mode == .bypass) {
+                    _ = windows.CloseHandle(pty.in_pipe_pty);
+                    _ = windows.CloseHandle(pty.out_pipe_pty);
+                    pty.in_pipe_pty = windows.INVALID_HANDLE_VALUE;
+                    pty.out_pipe_pty = windows.INVALID_HANDLE_VALUE;
+                    // Keep `self.pty` in sync; `Pty.deinit` tolerates
+                    // `INVALID_HANDLE_VALUE` via `CloseHandle` returning 0.
+                    if (self.pty) |*sp| {
+                        sp.in_pipe_pty = windows.INVALID_HANDLE_VALUE;
+                        sp.out_pipe_pty = windows.INVALID_HANDLE_VALUE;
+                    }
+                }
             }
 
             // Successful start we can clear out some memory.
@@ -1007,16 +1049,42 @@ const Subprocess = struct {
             };
         }
 
-        // Build our subcommand
+        // Build our subcommand. On Windows, stdio and `pseudo_console` are
+        // wired differently per transport mode: ConPTY owns stdio via the
+        // pseudoconsole handle; bypass mode feeds the child our raw pipe
+        // ends and leaves `pseudo_console` null.
         var cmd: Command = .{
             .path = self.args[0],
             .args = self.args,
             .env = if (self.env) |*env| env else null,
             .cwd = cwd,
-            .stdin = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
-            .stdout = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
-            .stderr = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
-            .pseudo_console = if (builtin.os.tag == .windows) pty.pseudo_console else {},
+            .stdin = if (comptime builtin.os.tag == .windows)
+                switch (mode) {
+                    .bypass => std.fs.File{ .handle = pty.in_pipe_pty },
+                    .conpty => null,
+                }
+            else
+                .{ .handle = pty.slave },
+            .stdout = if (comptime builtin.os.tag == .windows)
+                switch (mode) {
+                    .bypass => std.fs.File{ .handle = pty.out_pipe_pty },
+                    .conpty => null,
+                }
+            else
+                .{ .handle = pty.slave },
+            .stderr = if (comptime builtin.os.tag == .windows)
+                switch (mode) {
+                    .bypass => std.fs.File{ .handle = pty.out_pipe_pty },
+                    .conpty => null,
+                }
+            else
+                .{ .handle = pty.slave },
+            .pseudo_console = if (comptime builtin.os.tag == .windows)
+                switch (mode) {
+                    .conpty => pty.pseudo_console,
+                    .bypass => null,
+                }
+            else {},
             .os_pre_exec = switch (comptime builtin.os.tag) {
                 .windows => null,
                 else => f: {
