@@ -349,7 +349,7 @@ fn termiosTimer(
 
     // This is kind of hacky but we rebuild a Pty struct to get the
     // termios data.
-    const mode: ptypkg.Mode = (Pty{
+    const mode: ptypkg.TerminalMode = (Pty{
         .master = exec.read_thread_fd,
         .slave = undefined,
     }).getMode() catch |err| err: {
@@ -538,7 +538,7 @@ pub const ThreadData = struct {
 
     /// The last known termios mode. Used for change detection
     /// to prevent unnecessary locking of expensive mutexes.
-    termios_mode: ptypkg.Mode = .{},
+    termios_mode: ptypkg.TerminalMode = .{},
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         posix.close(self.read_thread_pipe);
