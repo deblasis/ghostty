@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using Ghostty.Core.Config;
 using Ghostty.Core.Sponsor.Update;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -56,9 +57,34 @@ internal sealed class SponsorOverlayBootstrapper : IDisposable
         Window mainWindow,
         IConfigService config,
         DispatcherQueue dispatcher,
-        UpdateSimulator simulator)
+        UpdateSimulator simulator,
+        Ghostty.Core.Sponsor.Auth.ISponsorTokenProvider tokens,
+        ILoggerFactory? loggerFactory = null)
     {
-        var service = new UpdateService(simulator, config);
+        var http = new System.Net.Http.HttpClient(
+            new System.Net.Http.HttpClientHandler
+            {
+                AllowAutoRedirect = false,  // spec 5.2 - strip Bearer on R2 hop manually
+            })
+        {
+            Timeout = System.TimeSpan.FromSeconds(30),
+        };
+        var source = new WinttyUpdateSource(
+            http, tokens,
+            channel: "stable",
+            apiBase: new System.Uri("https://api.wintty.io"));
+        var adapter = new VelopackManagerAdapter(source);  // Velopack 0.0.1298 ctor has no logger param
+        var driverLogger = loggerFactory?.CreateLogger<Ghostty.Core.Sponsor.Update.VelopackUpdateDriver>()
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<Ghostty.Core.Sponsor.Update.VelopackUpdateDriver>.Instance;
+        var driver = new Ghostty.Core.Sponsor.Update.VelopackUpdateDriver(adapter, tokens, driverLogger);
+
+#if DEBUG
+        // DEBUG builds keep the simulator as a secondary driver so the
+        // palette "Simulate: *" entries still emit into UpdateService.
+        var service = new UpdateService(driver, config, secondary: simulator);
+#else
+        var service = new UpdateService(driver, config);
+#endif
 
         var localAppData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);

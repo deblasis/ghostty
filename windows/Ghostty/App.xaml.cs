@@ -65,6 +65,9 @@ public partial class App : Application
     private Ghostty.Core.Sponsor.Update.UpdateSimulator? _sharedSimulator;
     internal Ghostty.Core.Sponsor.Update.UpdateSimulator SharedSimulator =>
         _sharedSimulator ??= new Ghostty.Core.Sponsor.Update.UpdateSimulator();
+    private Ghostty.Core.Sponsor.Auth.EnvTokenProvider? _sharedTokens;
+    internal Ghostty.Core.Sponsor.Auth.EnvTokenProvider SharedTokens =>
+        _sharedTokens ??= new Ghostty.Core.Sponsor.Auth.EnvTokenProvider();
 #endif
 
     // Top-level window registry keyed by XamlRoot. Replaces the old
@@ -458,7 +461,8 @@ public partial class App : Application
         // palette commands). Pass that same instance to Wire so there's
         // one simulator driving both the palette and the update pipeline.
         _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
-            window, _configService, DispatcherQueue.GetForCurrentThread(), SharedSimulator);
+            window, _configService, DispatcherQueue.GetForCurrentThread(), SharedSimulator,
+            SharedTokens, loggerFactory: null);
         if (activationUri is not null)
         {
             _sponsorOverlay?.Router.HandleUri(activationUri);
