@@ -24,4 +24,8 @@ internal enum UpdateErrorKind
     HashMismatch,
     /// <summary>Velopack's Apply stage threw before the process was killed.</summary>
     ApplyFailed,
+    /// <summary>The running exe isn't a Velopack install (dev checkout or portable
+    /// zip). Check / download paths can't proceed; user sees a targeted message
+    /// rather than being misrouted to the ServerError fallback.</summary>
+    NotInstalled,
 }

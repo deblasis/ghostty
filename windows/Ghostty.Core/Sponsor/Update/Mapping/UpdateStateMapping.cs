@@ -93,6 +93,7 @@ internal static class UpdateStateMapping
             UpdateErrorKind.ManifestInvalid => "Update manifest unreadable. This is a bug - please report.",
             UpdateErrorKind.HashMismatch => "Downloaded update didn't verify. Try again.",
             UpdateErrorKind.ApplyFailed => "Couldn't apply the update. Try again or reinstall.",
+            UpdateErrorKind.NotInstalled => "Updates are only available on signed installs. This build was started from a dev checkout or portable zip.",
             _ => "Update failed. Try again later.",
         };
 

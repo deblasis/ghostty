@@ -138,6 +138,24 @@ public partial class VelopackUpdateDriverTests
     }
 
     [Fact]
+    public async Task CheckAsync_NotInstalled_EmitsTargetedErrorBeforeNetwork()
+    {
+        var mgr = new FakeVelopackManager
+        {
+            IsInstalled = false,
+            // Neither CheckThrows nor NextCheckResult should be touched.
+            CheckThrows = new System.InvalidOperationException("must not reach manager"),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Contains("signed installs", driver.Current.ErrorMessage ?? "");
+    }
+
+    [Fact]
     public async Task DownloadAsync_HappyPath_EmitsProgressThenRestartPending()
     {
         var info = new VelopackUpdateInfo("1.4.2", null, new object());

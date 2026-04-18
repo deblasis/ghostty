@@ -47,6 +47,20 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Short-circuit if the running exe isn't a Velopack install.
+            // Without Update.exe on disk, Velopack's own CheckForUpdatesAsync
+            // throws NotInstalledException before any network call, which
+            // would otherwise get mapped to the misleading ServerError
+            // fallback. Emit a targeted message instead.
+            if (!_manager.IsInstalled)
+            {
+                _logger.LogInformation("[sponsor/update] CheckAsync aborted: not a Velopack install");
+                Emit(UpdateStateMapping.FromError(
+                    new UpdateCheckException(UpdateErrorKind.NotInstalled, "dev checkout or portable zip"),
+                    targetVersion: _lastInfo?.Version));
+                return;
+            }
+
             var token = await _tokens.GetTokenAsync(ct).ConfigureAwait(false);
             if (string.IsNullOrEmpty(token))
             {
