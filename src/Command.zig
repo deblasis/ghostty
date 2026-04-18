@@ -979,7 +979,7 @@ test "Command: posix fork handles execveZ failure" {
 // If cmd.start fails with error.ExecFailedInChild it's the _child_ process that is running. If it does not
 // terminate in response to that error both the parent and child will continue as if they _are_ the test suite
 // process.
-fn testingStart(self: *Command) !void {
+pub fn testingStart(self: *Command) !void {
     self.start(testing.allocator) catch |err| {
         if (err == error.ExecFailedInChild) {
             // I am a child process, I must not get confused and continue running the rest of the test suite.

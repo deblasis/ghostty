@@ -675,3 +675,57 @@ test "WindowsPty: bypass setSize writes CSI 8;r;c;t to in_pipe" {
     try std.testing.expectEqual(@as(u16, 40), pty.size.ws_row);
     try std.testing.expectEqual(@as(u16, 120), pty.size.ws_col);
 }
+
+test "WindowsPty: bypass end-to-end with cmd.exe /c echo" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const Command = @import("Command.zig");
+    const testing = std.testing;
+
+    var pty = try Pty.open(.{
+        .size = .{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 0, .ws_ypixel = 0 },
+        .mode = .bypass,
+    });
+    defer pty.deinit();
+
+    var cmd: Command = .{
+        .path = "C:\\Windows\\System32\\cmd.exe",
+        .args = &.{ "cmd.exe", "/c", "echo hi" },
+        .stdin = .{ .handle = pty.in_pipe_pty },
+        .stdout = .{ .handle = pty.out_pipe_pty },
+        .stderr = .{ .handle = pty.out_pipe_pty },
+        .pseudo_console = null,
+        .os_pre_exec = null,
+        .rt_pre_exec = null,
+        .rt_post_fork = null,
+        .rt_pre_exec_info = undefined,
+        .rt_post_fork_info = undefined,
+    };
+    try cmd.testingStart();
+    defer _ = cmd.wait(true) catch {};
+
+    // Close our parent copies of _pty ends so EOF reaches us when
+    // the child exits. Matches the termio/Exec.zig post-spawn
+    // cleanup for bypass mode.
+    _ = windows.CloseHandle(pty.in_pipe_pty);
+    _ = windows.CloseHandle(pty.out_pipe_pty);
+    pty.in_pipe_pty = windows.INVALID_HANDLE_VALUE;
+    pty.out_pipe_pty = windows.INVALID_HANDLE_VALUE;
+
+    // Drain stdout until EOF or buffer full.
+    var buf: [256]u8 = undefined;
+    var total: usize = 0;
+    while (total < buf.len) {
+        var read: windows.DWORD = 0;
+        const ok = windows.kernel32.ReadFile(
+            pty.out_pipe,
+            buf[total..].ptr,
+            @intCast(buf.len - total),
+            &read,
+            null,
+        );
+        if (ok == 0 or read == 0) break;
+        total += read;
+    }
+
+    try testing.expect(std.mem.indexOf(u8, buf[0..total], "hi") != null);
+}
