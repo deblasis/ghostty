@@ -32,6 +32,7 @@ internal sealed class WinttyUpdateSource : IUpdateSource
         string channel,
         Uri apiBase)
     {
+        // WinttyManifestClient validates its own args; we forward unchanged.
         _manifest = new WinttyManifestClient(client, tokens, channel, apiBase);
     }
 

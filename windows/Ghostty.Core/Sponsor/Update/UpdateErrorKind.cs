@@ -2,9 +2,9 @@ namespace Ghostty.Core.Sponsor.Update;
 
 /// <summary>
 /// Classes of failure surfaced by the update driver. Maps 1:1 with the
-/// user-facing error text in spec §7. Expected (auth, offline) and
-/// unexpected (manifest parse, apply failure) cases carry different log
-/// severities but share this enum.
+/// user-facing error text in <c>UpdateStateMapping.FromError</c>.
+/// Expected (auth, offline) and unexpected (manifest parse, apply
+/// failure) cases carry different log severities but share this enum.
 /// </summary>
 internal enum UpdateErrorKind
 {

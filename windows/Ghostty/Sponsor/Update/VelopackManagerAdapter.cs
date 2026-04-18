@@ -21,6 +21,8 @@ internal sealed class VelopackManagerAdapter : IVelopackManager
     // options and locator are optional so we pass null for both.
     public VelopackManagerAdapter(IUpdateSource source)
     {
+        ArgumentNullException.ThrowIfNull(source);
+
         _manager = new UpdateManager(source);
     }
 

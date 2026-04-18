@@ -12,7 +12,7 @@ namespace Ghostty.Core.Sponsor.Update;
 /// <see cref="IVelopackManager"/> (a thin shim over Velopack's
 /// UpdateManager) so the state machine is independently testable.
 /// Public methods never throw: failures become Error snapshots via
-/// <see cref="UpdateStateMapping.FromError"/>. Spec section 5.4.
+/// <see cref="UpdateStateMapping.FromError"/>.
 /// </summary>
 internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
 {
@@ -33,6 +33,10 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
         ISponsorTokenProvider tokens,
         ILogger<VelopackUpdateDriver> logger)
     {
+        ArgumentNullException.ThrowIfNull(manager);
+        ArgumentNullException.ThrowIfNull(tokens);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _manager = manager;
         _tokens = tokens;
         _logger = logger;

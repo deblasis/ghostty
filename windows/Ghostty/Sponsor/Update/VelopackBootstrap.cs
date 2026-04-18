@@ -9,7 +9,7 @@ namespace Ghostty.Sponsor.Update;
 /// here (install, uninstall, first-run, restart-after-update). Always
 /// returns to the caller when the current process is NOT a Velopack
 /// utility invocation; otherwise Velopack does its work and exits the
-/// process itself. Spec section 5.6.
+/// process itself.
 /// </summary>
 internal static class VelopackBootstrap
 {

@@ -107,10 +107,8 @@
   </PropertyGroup>
 
   <!--
-    Velopack update client. SPONSOR_BUILD only. Deliberately deferred
-    from Plan A (scaffolding) to Plan D.2 (consumer code lands at the
-    same time as the package reference) per the parent design spec.
-    Pin exact version for reproducibility; no `*` or open ranges.
+    Velopack update client. SPONSOR_BUILD only. Pin exact version for
+    reproducibility; no `*` or open ranges.
   -->
   <ItemGroup Condition="'$(SponsorBuild)'=='true'">
     <PackageReference Include="Velopack" Version="0.0.1298" />

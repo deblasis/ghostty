@@ -18,7 +18,7 @@ namespace Ghostty.Core.Sponsor.Update;
 /// result to <c>VelopackAssetFeed</c>. This type lives in Core so
 /// Ghostty.Tests can exercise it without a WinAppSDK project reference.
 /// </summary>
-public sealed class WinttyManifestClient
+internal sealed class WinttyManifestClient
 {
     private readonly HttpClient _client;
     private readonly ISponsorTokenProvider _tokens;
@@ -31,6 +31,11 @@ public sealed class WinttyManifestClient
         string channel,
         Uri apiBase)
     {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(tokens);
+        ArgumentException.ThrowIfNullOrEmpty(channel);
+        ArgumentNullException.ThrowIfNull(apiBase);
+
         _client = client;
         _tokens = tokens;
         _channel = channel;
@@ -96,7 +101,10 @@ public sealed class WinttyManifestClient
 
             try
             {
-                var entries = JsonSerializer.Deserialize<List<VelopackReleaseEntry>>(json);
+                // Source-generated context: AOT/trim-safe, no reflection fallback.
+                var entries = JsonSerializer.Deserialize(
+                    json,
+                    VelopackManifestJsonContext.Default.ListVelopackReleaseEntry);
                 if (entries is null || entries.Count == 0)
                     throw new UpdateCheckException(
                         UpdateErrorKind.ManifestInvalid, "manifest was empty or null");
@@ -115,7 +123,7 @@ public sealed class WinttyManifestClient
     /// presigned R2 URL; R2 rejects extra headers, so we manually follow the
     /// redirect and strip the Bearer on the second hop. Streams the body to
     /// <paramref name="localPath"/> with 1%-coalesced progress and a final
-    /// 100 emit. Spec section 5.2.
+    /// 100 emit.
     /// </summary>
     public async Task DownloadReleaseAsync(
         string fileName,
@@ -204,28 +212,51 @@ public sealed class WinttyManifestClient
         Action<int> progress,
         CancellationToken ct)
     {
+        // Stream to a .partial sibling and rename on success. A mid-stream
+        // failure (network drop, disk full, cancellation) would otherwise
+        // leave a truncated file at localPath that the next Velopack
+        // verification step would happily pick up and fail to unpack.
+        var partialPath = localPath + ".partial";
         var totalBytes = response.Content.Headers.ContentLength;
-        await using var src = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var dst = File.Create(localPath);
-
-        var buffer = new byte[81920];
-        long read = 0;
-        int lastEmitted = -1;
-        int n;
-        while ((n = await src.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
+        try
         {
-            await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-            read += n;
-            if (totalBytes.HasValue && totalBytes.Value > 0)
+            await using (var src = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+            await using (var dst = File.Create(partialPath))
             {
-                var percent = (int)(read * 100 / totalBytes.Value);
-                if (percent > lastEmitted)
+                var buffer = new byte[81920];
+                long read = 0;
+                int lastEmitted = -1;
+                int n;
+                while ((n = await src.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
                 {
-                    progress(percent);
-                    lastEmitted = percent;
+                    await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
+                    read += n;
+                    if (totalBytes.HasValue && totalBytes.Value > 0)
+                    {
+                        var percent = (int)(read * 100 / totalBytes.Value);
+                        if (percent > lastEmitted)
+                        {
+                            progress(percent);
+                            lastEmitted = percent;
+                        }
+                    }
                 }
+                if (lastEmitted < 100) progress(100);
             }
+
+            // Atomic replace: File.Move with overwrite is a single NTFS
+            // rename so a crash between Close and Move can never leave
+            // localPath in a torn state.
+            File.Move(partialPath, localPath, overwrite: true);
         }
-        if (lastEmitted < 100) progress(100);
+        catch
+        {
+            // Best-effort cleanup. Leaving a .partial behind is benign
+            // (gets overwritten on retry); crashing inside a crash path
+            // would hide the original failure.
+            try { if (File.Exists(partialPath)) File.Delete(partialPath); }
+            catch { }
+            throw;
+        }
     }
 }

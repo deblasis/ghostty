@@ -217,6 +217,93 @@ public class WinttyManifestClientTests
     // ---------------------------------------------------------------
 
     [Fact]
+    public async Task DownloadRelease_StreamFailure_CleansUpPartialFile()
+    {
+        // Serve a 200 whose body stream throws midway. Stream-to-file must
+        // surface the failure AND leave no partial artifact at localPath;
+        // the torn .partial would otherwise masquerade as a valid nupkg on
+        // the next retry.
+        var failingBody = new ThrowingStream(
+            prefix: new byte[] { 0x50, 0x4B },
+            throwAfter: 2);
+
+        var step = 0;
+        var handler = new StubHandler
+        {
+            Respond = _ =>
+            {
+                step++;
+                if (step == 1)
+                {
+                    var redirect = new HttpResponseMessage(HttpStatusCode.Found);
+                    redirect.Headers.Location = new Uri("https://r2.cf.example.com/wintty/x.nupkg");
+                    return redirect;
+                }
+                var ok = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(failingBody),
+                };
+                // ContentLength set large enough that we never emit 100 via the
+                // progress coalescer before the stream throws.
+                ok.Content.Headers.ContentLength = 1024;
+                return ok;
+            },
+        };
+        var tokens = new StubTokenProvider("eyJ.abc.def");
+        var client = new WinttyManifestClient(
+            new HttpClient(handler), tokens, "stable", new Uri("https://api.wintty.io"));
+
+        var tmp = Path.Combine(Path.GetTempPath(), "wintty-test-" + Guid.NewGuid().ToString("N") + ".nupkg");
+        try
+        {
+            await Assert.ThrowsAsync<IOException>(() =>
+                client.DownloadReleaseAsync("x.nupkg", tmp, _ => { }, CancellationToken.None));
+
+            Assert.False(File.Exists(tmp), "torn localPath must not exist");
+            Assert.False(File.Exists(tmp + ".partial"), ".partial sibling must be cleaned up");
+        }
+        finally
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+            if (File.Exists(tmp + ".partial")) File.Delete(tmp + ".partial");
+        }
+    }
+
+    private sealed class ThrowingStream : Stream
+    {
+        private readonly byte[] _prefix;
+        private readonly int _throwAfter;
+        private int _read;
+
+        public ThrowingStream(byte[] prefix, int throwAfter)
+        {
+            _prefix = prefix;
+            _throwAfter = throwAfter;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => _read; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_read >= _throwAfter) throw new IOException("simulated mid-stream failure");
+            var remain = _prefix.Length - _read;
+            if (remain <= 0) throw new IOException("simulated mid-stream failure");
+            var take = System.Math.Min(remain, count);
+            System.Array.Copy(_prefix, _read, buffer, offset, take);
+            _read += take;
+            return take;
+        }
+    }
+
+    [Fact]
     public async Task DownloadRelease_FollowsRedirect_AndStripsBearer()
     {
         var step = 0;
