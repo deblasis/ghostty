@@ -3,12 +3,13 @@ using Ghostty.Bench.Transports;
 
 namespace Ghostty.Bench.Harness;
 
-public static class Harness
+// Renamed from `Harness` to avoid collision with the containing namespace,
+// which forced callers in `Ghostty.Bench.Probes` into `global::Ghostty.Bench.Harness.Harness.X`.
+public static class Runner
 {
     // Performs `warmup` untimed single-byte round-trips, then `samples`
     // timed round-trips, and returns the timings array in Stopwatch
-    // ticks. Caller converts to microseconds via
-    // (ticks * 1_000_000.0 / Stopwatch.Frequency).
+    // ticks. Caller converts to microseconds via TicksToMicroseconds.
     public static long[] RunRoundTrip(ITransport transport, int warmup, int samples)
     {
         ArgumentNullException.ThrowIfNull(transport);
@@ -44,20 +45,6 @@ public static class Harness
         if (read != 1)
         {
             throw new IOException($"expected 1 byte on round-trip read, got {read}");
-        }
-    }
-
-    // Reads exactly `total` bytes into `buffer` from `stream`, blocking.
-    // Used by ThroughputProbe; placed here to keep all the "careful IO"
-    // helpers in one file.
-    public static void ReadExactly(Stream stream, Span<byte> buffer)
-    {
-        int read = 0;
-        while (read < buffer.Length)
-        {
-            int n = stream.Read(buffer[read..]);
-            if (n == 0) throw new EndOfStreamException("peer closed before all bytes read");
-            read += n;
         }
     }
 

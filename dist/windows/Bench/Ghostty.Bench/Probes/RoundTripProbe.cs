@@ -20,16 +20,16 @@ public sealed class RoundTripProbe : Probe
 
     public override ResultJson Run(ITransport transport, HostInfo host, DateTime timestampUtc)
     {
-        long[] ticks = global::Ghostty.Bench.Harness.Harness.RunRoundTrip(
+        long[] ticks = Runner.RunRoundTrip(
             transport,
             warmup: WarmupIterations,
             samples: MeasureIterations);
 
         Array.Sort(ticks);
 
-        double p50 = global::Ghostty.Bench.Harness.Harness.TicksToMicroseconds(Percentiles.Of(ticks, 50));
-        double p95 = global::Ghostty.Bench.Harness.Harness.TicksToMicroseconds(Percentiles.Of(ticks, 95));
-        double p99 = global::Ghostty.Bench.Harness.Harness.TicksToMicroseconds(Percentiles.Of(ticks, 99));
+        double p50 = Runner.TicksToMicroseconds(Percentiles.Of(ticks, 50));
+        double p95 = Runner.TicksToMicroseconds(Percentiles.Of(ticks, 95));
+        double p99 = Runner.TicksToMicroseconds(Percentiles.Of(ticks, 99));
 
         return ResultJson.RoundTrip(
             probe: Name,

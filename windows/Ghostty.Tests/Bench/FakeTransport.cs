@@ -20,8 +20,6 @@ public sealed class FakeTransport : ITransport
     private readonly CancellationTokenSource _cts = new();
     private int _disposed;
 
-    public int DisposeCount => Volatile.Read(ref _disposed);
-
     public FakeTransport()
     {
         string inputPipe  = $"fake-transport-in-{Guid.NewGuid():N}";

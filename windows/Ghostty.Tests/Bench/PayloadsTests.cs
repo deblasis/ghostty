@@ -5,7 +5,7 @@ namespace Ghostty.Tests.Bench;
 
 public class PayloadsTests
 {
-    private const int Expected = 100 * 1024 * 1024;
+    private const int Expected = Payloads.TargetBytes;
 
     [Fact]
     public void Ascii_IsExactlyOneHundredMegabytes()

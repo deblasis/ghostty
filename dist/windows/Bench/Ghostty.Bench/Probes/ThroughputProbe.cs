@@ -25,13 +25,20 @@ public sealed class ThroughputProbe : Probe
     public override ResultJson Run(ITransport transport, HostInfo host, DateTime timestampUtc)
     {
         double[] mbps = new double[Samples];
+        // Each Read() fills the buffer to readBuf.Length before we stop, so
+        // we don't need to zero it between samples.
         byte[] readBuf = new byte[_payload.Length];
 
         for (int i = 0; i < Samples; i++)
         {
-            Array.Clear(readBuf, 0, readBuf.Length);
-
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            // transport.Output.Read is a blocking synchronous call that the
+            // CTS cannot interrupt. If the 20s deadline fires, Wait throws
+            // but the reader task stays parked until the transport is
+            // disposed at the top of Program.Main. Program.RunAll then
+            // kills the child, which is the real unblock mechanism. For
+            // that reason we don't bother awaiting the task on the error
+            // path.
             var readerTask = Task.Run(() =>
             {
                 int read = 0;
