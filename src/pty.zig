@@ -463,7 +463,23 @@ const WindowsPty = struct {
                 if (result != windows.S_OK) return error.Unexpected;
                 pty.pseudo_console = hpcon;
             },
-            .bypass => return error.Unexpected, // real impl lands in Task 5
+            .bypass => {
+                // Bypass: no pseudoconsole. The child inherits in_pipe_pty as
+                // stdin and out_pipe_pty as stdout/stderr via
+                // STARTF_USESTDHANDLES. To make that inheritance work, the
+                // _pty ends must be HANDLE_FLAG_INHERIT. Parent ends stay
+                // non-inheritable so they don't leak.
+                try windows.SetHandleInformation(
+                    pty.in_pipe_pty,
+                    windows.HANDLE_FLAG_INHERIT,
+                    windows.HANDLE_FLAG_INHERIT,
+                );
+                try windows.SetHandleInformation(
+                    pty.out_pipe_pty,
+                    windows.HANDLE_FLAG_INHERIT,
+                    windows.HANDLE_FLAG_INHERIT,
+                );
+            },
         }
 
         return pty;
@@ -550,4 +566,26 @@ test "WindowsPty: conpty mode populates pseudo_console" {
     defer pty.deinit();
     try std.testing.expect(pty.pseudo_console != null);
     try std.testing.expectEqual(Mode.conpty, pty.mode);
+}
+
+test "WindowsPty: bypass mode skips pseudo_console and flips _pty handles inheritable" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    var pty = try Pty.open(.{
+        .size = .{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 0, .ws_ypixel = 0 },
+        .mode = .bypass,
+    });
+    defer pty.deinit();
+    try std.testing.expect(pty.pseudo_console == null);
+    try std.testing.expectEqual(Mode.bypass, pty.mode);
+    try std.testing.expect(pty.in_pipe != windows.INVALID_HANDLE_VALUE);
+    try std.testing.expect(pty.out_pipe != windows.INVALID_HANDLE_VALUE);
+
+    // _pty ends must be inheritable so CreateProcessW with
+    // bInheritHandles = TRUE + HANDLE_LIST attribute passes them to
+    // the child's stdio.
+    var flags: windows.DWORD = 0;
+    try windows.GetHandleInformation(pty.in_pipe_pty, &flags);
+    try std.testing.expect((flags & windows.HANDLE_FLAG_INHERIT) != 0);
+    try windows.GetHandleInformation(pty.out_pipe_pty, &flags);
+    try std.testing.expect((flags & windows.HANDLE_FLAG_INHERIT) != 0);
 }

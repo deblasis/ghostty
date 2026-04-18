@@ -31,6 +31,16 @@ pub const WAIT_FAILED = windows.WAIT_FAILED;
 pub const FALSE = windows.FALSE;
 pub const TRUE = windows.TRUE;
 
+/// GetHandleInformation is not wrapped in Zig std yet (std only wraps
+/// SetHandleInformation). Expose a small wrapper here so callers can
+/// verify handle inheritance flags without reaching into kernel32
+/// directly.
+pub fn GetHandleInformation(handle: windows.HANDLE, flags: *windows.DWORD) !void {
+    if (exp.kernel32.GetHandleInformation(handle, flags) == 0) {
+        return windows.unexpectedError(windows.kernel32.GetLastError());
+    }
+}
+
 pub const exp = struct {
     pub const HPCON = windows.LPVOID;
 
@@ -53,6 +63,10 @@ pub const exp = struct {
             hWritePipe: *windows.HANDLE,
             lpPipeAttributes: ?*const windows.SECURITY_ATTRIBUTES,
             nSize: windows.DWORD,
+        ) callconv(.winapi) windows.BOOL;
+        pub extern "kernel32" fn GetHandleInformation(
+            hObject: windows.HANDLE,
+            lpdwFlags: *windows.DWORD,
         ) callconv(.winapi) windows.BOOL;
         pub extern "kernel32" fn CreatePseudoConsole(
             size: windows.COORD,
