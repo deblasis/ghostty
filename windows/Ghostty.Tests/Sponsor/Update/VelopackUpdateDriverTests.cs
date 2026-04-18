@@ -242,4 +242,97 @@ public partial class VelopackUpdateDriverTests
         await driver.CancelDownloadAsync();
         Assert.Equal(UpdateState.Idle, driver.Current.State);
     }
+
+    [Fact]
+    public async Task ApplyAndRestartAsync_HappyPath_EmitsInstallingThenCallsManager()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager { NextCheckResult = info };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+        await driver.DownloadAsync();
+        Assert.Equal(UpdateState.RestartPending, driver.Current.State);
+
+        var seen = new System.Collections.Generic.List<UpdateStateSnapshot>();
+        driver.StateChanged += (_, s) => seen.Add(s);
+
+        await driver.ApplyAndRestartAsync();
+        Assert.Contains(seen, s => s.State == UpdateState.Installing);
+        Assert.True(mgr.ApplyCalled);
+    }
+
+    [Fact]
+    public async Task ApplyAndRestartAsync_ManagerThrows_EmitsError()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager { NextCheckResult = info };
+        var throwing = new ThrowingApplyManager(mgr);
+        var driver = new VelopackUpdateDriver(throwing, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+        await driver.DownloadAsync();
+
+        await driver.ApplyAndRestartAsync();
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Equal("Couldn't apply the update. Try again or reinstall.", driver.Current.ErrorMessage);
+    }
+
+    private sealed class ThrowingApplyManager : IVelopackManager
+    {
+        private readonly IVelopackManager _inner;
+        public ThrowingApplyManager(IVelopackManager inner) { _inner = inner; }
+        public bool IsInstalled => _inner.IsInstalled;
+        public Task<VelopackUpdateInfo?> CheckForUpdatesAsync(CancellationToken ct) => _inner.CheckForUpdatesAsync(ct);
+        public Task DownloadUpdatesAsync(VelopackUpdateInfo info, System.IProgress<int> progress, CancellationToken ct)
+            => _inner.DownloadUpdatesAsync(info, progress, ct);
+        public void ApplyUpdatesAndRestart(VelopackUpdateInfo info) =>
+            throw new UpdateCheckException(UpdateErrorKind.ApplyFailed, "not installed");
+    }
+
+    [Fact]
+    public async Task DismissAsync_EmitsIdle()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager { NextCheckResult = info };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.UpdateAvailable, driver.Current.State);
+        await driver.DismissAsync();
+        Assert.Equal(UpdateState.Idle, driver.Current.State);
+    }
+
+    [Fact]
+    public void TokenInvalidated_WhileIdle_EmitsErrorAuthExpired()
+    {
+        var tokens = new StubTokens();
+        var driver = new VelopackUpdateDriver(new FakeVelopackManager(), tokens,
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        tokens.RaiseInvalidated();
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Equal("Sponsor session expired. Sign in again.", driver.Current.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task TokenInvalidated_DuringDownload_CancelsAndEmitsError()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager
+        {
+            NextCheckResult = info,
+            DownloadDelay = TimeSpan.FromMilliseconds(50),
+        };
+        var tokens = new StubTokens();
+        var driver = new VelopackUpdateDriver(mgr, tokens, NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+
+        var downloadTask = driver.DownloadAsync();
+        await Task.Delay(20);
+        tokens.RaiseInvalidated();
+        await downloadTask;
+
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+    }
 }

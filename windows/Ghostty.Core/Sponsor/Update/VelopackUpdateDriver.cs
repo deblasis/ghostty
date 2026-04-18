@@ -153,11 +153,62 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
         }
     }
 
-    public Task ApplyAndRestartAsync() =>
-        throw new NotImplementedException("Task 21");
+    public async Task ApplyAndRestartAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_lastInfo is null)
+            {
+                _logger.LogDebug("[sponsor/update] ApplyAndRestartAsync: no info on hand; no-op");
+                return;
+            }
 
-    public Task DismissAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException("Task 22");
+            var info = _lastInfo;
+            Emit(new UpdateStateSnapshot(
+                UpdateState.Installing,
+                info.Version,
+                null, null,
+                DateTimeOffset.UtcNow)
+            {
+                ReleaseNotesUrl = info.ReleaseNotesUrl,
+            });
+
+            try
+            {
+                _manager.ApplyUpdatesAndRestart(info);
+            }
+            catch (UpdateCheckException uce)
+            {
+                _logger.LogWarning("[sponsor/update] ApplyUpdatesAndRestart known failure: {Kind}", uce.Kind);
+                Emit(UpdateStateMapping.FromError(uce, info.Version));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[sponsor/update] ApplyUpdatesAndRestart unexpected failure");
+                Emit(UpdateStateMapping.FromError(
+                    new UpdateCheckException(UpdateErrorKind.ApplyFailed, ex.Message, ex),
+                    info.Version));
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task DismissAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            Emit(UpdateStateSnapshot.Idle());
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public Task CancelDownloadAsync(CancellationToken ct = default)
     {
@@ -178,7 +229,20 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
         public void Report(int value) => _action(value);
     }
 
-    private void OnTokenInvalidated(object? sender, EventArgs e) { /* Task 22 */ }
+    private void OnTokenInvalidated(object? sender, EventArgs e)
+    {
+        _logger.LogWarning("[sponsor/update] TokenInvalidated event fired");
+
+        // Cancel any in-flight download before overwriting state with the
+        // auth-expired Error snapshot.
+        _downloadCts?.Cancel();
+
+        var snap = UpdateStateMapping.FromError(
+            new UpdateCheckException(UpdateErrorKind.AuthExpired, "token invalidated"),
+            targetVersion: _lastInfo?.Version);
+        _current = snap;
+        StateChanged?.Invoke(this, snap);
+    }
 
     private void Emit(UpdateStateSnapshot snap)
     {
