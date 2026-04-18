@@ -102,7 +102,7 @@ public sealed class ConPtyTransport : ITransport
         si.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
         si.lpAttributeList = _attrList;
 
-        string cmdLine = "\"" + childExePath + "\"";
+        string cmdLine = $"\"{childExePath}\"";
 
         if (!CreateProcess(
                 null,
@@ -139,6 +139,10 @@ public sealed class ConPtyTransport : ITransport
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
+        // Dispose must not throw. Each call site below is individually
+        // wrapped so a failure in one step (e.g. a double-free racing with
+        // a crashing child) does not skip the remaining cleanup.
+        //
         // Order matters: ClosePseudoConsole first, then streams. The
         // reverse order can hang on some Windows builds.
         try { ClosePseudoConsole(_hpcon); } catch { }

@@ -50,7 +50,7 @@ public class ConPtyTransportTests
         catch (TimeoutException)
         {
             Assert.Fail("ConPtyTransport produced no output within 5s -- regression of UpdateProcThreadAttribute lpValue marshalling");
-            return;
+            throw; // unreachable: Assert.Fail throws, but satisfies definite-assignment.
         }
 
         Assert.True(bytesRead > 0, "ConPtyTransport output pipe EOF'd before conhost sent its VT preamble");
