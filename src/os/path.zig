@@ -7,9 +7,16 @@ const testing = std.testing;
 /// always allocate if there is a non-null result. The caller must free the
 /// resulting value.
 pub fn expand(alloc: Allocator, cmd: []const u8) !?[]u8 {
-    // If the command already contains a slash, then we return it as-is
-    // because it is assumed to be absolute or relative.
-    if (std.mem.indexOfScalar(u8, cmd, '/') != null) {
+    // If the command already contains a path separator, return as-is.
+    // POSIX: '/'. Windows additionally accepts '\\' and drive-letter
+    // prefixes like 'X:'. Without the Windows extensions a path such
+    // as `C:\Windows\System32\cmd.exe` would miss the fast path and
+    // get joined onto every PATH dir, always producing null.
+    const already_path = std.mem.indexOfScalar(u8, cmd, '/') != null or
+        (builtin.os.tag == .windows and
+            (std.mem.indexOfScalar(u8, cmd, '\\') != null or
+                (cmd.len >= 2 and std.ascii.isAlphabetic(cmd[0]) and cmd[1] == ':')));
+    if (already_path) {
         return try alloc.dupe(u8, cmd);
     }
 
@@ -86,4 +93,32 @@ test "expand: slash" {
     const path = (try expand(testing.allocator, "foo/env")).?;
     defer testing.allocator.free(path);
     try testing.expect(path.len == 7);
+}
+
+test "expand: windows backslash passes through" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const input = "C:\\Windows\\System32\\cmd.exe";
+    const path = (try expand(testing.allocator, input)).?;
+    defer testing.allocator.free(path);
+    try testing.expectEqualStrings(input, path);
+}
+
+test "expand: windows drive-letter only passes through" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    // No separator, but the drive prefix means this is already a
+    // path (drive-relative) and expand() must not treat it as a
+    // bare name to search PATH for.
+    const input = "C:cmd.exe";
+    const path = (try expand(testing.allocator, input)).?;
+    defer testing.allocator.free(path);
+    try testing.expectEqualStrings(input, path);
+}
+
+test "expand: windows bare cmd.exe resolves on PATH" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const path = (try expand(testing.allocator, "cmd.exe")).?;
+    defer testing.allocator.free(path);
+    // System32\cmd.exe lives on the default Windows PATH.
+    try testing.expect(std.ascii.endsWithIgnoreCase(path, "cmd.exe"));
+    try testing.expect(path.len > "cmd.exe".len);
 }

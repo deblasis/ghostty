@@ -27,6 +27,7 @@ const mem = std.mem;
 const linux = std.os.linux;
 const posix = std.posix;
 const debug = std.debug;
+const log = std.log.scoped(.command);
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
@@ -258,7 +259,25 @@ fn startPosix(self: *Command, arena: Allocator) !void {
 }
 
 fn startWindows(self: *Command, arena: Allocator) !void {
-    const application_w = try std.unicode.utf8ToUtf16LeAllocZ(arena, self.path);
+    // CreateProcessW's lpApplicationName requires a fully qualified
+    // path. Passing a bare executable name like "cmd.exe" or
+    // "pwsh.exe" relies on the current working directory containing
+    // the module, which it usually doesn't, so the spawn fails with
+    // ERROR_FILE_NOT_FOUND even when the executable is on PATH.
+    //
+    // `internal_os.path.expand` does the PATH search for bare names
+    // and returns already-qualified paths (including drive-relative
+    // ones) unchanged. Fall back to the raw value if resolution
+    // fails so any spawn error surfaces from CreateProcessW with the
+    // original command rather than being masked here.
+    const resolved_path: []const u8 = blk: {
+        const r = internal_os.path.expand(arena, self.path) catch |err| {
+            log.warn("failed to resolve path on PATH cmd={s} err={}", .{ self.path, err });
+            break :blk self.path;
+        };
+        break :blk r orelse self.path;
+    };
+    const application_w = try std.unicode.utf8ToUtf16LeAllocZ(arena, resolved_path);
     const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeAllocZ(arena, cwd) else null;
     const command_line_w = if (self.args.len > 0) b: {
         const command_line = try windowsCreateCommandLine(arena, self.args);
