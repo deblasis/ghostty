@@ -136,4 +136,78 @@ public partial class VelopackUpdateDriverTests
         await driver.CheckAsync();
         Assert.Equal(UpdateState.Error, driver.Current.State);
     }
+
+    [Fact]
+    public async Task DownloadAsync_HappyPath_EmitsProgressThenRestartPending()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager { NextCheckResult = info };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.UpdateAvailable, driver.Current.State);
+
+        var seen = new System.Collections.Generic.List<UpdateStateSnapshot>();
+        driver.StateChanged += (_, s) => seen.Add(s);
+
+        await driver.DownloadAsync();
+
+        // FakeVelopackManager reports 0, 25, 50, 75, 100; expect 5 Downloading + 1 RestartPending.
+        var dl = seen.FindAll(s => s.State == UpdateState.Downloading).Count;
+        Assert.InRange(dl, 5, 6);
+        Assert.Equal(UpdateState.RestartPending, seen[^1].State);
+        Assert.Equal("1.4.2", seen[^1].TargetVersion);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_FromIdleState_NoOps()
+    {
+        var mgr = new FakeVelopackManager();
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.DownloadAsync();
+        Assert.Equal(UpdateState.Idle, driver.Current.State);
+        Assert.Empty(mgr.ProgressEmits);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_ManagerThrows_EmitsError()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager
+        {
+            NextCheckResult = info,
+            DownloadThrows = new UpdateCheckException(UpdateErrorKind.HashMismatch, "bad-sha"),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        await driver.DownloadAsync();
+
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Equal("Downloaded update didn't verify. Try again.", driver.Current.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_ProgressCoalescing_NoDuplicateIntegerEmits()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", null, new object());
+        var mgr = new FakeVelopackManager { NextCheckResult = info };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+
+        var emits = new System.Collections.Generic.List<int>();
+        driver.StateChanged += (_, s) =>
+        {
+            if (s.State == UpdateState.Downloading && s.Progress.HasValue)
+                emits.Add((int)System.Math.Round(s.Progress.Value * 100));
+        };
+
+        await driver.DownloadAsync();
+        Assert.Equal(new[] { 0, 25, 50, 75, 100 }, emits);
+    }
 }

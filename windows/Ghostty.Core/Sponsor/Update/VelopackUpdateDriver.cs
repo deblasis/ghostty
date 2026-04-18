@@ -86,8 +86,72 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
         }
     }
 
-    public Task DownloadAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException("Task 19");
+    public async Task DownloadAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_current.State != UpdateState.UpdateAvailable || _lastInfo is null)
+            {
+                _logger.LogDebug("[sponsor/update] DownloadAsync no-op: state={State}", _current.State);
+                return;
+            }
+
+            var info = _lastInfo;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _downloadCts = cts;
+
+            int lastEmitted = -1;
+            var progress = new SyncProgress(p =>
+            {
+                var clamped = Math.Clamp(p, 0, 100);
+                if (clamped > lastEmitted)
+                {
+                    lastEmitted = clamped;
+                    _current = UpdateStateMapping.FromDownloadProgress(
+                        clamped, info.Version, info.ReleaseNotesUrl);
+                    StateChanged?.Invoke(this, _current);
+                }
+            });
+
+            try
+            {
+                await _manager.DownloadUpdatesAsync(info, progress, cts.Token).ConfigureAwait(false);
+                if (lastEmitted < 100)
+                {
+                    _current = UpdateStateMapping.FromDownloadProgress(
+                        100, info.Version, info.ReleaseNotesUrl);
+                    StateChanged?.Invoke(this, _current);
+                }
+                Emit(UpdateStateMapping.FromDownloadComplete(info.Version, info.ReleaseNotesUrl));
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("[sponsor/update] DownloadAsync cancelled");
+                Emit(UpdateStateMapping.FromCancel(info.Version, info.ReleaseNotesUrl));
+            }
+            catch (UpdateCheckException uce)
+            {
+                _logger.LogWarning("[sponsor/update] DownloadAsync known failure: {Kind}", uce.Kind);
+                Emit(UpdateStateMapping.FromError(uce, info.Version));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[sponsor/update] DownloadAsync unexpected failure");
+                Emit(UpdateStateMapping.FromError(
+                    new UpdateCheckException(UpdateErrorKind.ServerError, ex.Message, ex),
+                    info.Version));
+            }
+            finally
+            {
+                _downloadCts = null;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public Task ApplyAndRestartAsync() =>
         throw new NotImplementedException("Task 21");
@@ -97,6 +161,19 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
 
     public Task CancelDownloadAsync(CancellationToken ct = default) =>
         throw new NotImplementedException("Task 20");
+
+    // Invokes the callback synchronously on the caller thread instead of
+    // posting to a SynchronizationContext. Progress<T> would capture the
+    // threadpool context in tests (no SC present), causing the handler to
+    // run after DownloadUpdatesAsync returns and breaking progress-order
+    // assertions. Synchronous dispatch keeps the fake's pump and the
+    // driver's lastEmitted guard on the same thread.
+    private sealed class SyncProgress : IProgress<int>
+    {
+        private readonly Action<int> _action;
+        public SyncProgress(Action<int> action) { _action = action; }
+        public void Report(int value) => _action(value);
+    }
 
     private void OnTokenInvalidated(object? sender, EventArgs e) { /* Task 22 */ }
 
