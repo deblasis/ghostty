@@ -349,15 +349,17 @@ const WindowsPty = struct {
     in_pipe: windows.HANDLE,
     out_pipe_pty: windows.HANDLE,
     in_pipe_pty: windows.HANDLE,
-    pseudo_console: windows.exp.HPCON,
+    /// null when mode == .bypass. In ConPTY mode this holds the HPCON
+    /// that owns the pipe pair internally.
+    pseudo_console: ?windows.exp.HPCON,
     size: winsize,
+    mode: Mode,
 
     pub const OpenError = error{Unexpected};
 
     /// Open a new PTY with the given initial size.
     pub fn open(opts: Options) OpenError!Pty {
         const size = opts.size;
-        _ = opts.mode; // transport branch lands in a later commit
         var pty: Pty = undefined;
 
         var pipe_path_buf: [128]u8 = undefined;
@@ -444,16 +446,26 @@ const WindowsPty = struct {
         try windows.SetHandleInformation(pty.out_pipe, windows.HANDLE_FLAG_INHERIT, 0);
         try windows.SetHandleInformation(pty.out_pipe_pty, windows.HANDLE_FLAG_INHERIT, 0);
 
-        const result = windows.exp.kernel32.CreatePseudoConsole(
-            .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
-            pty.in_pipe_pty,
-            pty.out_pipe_pty,
-            0,
-            &pty.pseudo_console,
-        );
-        if (result != windows.S_OK) return error.Unexpected;
-
         pty.size = size;
+        pty.mode = opts.mode;
+        pty.pseudo_console = null;
+
+        switch (opts.mode) {
+            .conpty => {
+                var hpcon: windows.exp.HPCON = undefined;
+                const result = windows.exp.kernel32.CreatePseudoConsole(
+                    .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
+                    pty.in_pipe_pty,
+                    pty.out_pipe_pty,
+                    0,
+                    &hpcon,
+                );
+                if (result != windows.S_OK) return error.Unexpected;
+                pty.pseudo_console = hpcon;
+            },
+            .bypass => return error.Unexpected, // real impl lands in Task 5
+        }
+
         return pty;
     }
 
@@ -462,7 +474,9 @@ const WindowsPty = struct {
         _ = windows.CloseHandle(self.in_pipe);
         _ = windows.CloseHandle(self.out_pipe_pty);
         _ = windows.CloseHandle(self.out_pipe);
-        _ = windows.exp.kernel32.ClosePseudoConsole(self.pseudo_console);
+        if (self.pseudo_console) |hpcon| {
+            _ = windows.exp.kernel32.ClosePseudoConsole(hpcon);
+        }
         self.* = undefined;
     }
 
@@ -477,12 +491,17 @@ const WindowsPty = struct {
 
     /// Set the size of the pty.
     pub fn setSize(self: *Pty, size: winsize) SetSizeError!void {
-        const result = windows.exp.kernel32.ResizePseudoConsole(
-            self.pseudo_console,
-            .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
-        );
-
-        if (result != windows.S_OK) return error.ResizeFailed;
+        switch (self.mode) {
+            .conpty => {
+                const hpcon = self.pseudo_console orelse return error.ResizeFailed;
+                const result = windows.exp.kernel32.ResizePseudoConsole(
+                    hpcon,
+                    .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
+                );
+                if (result != windows.S_OK) return error.ResizeFailed;
+            },
+            .bypass => return error.ResizeFailed, // real impl lands in Task 6
+        }
         self.size = size;
     }
 
@@ -520,4 +539,15 @@ test {
         .macos => try testing.expect(std.mem.startsWith(u8, pty.getProcessInfo(.tty_name).?, "/dev/")),
         else => try testing.expect(pty.getProcessInfo(.tty_name) == null),
     }
+}
+
+test "WindowsPty: conpty mode populates pseudo_console" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    var pty = try Pty.open(.{
+        .size = .{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 0, .ws_ypixel = 0 },
+        .mode = .conpty,
+    });
+    defer pty.deinit();
+    try std.testing.expect(pty.pseudo_console != null);
+    try std.testing.expectEqual(Mode.conpty, pty.mode);
 }
