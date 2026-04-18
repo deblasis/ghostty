@@ -210,4 +210,36 @@ public partial class VelopackUpdateDriverTests
         await driver.DownloadAsync();
         Assert.Equal(new[] { 0, 25, 50, 75, 100 }, emits);
     }
+
+    [Fact]
+    public async Task CancelDownloadAsync_DuringDownload_RevertsToUpdateAvailable()
+    {
+        var info = new VelopackUpdateInfo("1.4.2", "https://notes", new object());
+        var mgr = new FakeVelopackManager
+        {
+            NextCheckResult = info,
+            DownloadDelay = System.TimeSpan.FromMilliseconds(50),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CheckAsync();
+
+        var downloadTask = driver.DownloadAsync();
+        await Task.Delay(20);
+        await driver.CancelDownloadAsync();
+        await downloadTask;
+
+        Assert.Equal(UpdateState.UpdateAvailable, driver.Current.State);
+        Assert.Equal("1.4.2", driver.Current.TargetVersion);
+        Assert.Equal("https://notes", driver.Current.ReleaseNotesUrl);
+    }
+
+    [Fact]
+    public async Task CancelDownloadAsync_WhenNoDownload_IsNoOp()
+    {
+        var driver = new VelopackUpdateDriver(new FakeVelopackManager(), new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+        await driver.CancelDownloadAsync();
+        Assert.Equal(UpdateState.Idle, driver.Current.State);
+    }
 }

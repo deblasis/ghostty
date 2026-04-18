@@ -159,8 +159,11 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
     public Task DismissAsync(CancellationToken ct = default) =>
         throw new NotImplementedException("Task 22");
 
-    public Task CancelDownloadAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException("Task 20");
+    public Task CancelDownloadAsync(CancellationToken ct = default)
+    {
+        _downloadCts?.Cancel();
+        return Task.CompletedTask;
+    }
 
     // Invokes the callback synchronously on the caller thread instead of
     // posting to a SynchronizationContext. Progress<T> would capture the
