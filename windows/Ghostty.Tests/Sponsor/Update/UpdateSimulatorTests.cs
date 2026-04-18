@@ -25,4 +25,17 @@ public class UpdateSimulatorTests
         await sim.DismissAsync();
         Assert.Equal(UpdateState.Idle, sim.Current.State);
     }
+
+    [Fact]
+    public async Task CancelDownloadAsync_FromDownloading_LeavesStateUnchanged()
+    {
+        // The simulator is a deliberate no-op — the real VelopackUpdateDriver
+        // (Phase 4) reverts to UpdateAvailable on cancel. This test pins the
+        // simulator's deviation so future readers don't "fix" it.
+        var sim = new UpdateSimulator();
+        sim.Simulate(UpdateState.Downloading, version: "9.9.9", progress: 0.5);
+        Assert.Equal(UpdateState.Downloading, sim.Current.State);
+        await sim.CancelDownloadAsync();
+        Assert.Equal(UpdateState.Downloading, sim.Current.State);
+    }
 }

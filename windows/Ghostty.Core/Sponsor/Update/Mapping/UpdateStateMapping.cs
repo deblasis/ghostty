@@ -96,9 +96,10 @@ internal static class UpdateStateMapping
             _ => "Update failed. Try again later.",
         };
 
+        var head = $"{ex.GetType().Name}: {ex.Detail ?? ex.Message}";
         var detail = ex.InnerException is null
-            ? ex.GetType().Name + ": " + (ex.Detail ?? ex.Message)
-            : ex.GetType().Name + ": " + (ex.Detail ?? ex.Message) + " <- " + ex.InnerException.GetType().Name;
+            ? head
+            : $"{head} <- {ex.InnerException.GetType().Name}";
 
         return new UpdateStateSnapshot(
             UpdateState.Error,
