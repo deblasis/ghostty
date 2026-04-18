@@ -22,18 +22,29 @@ pub const Pty = switch (builtin.os.tag) {
     else => PosixPty,
 };
 
-/// The modes of a pty. Not all of these modes are supported on
-/// all platforms but all platforms share the same mode struct.
+/// The terminal modes of a pty. Not all of these modes are supported
+/// on all platforms but all platforms share the same mode struct.
 ///
-/// The default values of fields in this struct are set to the
-/// most typical values for a pty. This makes it easier for cross-platform
+/// The default values of fields in this struct are set to the most
+/// typical values for a pty. This makes it easier for cross-platform
 /// code which doesn't support all of the modes to work correctly.
-pub const Mode = packed struct {
+pub const TerminalMode = packed struct {
     /// ICANON on POSIX
     canonical: bool = true,
 
     /// ECHO on POSIX
     echo: bool = true,
+};
+
+/// Transport mode. Only meaningful on Windows - POSIX always uses
+/// the kernel PTY. See `Options.mode`.
+pub const Mode = enum { conpty, bypass };
+
+/// Arguments to `Pty.open`.
+pub const Options = struct {
+    size: winsize,
+    /// Windows-only. Ignored on POSIX.
+    mode: Mode = .conpty,
 };
 
 pub const ProcessInfo = enum {
@@ -66,8 +77,10 @@ const NullPty = struct {
 
     pub const OpenError = error{};
 
-    pub fn open(size: winsize) OpenError!Pty {
+    pub fn open(opts: Options) OpenError!Pty {
+        const size = opts.size;
         _ = size;
+        _ = opts.mode;
         return .{ .master = 0, .slave = 0 };
     }
 
@@ -77,7 +90,7 @@ const NullPty = struct {
 
     pub const GetModeError = error{GetModeFailed};
 
-    pub fn getMode(self: Pty) GetModeError!Mode {
+    pub fn getMode(self: Pty) GetModeError!TerminalMode {
         _ = self;
         return .{};
     }
@@ -131,7 +144,9 @@ const PosixPty = struct {
     pub const OpenError = error{OpenptyFailed};
 
     /// Open a new PTY with the given initial size.
-    pub fn open(size: winsize) OpenError!Pty {
+    pub fn open(opts: Options) OpenError!Pty {
+        const size = opts.size;
+        _ = opts.mode;
         // Need to copy so that it becomes non-const.
         var sizeCopy = size;
 
@@ -192,7 +207,7 @@ const PosixPty = struct {
 
     pub const GetModeError = error{GetModeFailed};
 
-    pub fn getMode(self: Pty) GetModeError!Mode {
+    pub fn getMode(self: Pty) GetModeError!TerminalMode {
         var attrs: c.termios = undefined;
         if (c.tcgetattr(self.master, &attrs) != 0)
             return error.GetModeFailed;
@@ -340,7 +355,9 @@ const WindowsPty = struct {
     pub const OpenError = error{Unexpected};
 
     /// Open a new PTY with the given initial size.
-    pub fn open(size: winsize) OpenError!Pty {
+    pub fn open(opts: Options) OpenError!Pty {
+        const size = opts.size;
+        _ = opts.mode; // transport branch lands in a later commit
         var pty: Pty = undefined;
 
         var pipe_path_buf: [128]u8 = undefined;
@@ -486,7 +503,7 @@ test {
         .ws_ypixel = 1,
     };
 
-    var pty = try Pty.open(ws);
+    var pty = try Pty.open(.{ .size = ws });
     defer pty.deinit();
 
     // Initialize size should match what we gave it

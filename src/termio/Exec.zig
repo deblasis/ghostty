@@ -899,10 +899,12 @@ const Subprocess = struct {
 
         // Create our pty
         var pty = try Pty.open(.{
-            .ws_row = @intCast(self.grid_size.rows),
-            .ws_col = @intCast(self.grid_size.columns),
-            .ws_xpixel = @intCast(self.screen_size.width),
-            .ws_ypixel = @intCast(self.screen_size.height),
+            .size = .{
+                .ws_row = @intCast(self.grid_size.rows),
+                .ws_col = @intCast(self.grid_size.columns),
+                .ws_xpixel = @intCast(self.screen_size.width),
+                .ws_ypixel = @intCast(self.screen_size.height),
+            },
         });
         self.pty = pty;
         errdefer if (!in_child) {
