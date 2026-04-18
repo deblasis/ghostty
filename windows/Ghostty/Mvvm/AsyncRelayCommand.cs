@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
@@ -14,7 +15,11 @@ internal sealed class AsyncRelayCommand : ICommand
 {
     private readonly Func<Task> _execute;
     private readonly Func<bool>? _canExecute;
-    private bool _isRunning;
+    // Read/written across the UI thread (Execute entry, CanExecute queries)
+    // and any thread the inner Task's continuation happens to run on.
+    // Interlocked CAS provides the "already running" guard atomically.
+    // 0 = idle, 1 = running.
+    private int _isRunning;
 
     public AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null)
     {
@@ -25,12 +30,11 @@ internal sealed class AsyncRelayCommand : ICommand
     public event EventHandler? CanExecuteChanged;
 
     public bool CanExecute(object? parameter) =>
-        !_isRunning && (_canExecute?.Invoke() ?? true);
+        Volatile.Read(ref _isRunning) == 0 && (_canExecute?.Invoke() ?? true);
 
     public async void Execute(object? parameter)
     {
-        if (_isRunning) return;
-        _isRunning = true;
+        if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
         RaiseCanExecuteChanged();
         try
         {
@@ -38,7 +42,7 @@ internal sealed class AsyncRelayCommand : ICommand
         }
         finally
         {
-            _isRunning = false;
+            Volatile.Write(ref _isRunning, 0);
             RaiseCanExecuteChanged();
         }
     }

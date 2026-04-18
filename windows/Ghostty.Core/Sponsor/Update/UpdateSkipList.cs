@@ -10,8 +10,9 @@ namespace Ghostty.Core.Sponsor.Update;
 /// Tracks which update versions the user has explicitly skipped.
 /// Persisted as JSON to a user-local file (caller supplies path;
 /// shell passes %LOCALAPPDATA%\Ghostty\update-skips.json).
-/// Version comparison uses System.Version parsing; strings that
-/// fail to parse compare lexicographically.
+/// Uses exact-match set membership (ordinal string equality): skipping
+/// 1.4.2 silences exactly 1.4.2; later versions surfaced by a subsequent
+/// check are evaluated independently.
 /// </summary>
 public sealed class UpdateSkipList
 {
@@ -42,22 +43,11 @@ public sealed class UpdateSkipList
     }
 
     /// <summary>
-    /// True iff <paramref name="version"/> is in the skip list AND
-    /// no strictly-greater version has been skipped. In practice this
-    /// means: skipping 1.4.2 does not silence 1.4.3 or later.
+    /// True iff <paramref name="version"/> is in the skip list. Exact
+    /// string match (ordinal): skipping 1.4.2 does not silence 1.4.3 or
+    /// later — the next check surfaces newer versions normally.
     /// </summary>
-    public bool IsSkipped(string version)
-    {
-        if (!_skipped.Contains(version))
-        {
-            return false;
-        }
-        // Any strictly-greater skipped version invalidates the skip
-        // of older ones — but simpler: newer versions we've never seen
-        // are not skipped by definition. This method only answers for
-        // a specific version, so membership alone is correct.
-        return true;
-    }
+    public bool IsSkipped(string version) => _skipped.Contains(version);
 
     private static HashSet<string> Load(string path)
     {

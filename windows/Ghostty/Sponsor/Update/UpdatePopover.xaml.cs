@@ -62,34 +62,37 @@ internal sealed partial class UpdatePopover : UserControl
 
     private async void OnRestartClick(object sender, RoutedEventArgs e)
     {
-        if (_vm is null) return;
-        if (!_vm.RestartNowCommand.CanExecute(null)) return;
-
-        var xamlRoot = XamlRoot;
-        if (xamlRoot is null)
-        {
-            // Popover not in the visual tree: fall back to an unconfirmed
-            // invocation. Shouldn't happen under normal operation.
-            _vm.RestartNowCommand.Execute(null);
-            return;
-        }
-
-        // Close the flyout first so the dialog modal layer can acquire
-        // input without fighting the popover. The dialog shows on the
-        // XamlRoot (the window) after the flyout starts its close anim.
-        _vm.RequestClose();
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = xamlRoot,
-            Title = "Restart wintty?",
-            Content = "Any running terminals will be closed. Open sessions may lose unsaved work.",
-            PrimaryButtonText = "Restart",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-        };
+        // async void handler: any escaping exception crashes the process.
+        // Wrap the whole body, not just ShowAsync, so a throw from Execute()
+        // (e.g. driver disposed mid-click) is caught too.
         try
         {
+            if (_vm is null) return;
+            if (!_vm.RestartNowCommand.CanExecute(null)) return;
+
+            var xamlRoot = XamlRoot;
+            if (xamlRoot is null)
+            {
+                // Popover not in the visual tree: fall back to an unconfirmed
+                // invocation. Shouldn't happen under normal operation.
+                _vm.RestartNowCommand.Execute(null);
+                return;
+            }
+
+            // Close the flyout first so the dialog modal layer can acquire
+            // input without fighting the popover. The dialog shows on the
+            // XamlRoot (the window) after the flyout starts its close anim.
+            _vm.RequestClose();
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "Restart wintty?",
+                Content = "Any running terminals will be closed. Open sessions may lose unsaved work.",
+                PrimaryButtonText = "Restart",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
             var choice = await dialog.ShowAsync();
             if (choice == ContentDialogResult.Primary
                 && _vm.RestartNowCommand.CanExecute(null))
@@ -99,7 +102,7 @@ internal sealed partial class UpdatePopover : UserControl
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[sponsor/update] restart confirm dialog failed: {ex.Message}");
+            Debug.WriteLine($"[sponsor/update] restart confirm handler failed: {ex.Message}");
         }
     }
 

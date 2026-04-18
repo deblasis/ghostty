@@ -85,7 +85,14 @@ internal sealed class UpdateService : IDisposable
         _timer?.Dispose();
         _driver.StateChanged -= OnDriverStateChanged;
         _config.ConfigChanged -= OnConfigChanged;
-        try { _pollLoop?.GetAwaiter().GetResult(); } catch { }
+        // Cancel() makes WaitForNextTickAsync throw OperationCanceledException
+        // synchronously, so PollLoopAsync observes cancellation in its existing
+        // catch and exits; the Task completes shortly after on a thread-pool
+        // thread. We intentionally do NOT block on _pollLoop here: Dispose runs
+        // on the UI thread during shutdown, and D.2 will add awaits inside the
+        // loop body that could deadlock a sync-over-async wait. The captured
+        // CancellationToken remains valid after _cts.Dispose() per the
+        // CancellationTokenSource contract.
         _cts.Dispose();
     }
 }

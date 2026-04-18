@@ -89,7 +89,11 @@ internal sealed class UpdateToastPublisher : IDisposable
                     .AddButton(new AppNotificationButton("Restart Now")
                         .AddArgument("action", "install-restart"));
 
-            builder.SetTag("wintty-update");
+            // Tag + Group: successive publishes with the same (tag, group)
+            // replace the previous toast in Action Center instead of stacking.
+            // Without Group, a user who sees UpdateAvailable then RestartPending
+            // would find both entries still sitting in Action Center later.
+            builder.SetTag("wintty-update").SetGroup("wintty-update");
             AppNotificationManager.Default.Show(builder.BuildNotification());
         }
         catch (Exception ex)

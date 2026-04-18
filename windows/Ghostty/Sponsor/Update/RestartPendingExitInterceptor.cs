@@ -65,12 +65,15 @@ internal sealed class RestartPendingExitInterceptor : IDisposable
         Microsoft.UI.Windowing.AppWindow sender,
         Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
     {
-        if (!_intercepting) return;
-        if (_window?.Content?.XamlRoot is not { } xamlRoot) return;
-
-        args.Cancel = true;
+        // async void handler: any escaping exception crashes the process.
+        // Wrap the whole body so a throw from args.Cancel, Close(), or
+        // ApplyAndRestartAsync doesn't terminate the app mid-shutdown.
         try
         {
+            if (!_intercepting) return;
+            if (_window?.Content?.XamlRoot is not { } xamlRoot) return;
+
+            args.Cancel = true;
             var dialog = new ContentDialog
             {
                 XamlRoot = xamlRoot,

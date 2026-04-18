@@ -8,7 +8,3 @@ In default / OSS / user-built builds, every file under this directory is
 excluded from compilation by a `<Compile Remove="Sponsor/**/*.cs" />` rule in
 `windows/Ghostty/Ghostty.csproj`. The sponsor-gated surface is therefore
 visible in source but absent from the output assembly.
-
-See the spec for the full design:
-  docs/superpowers/specs/2026-04-14-sponsor-gated-distribution-design.md
-  (section 4.5, "Fork discipline and compile-time gating")

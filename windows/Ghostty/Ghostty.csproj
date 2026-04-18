@@ -79,8 +79,7 @@
          When $(SponsorBuild) is 'true' (set by the SPONSOR_BUILD env var or -p:SponsorBuild=true),
          the SPONSOR_BUILD preprocessor symbol is defined and code under Sponsor/ is compiled in.
          Otherwise the flag is dormant and the Sponsor/ directory is excluded via <Compile Remove>
-         further down in this file. See docs spec 2026-04-14-sponsor-gated-distribution-design.md
-         section 4.5 for the full design. -->
+         further down in this file. -->
     <SponsorBuild Condition="'$(SponsorBuild)'==''">$(SPONSOR_BUILD)</SponsorBuild>
     <SponsorBuild Condition="'$(SponsorBuild)'==''">false</SponsorBuild>
     <!--
@@ -195,8 +194,7 @@
   </ItemGroup>
 
   <!-- Exclude the Sponsor/ subtree from compilation when the gate is off.
-       All sponsor-gated code must live under Sponsor/ for this one rule to cover it.
-       See docs spec 2026-04-14-sponsor-gated-distribution-design.md section 4.5. -->
+       All sponsor-gated code must live under Sponsor/ for this one rule to cover it. -->
   <ItemGroup Condition="'$(SponsorBuild)'!='true'">
     <Compile Remove="Sponsor/**/*.cs" />
     <Page    Remove="Sponsor/**/*.xaml" />

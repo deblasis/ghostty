@@ -56,7 +56,11 @@ internal sealed class SponsorActivationRouter
                 Debug.WriteLine("[sponsor/update] router: view-update");
                 break;
             default:
-                Debug.WriteLine($"[sponsor/update] router: unknown action '{action}'");
+                // Raw action is attacker-controllable (any local process can
+                // invoke wintty://update?action=...) so sanitize before
+                // logging to prevent log-injection if this path is ever
+                // routed to structured logging verbatim.
+                Debug.WriteLine($"[sponsor/update] router: unknown action (len={action.Length})");
                 break;
         }
     }
