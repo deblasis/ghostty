@@ -1658,6 +1658,29 @@ pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type
     return self.subprocess.getProcessInfo(info);
 }
 
+/// Resolve the requested transport mode at spawn time. Windows-only
+/// in effect; POSIX callers should pass `.conpty` and the value is
+/// ignored by PosixPty.
+///
+/// - `.never` always picks ConPTY (classic behavior).
+/// - `.always` always picks the raw-pipe bypass.
+/// - `.auto` defers to the shell classifier: VT-aware shells use the
+///   bypass, console-API shells and anything unrecognized fall back
+///   to ConPTY so unknown programs keep the safe default.
+fn resolveConptyMode(
+    cfg: configpkg.Config.ConptyMode,
+    exe_path: []const u8,
+) ptypkg.Mode {
+    return switch (cfg) {
+        .never => .conpty,
+        .always => .bypass,
+        .auto => switch (internal_os.windows_shell.classify(exe_path)) {
+            .vt_aware => .bypass,
+            .console_api, .unknown => .conpty,
+        },
+    };
+}
+
 test "execCommand darwin: shell command" {
     if (comptime !builtin.os.tag.isDarwin()) return error.SkipZigTest;
 
@@ -1965,4 +1988,32 @@ test "windowsShellNeedsCmdWrapping" {
     try testing.expect(windowsShellNeedsCmdWrapping("echo %USERNAME%"));
     try testing.expect(windowsShellNeedsCmdWrapping("echo !var!"));
     try testing.expect(windowsShellNeedsCmdWrapping("a^b"));
+}
+
+test "resolveConptyMode: never forces conpty" {
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.never, "pwsh.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.never, "cmd.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.never, "unknown.exe"));
+}
+
+test "resolveConptyMode: always forces bypass" {
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.always, "pwsh.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.always, "cmd.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.always, "unknown.exe"));
+}
+
+test "resolveConptyMode: auto picks bypass for vt_aware" {
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "pwsh.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "wsl.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "bash"));
+}
+
+test "resolveConptyMode: auto picks conpty for console_api" {
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "cmd.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "powershell.exe"));
+}
+
+test "resolveConptyMode: auto picks conpty for unknown (safe default)" {
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "my-custom.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, ""));
 }
