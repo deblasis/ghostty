@@ -45,6 +45,11 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
             RaiseClose();
             await _service.CheckNowAsync();
         }, CanRetry);
+        CancelDownloadCommand = new RelayCommand(() =>
+        {
+            RaiseClose();
+            _ = _service.CancelDownloadAsync();
+        });
 
         var c = _service.Current;
         State = c.State;
@@ -79,10 +84,15 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         private set { if (field == value) return; field = value; Raise(); }
     }
 
+    // Regular computed property; raised manually in OnStateChanged because
+    // the C# 14 field-keyword pattern doesn't apply to derived properties.
+    public bool ShowCancel => State == UpdateState.Downloading;
+
     public RelayCommand SkipCommand { get; }
     public AsyncRelayCommand InstallAndRelaunchCommand { get; }
     public AsyncRelayCommand RestartNowCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
+    public RelayCommand CancelDownloadCommand { get; }
 
     /// <summary>
     /// Raised when the popover should be dismissed. The pill control
@@ -132,6 +142,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
             TargetVersion = snap.TargetVersion;
             ErrorMessage = snap.ErrorMessage;
             ReleaseNotesUrl = snap.ReleaseNotesUrl;
+            Raise(nameof(ShowCancel));
             SkipCommand.RaiseCanExecuteChanged();
             InstallAndRelaunchCommand.RaiseCanExecuteChanged();
             RestartNowCommand.RaiseCanExecuteChanged();

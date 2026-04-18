@@ -9,6 +9,7 @@
             <TextBlock x:Name="HeaderBlock" FontWeight="SemiBold" FontSize="14"/>
             <TextBlock x:Name="BodyBlock" TextWrapping="Wrap" FontSize="12"/>
             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button x:Name="CancelButton" Content="Cancel download"/>
                 <Button x:Name="SkipButton" Content="Skip this version"/>
                 <Button x:Name="DismissButton" Content="Dismiss"/>
                 <Button x:Name="InstallButton" Content="Install and Relaunch"

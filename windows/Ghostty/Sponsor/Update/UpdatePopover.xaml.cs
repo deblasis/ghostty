@@ -34,6 +34,7 @@ internal sealed partial class UpdatePopover : UserControl
         // Click+CanExecuteChanged instead of Button.Command -- WinUI 3 +
         // CsWinRT CCW tables aren't emitted for managed ICommand impls
         // assigned in code-behind. See UpdatePill.WireCommand.
+        WireCommand(CancelButton,  vm.CancelDownloadCommand);
         WireCommand(SkipButton,    vm.SkipCommand);
         WireCommand(InstallButton, vm.InstallAndRelaunchCommand);
         WireCommand(RetryButton,   vm.RetryCommand);
@@ -145,6 +146,7 @@ internal sealed partial class UpdatePopover : UserControl
         SkipButton.Content = string.IsNullOrEmpty(_vm.TargetVersion)
             ? "Skip this version"
             : $"Skip {_vm.TargetVersion}";
+        CancelButton.Visibility = _vm.ShowCancel ? Visibility.Visible : Visibility.Collapsed;
         SkipButton.Visibility = ShowFor(_vm.State, UpdateState.UpdateAvailable);
         InstallButton.Visibility = ShowFor(_vm.State, UpdateState.UpdateAvailable);
         RestartButton.Visibility = ShowFor(_vm.State, UpdateState.RestartPending);
