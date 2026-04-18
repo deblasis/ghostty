@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -209,5 +210,67 @@ public class WinttyManifestClientTests
             () => client.FetchManifestAsync(CancellationToken.None));
 
         Assert.Equal(UpdateErrorKind.ManifestInvalid, ex.Kind);
+    }
+
+    // ---------------------------------------------------------------
+    // Download path
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public async Task DownloadRelease_FollowsRedirect_AndStripsBearer()
+    {
+        var step = 0;
+        var handler = new StubHandler
+        {
+            Respond = req =>
+            {
+                step++;
+                if (step == 1)
+                {
+                    Assert.Equal("https://api.wintty.io/releases/stable/Ghostty-1.4.2-stable-full.nupkg",
+                        req.RequestUri!.ToString());
+                    Assert.Equal("Bearer", req.Headers.Authorization!.Scheme);
+                    Assert.Equal("eyJ.abc.def", req.Headers.Authorization.Parameter);
+
+                    var redirect = new HttpResponseMessage(HttpStatusCode.Found);
+                    redirect.Headers.Location = new Uri(
+                        "https://r2.cf.example.com/wintty/Ghostty-1.4.2-stable-full.nupkg?X-Amz-Signed=true");
+                    return redirect;
+                }
+                Assert.Equal("https://r2.cf.example.com/wintty/Ghostty-1.4.2-stable-full.nupkg?X-Amz-Signed=true",
+                    req.RequestUri!.ToString());
+                Assert.Null(req.Headers.Authorization);  // Bearer stripped for the R2 hop
+
+                var ok = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(new byte[] { 0x50, 0x4B, 0x03, 0x04 }),  // "PK\3\4" ZIP magic
+                };
+                return ok;
+            },
+        };
+        var tokens = new StubTokenProvider("eyJ.abc.def");
+        var client = new WinttyManifestClient(
+            new HttpClient(handler), tokens, "stable", new Uri("https://api.wintty.io"));
+
+        var tmp = Path.Combine(Path.GetTempPath(), "wintty-test-" + Guid.NewGuid().ToString("N") + ".nupkg");
+        try
+        {
+            var observed = new List<int>();
+            await client.DownloadReleaseAsync(
+                "Ghostty-1.4.2-stable-full.nupkg",
+                tmp,
+                p => observed.Add(p),
+                CancellationToken.None);
+
+            Assert.Equal(2, step);
+            Assert.True(File.Exists(tmp));
+            var bytes = await File.ReadAllBytesAsync(tmp);
+            Assert.Equal(new byte[] { 0x50, 0x4B, 0x03, 0x04 }, bytes);
+            Assert.Contains(100, observed);  // final 100 always emits
+        }
+        finally
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+        }
     }
 }

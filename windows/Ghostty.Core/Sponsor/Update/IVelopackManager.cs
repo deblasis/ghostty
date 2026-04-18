@@ -1,15 +1,16 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Ghostty.Core.Sponsor.Update;
 
-namespace Ghostty.Sponsor.Update;
+namespace Ghostty.Core.Sponsor.Update;
 
 /// <summary>
 /// Test seam wrapping Velopack's <c>UpdateManager</c>. The driver talks
 /// through this so unit tests can substitute a fake without touching
-/// disk, network, or process APIs. <see cref="VelopackManagerAdapter"/>
-/// is the one production impl.
+/// disk, network, or process APIs. <c>VelopackManagerAdapter</c> (in
+/// the shell assembly, imports Velopack) is the one production impl.
+/// Kept in Ghostty.Core so the driver (also Core) compiles without
+/// pulling in Velopack and so the test project can reference both.
 /// </summary>
 internal interface IVelopackManager
 {

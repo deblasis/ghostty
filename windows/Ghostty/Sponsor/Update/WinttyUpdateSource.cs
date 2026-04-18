@@ -83,15 +83,17 @@ internal sealed class WinttyUpdateSource : IUpdateSource
         return new VelopackAssetFeed { Assets = assets };
     }
 
-    // DownloadReleaseEntry - stubbed for Task 16.
-    // The actual implementation will stream the NUPKG from R2 using a
-    // signed URL vended by the Worker and report progress via the
-    // Action<int> callback.
     public Task DownloadReleaseEntry(
         IVelopackLogger logger,
         VelopackAsset releaseEntry,
         string localFile,
         Action<int> progress,
         CancellationToken cancelToken)
-        => throw new NotImplementedException("lands in Task 16");
+    {
+        var fileName = releaseEntry.FileName
+            ?? throw new Ghostty.Core.Sponsor.Update.UpdateCheckException(
+                Ghostty.Core.Sponsor.Update.UpdateErrorKind.ManifestInvalid,
+                "asset missing FileName");
+        return _manifest.DownloadReleaseAsync(fileName, localFile, progress, cancelToken);
+    }
 }
