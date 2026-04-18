@@ -56,6 +56,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
         TargetVersion = c.TargetVersion;
         ErrorMessage = c.ErrorMessage;
         ReleaseNotesUrl = c.ReleaseNotesUrl;
+        TechnicalDetail = c.TechnicalDetail;
 
         _service.StateChanged += OnStateChanged;
     }
@@ -79,6 +80,17 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
     }
 
     public string? ReleaseNotesUrl
+    {
+        get;
+        private set { if (field == value) return; field = value; Raise(); }
+    }
+
+    /// <summary>
+    /// Driver-supplied technical detail (exception type, HTTP status,
+    /// simulator label). Popover shows it in a Debug-only second line
+    /// so it's available for bug reports without cluttering release UX.
+    /// </summary>
+    public string? TechnicalDetail
     {
         get;
         private set { if (field == value) return; field = value; Raise(); }
@@ -142,6 +154,7 @@ internal sealed class UpdatePopoverViewModel : NotifyBase, IDisposable
             TargetVersion = snap.TargetVersion;
             ErrorMessage = snap.ErrorMessage;
             ReleaseNotesUrl = snap.ReleaseNotesUrl;
+            TechnicalDetail = snap.TechnicalDetail;
             Raise(nameof(ShowCancel));
             SkipCommand.RaiseCanExecuteChanged();
             InstallAndRelaunchCommand.RaiseCanExecuteChanged();
