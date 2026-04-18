@@ -1551,12 +1551,54 @@ fn execCommand(
         .direct => |_| (try command.clone(alloc)).direct,
 
         .shell => |v| shell: {
-            var args: std.ArrayList([:0]const u8) = try .initCapacity(alloc, 4);
-            defer args.deinit(alloc);
-
             if (comptime builtin.os.tag == .windows) {
-                // We run our shell wrapped in `cmd.exe` so that we don't have
-                // to parse the command line ourselves if it has arguments.
+                // On Windows we only fall back to `cmd.exe /C <cmd>` when
+                // the command actually needs cmd.exe features (pipes,
+                // redirects, chaining, env expansion). Otherwise we parse
+                // the string into argv and spawn directly.
+                //
+                // Why: `cmd.exe /C <cmd>` does NOT exec-replace itself
+                // with <cmd>, unlike `/bin/sh -c <cmd>` on POSIX where
+                // sh often optimizes into an exec of the final command.
+                // Wrapping therefore makes cmd.exe the spawned process
+                // and the parent of the user's shell. That means
+                // `command = pwsh.exe` ends up with args[0] = cmd.exe,
+                // ConPTY attaches to cmd.exe, and any process
+                // classification that looks at args[0] (e.g. the
+                // ConPTY-bypass detector for # 112) sees the wrapper
+                // instead of the configured shell. Spawning directly
+                // fixes all three.
+                if (!windowsShellNeedsCmdWrapping(v)) windows_direct: {
+                    var args: std.ArrayList([:0]const u8) = .empty;
+                    errdefer args.deinit(alloc);
+
+                    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+                        alloc,
+                        v,
+                    );
+                    defer iter.deinit();
+
+                    while (iter.next()) |arg| {
+                        const copy = try alloc.dupeZ(u8, arg);
+                        try args.append(alloc, copy);
+                    }
+
+                    // Parser produced nothing usable (empty or
+                    // whitespace-only command): fall through to cmd.exe
+                    // wrapping so the error surfaces from cmd.exe rather
+                    // than from an empty argv here.
+                    if (args.items.len == 0) {
+                        args.deinit(alloc);
+                        break :windows_direct;
+                    }
+
+                    break :shell try args.toOwnedSlice(alloc);
+                }
+
+                // Command contains cmd.exe metacharacters (or parsing
+                // produced no tokens). Let cmd.exe handle it.
+                var args: std.ArrayList([:0]const u8) = try .initCapacity(alloc, 4);
+                defer args.deinit(alloc);
 
                 // Note we don't free any of the memory below since it is
                 // allocated in the arena.
@@ -1575,21 +1617,36 @@ fn execCommand(
 
                 try args.append(alloc, cmd);
                 try args.append(alloc, "/C");
-            } else {
-                // We run our shell wrapped in `/bin/sh` so that we don't have
-                // to parse the command line ourselves if it has arguments.
-                // Additionally, some environments (NixOS, I found) use /bin/sh
-                // to setup some environment variables that are important to
-                // have set.
-                try args.append(alloc, "/bin/sh");
-                if (internal_os.isFlatpak()) try args.append(alloc, "-l");
-                try args.append(alloc, "-c");
+                try args.append(alloc, v);
+                break :shell try args.toOwnedSlice(alloc);
             }
 
+            // POSIX: wrap with `/bin/sh -c` so the shell handles argument
+            // splitting, quoting, and expansion. On POSIX the extra sh
+            // is usually optimized away via tail exec.
+            var args: std.ArrayList([:0]const u8) = try .initCapacity(alloc, 4);
+            defer args.deinit(alloc);
+            try args.append(alloc, "/bin/sh");
+            if (internal_os.isFlatpak()) try args.append(alloc, "-l");
+            try args.append(alloc, "-c");
             try args.append(alloc, v);
             break :shell try args.toOwnedSlice(alloc);
         },
     };
+}
+
+/// Returns true if `s` contains any cmd.exe metacharacter that would
+/// actually need cmd.exe to interpret (pipes, redirects, chaining,
+/// grouping, escape, env expansion, delayed expansion). If it returns
+/// false we can safely tokenize `s` ourselves and spawn the first
+/// token directly. Quotes are intentionally not in the list: they're
+/// handled by the argv tokenizer.
+fn windowsShellNeedsCmdWrapping(s: []const u8) bool {
+    for (s) |c| switch (c) {
+        '&', '|', '<', '>', '(', ')', '^', '%', '!' => return true,
+        else => {},
+    };
+    return false;
 }
 
 /// Get information about the process(es) running within the backend. Returns
@@ -1761,4 +1818,149 @@ test "execCommand: direct command, config freed" {
     try testing.expectEqual(2, result.len);
     try testing.expectEqualStrings(result[0], "foo");
     try testing.expectEqualStrings(result[1], "bar baz");
+}
+
+test "execCommand windows: shell command, single token spawns directly" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(
+        alloc,
+        .{ .shell = "pwsh.exe" },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+    );
+
+    // No cmd.exe /C wrapper: args[0] is the configured shell itself.
+    try testing.expectEqual(1, result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+}
+
+test "execCommand windows: shell command, args split without cmd wrap" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(
+        alloc,
+        .{ .shell = "pwsh.exe -NoLogo -NoProfile" },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+    );
+
+    try testing.expectEqual(3, result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-NoLogo", result[1]);
+    try testing.expectEqualStrings("-NoProfile", result[2]);
+}
+
+test "execCommand windows: shell command, quoted path kept as one arg" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(
+        alloc,
+        .{ .shell = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoLogo" },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+    );
+
+    try testing.expectEqual(2, result.len);
+    try testing.expectEqualStrings(
+        "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        result[0],
+    );
+    try testing.expectEqualStrings("-NoLogo", result[1]);
+}
+
+test "execCommand windows: shell command with pipe falls back to cmd.exe" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(
+        alloc,
+        .{ .shell = "dir | findstr foo" },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+    );
+
+    // Metachar present: wrap with cmd.exe /C so cmd handles the pipe.
+    try testing.expectEqual(3, result.len);
+    try testing.expect(std.mem.endsWith(u8, result[0], "cmd.exe"));
+    try testing.expectEqualStrings("/C", result[1]);
+    try testing.expectEqualStrings("dir | findstr foo", result[2]);
+}
+
+test "execCommand windows: shell command with redirect falls back to cmd.exe" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(
+        alloc,
+        .{ .shell = "echo hi > out.txt" },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+    );
+
+    try testing.expectEqual(3, result.len);
+    try testing.expect(std.mem.endsWith(u8, result[0], "cmd.exe"));
+    try testing.expectEqualStrings("/C", result[1]);
+    try testing.expectEqualStrings("echo hi > out.txt", result[2]);
+}
+
+test "windowsShellNeedsCmdWrapping" {
+    const testing = std.testing;
+
+    // Simple commands don't need cmd.exe.
+    try testing.expect(!windowsShellNeedsCmdWrapping("pwsh.exe"));
+    try testing.expect(!windowsShellNeedsCmdWrapping("pwsh.exe -NoLogo"));
+    try testing.expect(!windowsShellNeedsCmdWrapping("cmd.exe"));
+    try testing.expect(!windowsShellNeedsCmdWrapping(
+        "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\"",
+    ));
+    try testing.expect(!windowsShellNeedsCmdWrapping(""));
+
+    // Metachars trigger the wrapper.
+    try testing.expect(windowsShellNeedsCmdWrapping("a | b"));
+    try testing.expect(windowsShellNeedsCmdWrapping("a && b"));
+    try testing.expect(windowsShellNeedsCmdWrapping("a > b"));
+    try testing.expect(windowsShellNeedsCmdWrapping("a < b"));
+    try testing.expect(windowsShellNeedsCmdWrapping("(a) & (b)"));
+    try testing.expect(windowsShellNeedsCmdWrapping("echo %USERNAME%"));
+    try testing.expect(windowsShellNeedsCmdWrapping("echo !var!"));
+    try testing.expect(windowsShellNeedsCmdWrapping("a^b"));
 }
