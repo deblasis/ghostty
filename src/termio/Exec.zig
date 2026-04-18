@@ -1572,10 +1572,10 @@ fn execCommand(
                     var args: std.ArrayList([:0]const u8) = .empty;
                     errdefer args.deinit(alloc);
 
-                    var iter = std.process.ArgIteratorGeneral(.{}).init(
+                    var iter = try std.process.ArgIteratorGeneral(.{}).init(
                         alloc,
                         v,
-                    ) catch break :windows_direct;
+                    );
                     defer iter.deinit();
 
                     while (iter.next()) |arg| {
@@ -1583,9 +1583,10 @@ fn execCommand(
                         try args.append(alloc, copy);
                     }
 
-                    // Parser produced nothing usable — fall through to
-                    // cmd.exe wrapping so the error surfaces from
-                    // cmd.exe rather than from an empty argv here.
+                    // Parser produced nothing usable (empty or
+                    // whitespace-only command): fall through to cmd.exe
+                    // wrapping so the error surfaces from cmd.exe rather
+                    // than from an empty argv here.
                     if (args.items.len == 0) {
                         args.deinit(alloc);
                         break :windows_direct;
@@ -1638,7 +1639,7 @@ fn execCommand(
 /// actually need cmd.exe to interpret (pipes, redirects, chaining,
 /// grouping, escape, env expansion, delayed expansion). If it returns
 /// false we can safely tokenize `s` ourselves and spawn the first
-/// token directly. Quotes are intentionally not in the list — they're
+/// token directly. Quotes are intentionally not in the list: they're
 /// handled by the argv tokenizer.
 fn windowsShellNeedsCmdWrapping(s: []const u8) bool {
     for (s) |c| switch (c) {
@@ -1838,7 +1839,7 @@ test "execCommand windows: shell command, single token spawns directly" {
     );
 
     // No cmd.exe /C wrapper: args[0] is the configured shell itself.
-    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(1, result.len);
     try testing.expectEqualStrings("pwsh.exe", result[0]);
 }
 
@@ -1860,7 +1861,7 @@ test "execCommand windows: shell command, args split without cmd wrap" {
         },
     );
 
-    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqual(3, result.len);
     try testing.expectEqualStrings("pwsh.exe", result[0]);
     try testing.expectEqualStrings("-NoLogo", result[1]);
     try testing.expectEqualStrings("-NoProfile", result[2]);
@@ -1884,7 +1885,7 @@ test "execCommand windows: shell command, quoted path kept as one arg" {
         },
     );
 
-    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqual(2, result.len);
     try testing.expectEqualStrings(
         "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
         result[0],
@@ -1910,8 +1911,8 @@ test "execCommand windows: shell command with pipe falls back to cmd.exe" {
         },
     );
 
-    // Metachar present — wrap with cmd.exe /C so cmd handles the pipe.
-    try testing.expectEqual(@as(usize, 3), result.len);
+    // Metachar present: wrap with cmd.exe /C so cmd handles the pipe.
+    try testing.expectEqual(3, result.len);
     try testing.expect(std.mem.endsWith(u8, result[0], "cmd.exe"));
     try testing.expectEqualStrings("/C", result[1]);
     try testing.expectEqualStrings("dir | findstr foo", result[2]);
@@ -1935,7 +1936,7 @@ test "execCommand windows: shell command with redirect falls back to cmd.exe" {
         },
     );
 
-    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqual(3, result.len);
     try testing.expect(std.mem.endsWith(u8, result[0], "cmd.exe"));
     try testing.expectEqualStrings("/C", result[1]);
     try testing.expectEqualStrings("echo hi > out.txt", result[2]);
