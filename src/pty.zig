@@ -496,6 +496,59 @@ const WindowsPty = struct {
         self.* = undefined;
     }
 
+    /// Bypass-mode resize signal: write `CSI 8 ; rows ; cols t` (XTWINOPS)
+    /// to the parent-side input pipe so that a VT-aware child parses it
+    /// as a size change. Full resize parity (SIGWINCH via WSL interop,
+    /// per-shell signalling) is a follow-up (# 263 section 5).
+    ///
+    /// Best-effort: if the child isn't reading we don't want to stall
+    /// the UI thread, so the overlapped WriteFile is bounded by a 100 ms
+    /// wait; on timeout we cancel the I/O and log a warning.
+    fn writeResizeSequence(self: *Pty, size: winsize) SetSizeError!void {
+        var buf: [32]u8 = undefined;
+        const seq = std.fmt.bufPrint(
+            &buf,
+            "\x1b[8;{d};{d}t",
+            .{ size.ws_row, size.ws_col },
+        ) catch return error.ResizeFailed;
+
+        var overlapped = std.mem.zeroes(windows.OVERLAPPED);
+        overlapped.hEvent = windows.exp.kernel32.CreateEventW(
+            null,
+            windows.TRUE,
+            windows.FALSE,
+            null,
+        );
+        if (overlapped.hEvent == null) return error.ResizeFailed;
+        defer _ = windows.CloseHandle(overlapped.hEvent.?);
+
+        var written: windows.DWORD = 0;
+        const write_ok = windows.kernel32.WriteFile(
+            self.in_pipe,
+            seq.ptr,
+            @intCast(seq.len),
+            &written,
+            &overlapped,
+        );
+        if (write_ok == 0) {
+            const err = windows.kernel32.GetLastError();
+            if (err == .IO_PENDING) {
+                // Wait up to 100 ms. Best-effort: if the child isn't
+                // reading we don't want to block the UI thread.
+                const wait = windows.kernel32.WaitForSingleObject(
+                    overlapped.hEvent.?,
+                    100,
+                );
+                if (wait != windows.WAIT_OBJECT_0) {
+                    _ = windows.kernel32.CancelIoEx(self.in_pipe, &overlapped);
+                    log.warn("bypass resize signal timed out", .{});
+                }
+            } else {
+                log.warn("bypass resize signal write failed: {}", .{err});
+            }
+        }
+    }
+
     pub const GetSizeError = error{};
 
     /// Return the size of the pty.
@@ -516,7 +569,10 @@ const WindowsPty = struct {
                 );
                 if (result != windows.S_OK) return error.ResizeFailed;
             },
-            .bypass => return error.ResizeFailed, // real impl lands in Task 6
+            .bypass => self.writeResizeSequence(size) catch |err| {
+                log.warn("bypass resize write error: {}", .{err});
+                // Fall through: update self.size regardless.
+            },
         }
         self.size = size;
     }
@@ -588,4 +644,34 @@ test "WindowsPty: bypass mode skips pseudo_console and flips _pty handles inheri
     try std.testing.expect((flags & windows.HANDLE_FLAG_INHERIT) != 0);
     try windows.GetHandleInformation(pty.out_pipe_pty, &flags);
     try std.testing.expect((flags & windows.HANDLE_FLAG_INHERIT) != 0);
+}
+
+test "WindowsPty: bypass setSize writes CSI 8;r;c;t to in_pipe" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    var pty = try Pty.open(.{
+        .size = .{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 0, .ws_ypixel = 0 },
+        .mode = .bypass,
+    });
+    defer pty.deinit();
+
+    try pty.setSize(.{ .ws_row = 40, .ws_col = 120, .ws_xpixel = 0, .ws_ypixel = 0 });
+
+    // Read from the child-side pipe end. The resize escape was
+    // written to in_pipe (parent) and must be readable from
+    // in_pipe_pty (child).
+    var buf: [32]u8 = undefined;
+    var read: windows.DWORD = 0;
+    const ok = windows.kernel32.ReadFile(
+        pty.in_pipe_pty,
+        &buf,
+        @intCast(buf.len),
+        &read,
+        null,
+    );
+    try std.testing.expect(ok != 0);
+    try std.testing.expectEqualStrings("\x1b[8;40;120t", buf[0..read]);
+
+    // Size accounting still correct.
+    try std.testing.expectEqual(@as(u16, 40), pty.size.ws_row);
+    try std.testing.expectEqual(@as(u16, 120), pty.size.ws_col);
 }

@@ -19,6 +19,7 @@ pub const HANDLE_FLAG_INHERIT = windows.HANDLE_FLAG_INHERIT;
 pub const INFINITE = windows.INFINITE;
 pub const INVALID_HANDLE_VALUE = windows.INVALID_HANDLE_VALUE;
 pub const OPEN_EXISTING = windows.OPEN_EXISTING;
+pub const OVERLAPPED = windows.OVERLAPPED;
 pub const PIPE_ACCESS_OUTBOUND = windows.PIPE_ACCESS_OUTBOUND;
 pub const PIPE_TYPE_BYTE = windows.PIPE_TYPE_BYTE;
 pub const PROCESS_INFORMATION = windows.PROCESS_INFORMATION;
@@ -28,6 +29,7 @@ pub const STARTUPINFOW = windows.STARTUPINFOW;
 pub const STARTF_USESTDHANDLES = windows.STARTF_USESTDHANDLES;
 pub const SYNCHRONIZE = windows.SYNCHRONIZE;
 pub const WAIT_FAILED = windows.WAIT_FAILED;
+pub const WAIT_OBJECT_0 = windows.WAIT_OBJECT_0;
 pub const FALSE = windows.FALSE;
 pub const TRUE = windows.TRUE;
 
@@ -64,6 +66,14 @@ pub const exp = struct {
             lpPipeAttributes: ?*const windows.SECURITY_ATTRIBUTES,
             nSize: windows.DWORD,
         ) callconv(.winapi) windows.BOOL;
+        // std.os.windows.kernel32 only exposes CreateEventExW; add the
+        // classic CreateEventW for overlapped I/O wait events.
+        pub extern "kernel32" fn CreateEventW(
+            lpEventAttributes: ?*windows.SECURITY_ATTRIBUTES,
+            bManualReset: windows.BOOL,
+            bInitialState: windows.BOOL,
+            lpName: ?windows.LPCWSTR,
+        ) callconv(.winapi) ?windows.HANDLE;
         pub extern "kernel32" fn GetHandleInformation(
             hObject: windows.HANDLE,
             lpdwFlags: *windows.DWORD,
