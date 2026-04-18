@@ -7,14 +7,11 @@
 // GetConsoleMode fails cleanly so we skip both steps and behave as a
 // plain byte-for-byte echo.
 //
-// Spec: docs/superpowers/specs/2026-04-17-conpty-bench-probe-protocol-design.md
-//
-// The throughput probe protocol (spec 2026-04-17-conpty-throughput-probe-
-// protocol-design.md) requires no active participation here: its terminator
+// Throughput probes require no active participation here: the terminator
 // travels through this raw-mode CopyTo byte-for-byte, and under ConPTY
-// conhost renders the trailing "~ENDOFBURST_<nonce>~" onto its screen buffer
-// and re-emits it on hOutput as part of the next refresh cycle. No barrier-
-// response logic lives in EchoChild.
+// conhost renders the trailing "~ENDOFBURST_<nonce>~" onto its screen
+// buffer and re-emits it on hOutput as part of the next refresh cycle.
+// No barrier-response logic lives in EchoChild.
 using System.Runtime.InteropServices;
 
 const uint STD_INPUT_HANDLE = unchecked((uint)-10);

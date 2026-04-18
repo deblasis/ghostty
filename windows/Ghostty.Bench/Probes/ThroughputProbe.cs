@@ -47,7 +47,7 @@ public sealed class ThroughputProbe : Probe
             // Fresh 16-hex-char nonce per iteration. Guid.NewGuid() is v4
             // (random); 64 bits of nonce entropy rules out any accidental
             // match from a leftover terminator lingering in conhost's
-            // screen buffer between iterations. See spec § Wire protocol.
+            // screen buffer between iterations.
             string nonce = Guid.NewGuid().ToString("N").Substring(0, 16);
             byte[] terminator = Encoding.ASCII.GetBytes("\r\n~ENDOFBURST_" + nonce + "~");
 
