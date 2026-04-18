@@ -42,8 +42,49 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
     public UpdateStateSnapshot Current => _current;
     public event EventHandler<UpdateStateSnapshot>? StateChanged;
 
-    public Task CheckAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException("Task 18");
+    public async Task CheckAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var token = await _tokens.GetTokenAsync(ct).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("[sponsor/update] CheckAsync aborted: no JWT");
+                Emit(UpdateStateMapping.FromError(
+                    new UpdateCheckException(UpdateErrorKind.NoToken, "no JWT"),
+                    targetVersion: _lastInfo?.Version));
+                return;
+            }
+
+            VelopackUpdateInfo? info;
+            try
+            {
+                info = await _manager.CheckForUpdatesAsync(ct).ConfigureAwait(false);
+            }
+            catch (UpdateCheckException uce)
+            {
+                _logger.LogWarning("[sponsor/update] CheckAsync known failure: {Kind}", uce.Kind);
+                Emit(UpdateStateMapping.FromError(uce, targetVersion: _lastInfo?.Version));
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[sponsor/update] CheckAsync unexpected failure");
+                Emit(UpdateStateMapping.FromError(
+                    new UpdateCheckException(UpdateErrorKind.ServerError, ex.Message, ex),
+                    targetVersion: _lastInfo?.Version));
+                return;
+            }
+
+            _lastInfo = info;
+            Emit(UpdateStateMapping.FromCheckResult(info));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public Task DownloadAsync(CancellationToken ct = default) =>
         throw new NotImplementedException("Task 19");

@@ -62,4 +62,78 @@ public partial class VelopackUpdateDriverTests
             NullLogger<VelopackUpdateDriver>.Instance);
         Assert.Equal(UpdateState.Idle, driver.Current.State);
     }
+
+    [Fact]
+    public async Task CheckAsync_UpdateAvailable_EmitsSnapshotWithVersion()
+    {
+        var mgr = new FakeVelopackManager
+        {
+            NextCheckResult = new VelopackUpdateInfo("1.4.2", "https://notes.example", new object()),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        var seen = new System.Collections.Generic.List<UpdateStateSnapshot>();
+        driver.StateChanged += (_, s) => seen.Add(s);
+
+        await driver.CheckAsync();
+
+        Assert.Single(seen);
+        Assert.Equal(UpdateState.UpdateAvailable, seen[0].State);
+        Assert.Equal("1.4.2", seen[0].TargetVersion);
+        Assert.Equal("https://notes.example", seen[0].ReleaseNotesUrl);
+    }
+
+    [Fact]
+    public async Task CheckAsync_NoUpdate_EmitsNoUpdatesFound()
+    {
+        var mgr = new FakeVelopackManager { NextCheckResult = null };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.NoUpdatesFound, driver.Current.State);
+    }
+
+    [Fact]
+    public async Task CheckAsync_NoToken_EmitsErrorWithoutCallingManager()
+    {
+        var mgr = new FakeVelopackManager();
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens { Token = null },
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Equal("Sign in to check for updates.", driver.Current.ErrorMessage);
+        Assert.False(mgr.ApplyCalled);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ManagerThrowsUpdateCheckException_MapsToError()
+    {
+        var mgr = new FakeVelopackManager
+        {
+            CheckThrows = new UpdateCheckException(UpdateErrorKind.ServerError, "503"),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+        Assert.Equal("Update server is having a hiccup. Try again later.", driver.Current.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task CheckAsync_UnknownException_DoesNotPropagate()
+    {
+        var mgr = new FakeVelopackManager
+        {
+            CheckThrows = new System.InvalidOperationException("unexpected"),
+        };
+        var driver = new VelopackUpdateDriver(mgr, new StubTokens(),
+            NullLogger<VelopackUpdateDriver>.Instance);
+
+        await driver.CheckAsync();
+        Assert.Equal(UpdateState.Error, driver.Current.State);
+    }
 }
