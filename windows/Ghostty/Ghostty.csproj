@@ -106,6 +106,16 @@
     <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
   </PropertyGroup>
 
+  <!--
+    Velopack update client. SPONSOR_BUILD only. Deliberately deferred
+    from Plan A (scaffolding) to Plan D.2 (consumer code lands at the
+    same time as the package reference) per the parent design spec.
+    Pin exact version for reproducibility; no `*` or open ranges.
+  -->
+  <ItemGroup Condition="'$(SponsorBuild)'=='true'">
+    <PackageReference Include="Velopack" Version="0.0.1298" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
