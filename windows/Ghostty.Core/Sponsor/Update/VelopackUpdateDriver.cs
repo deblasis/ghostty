@@ -128,7 +128,10 @@ internal sealed partial class VelopackUpdateDriver : IUpdateDriver, IDisposable
             catch (OperationCanceledException)
             {
                 _logger.LogInformation("[sponsor/update] DownloadAsync cancelled");
-                Emit(UpdateStateMapping.FromCancel(info.Version, info.ReleaseNotesUrl));
+                // OnTokenInvalidated may have already written an Error snapshot
+                // directly (without holding the gate). If so, keep it.
+                if (_current.State != UpdateState.Error)
+                    Emit(UpdateStateMapping.FromCancel(info.Version, info.ReleaseNotesUrl));
             }
             catch (UpdateCheckException uce)
             {
