@@ -16,8 +16,8 @@ const uint ENABLE_LINE_INPUT = 0x0002;
 const uint ENABLE_ECHO_INPUT = 0x0004;
 const uint ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
 
-IntPtr hStdin = GetStdHandle(STD_INPUT_HANDLE);
-bool isConPty = GetConsoleMode(hStdin, out uint mode);
+IntPtr hStdin = NativeMethods.GetStdHandle(STD_INPUT_HANDLE);
+bool isConPty = NativeMethods.GetConsoleMode(hStdin, out uint mode);
 
 if (isConPty)
 {
@@ -26,7 +26,7 @@ if (isConPty)
     // on; parents may feed VT sequences as payload in future throughput work.
     uint rawMode = (mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT))
                    | ENABLE_VIRTUAL_TERMINAL_INPUT;
-    if (!SetConsoleMode(hStdin, rawMode))
+    if (!NativeMethods.SetConsoleMode(hStdin, rawMode))
     {
         // Hang-fast: if we cannot switch to raw mode the parent would never
         // see writes echoed, so signal failure distinctly instead of entering
@@ -61,11 +61,20 @@ catch (IOException)
     // Parent closed the pipe. Normal shutdown.
 }
 
-[DllImport("kernel32.dll", SetLastError = true)]
-static extern IntPtr GetStdHandle(uint nStdHandle);
+// Source-generated PInvokes. LibraryImport avoids the runtime marshalling
+// thunks that DllImport would emit (which break NativeAOT and add a small
+// per-call cost in JIT). The signatures here are blittable; only the BOOL
+// return needs an explicit MarshalAs because the Win32 BOOL is 4 bytes.
+internal static partial class NativeMethods
+{
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    internal static partial IntPtr GetStdHandle(uint nStdHandle);
 
-[DllImport("kernel32.dll", SetLastError = true)]
-static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 
-[DllImport("kernel32.dll", SetLastError = true)]
-static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+}

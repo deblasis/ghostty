@@ -84,7 +84,7 @@ public static class Runner
                 throw new EndOfStreamException("peer closed during sentinel round-trip read");
             }
 
-            for (int i = 0; i < n; i++) window.Add(scratch[i]);
+            window.AddRange(scratch.AsSpan(0, n));
 
             if (CollectionsMarshal.AsSpan(window).IndexOf(Payload.AsSpan()) >= 0)
             {

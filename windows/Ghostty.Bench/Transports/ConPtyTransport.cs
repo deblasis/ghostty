@@ -202,10 +202,7 @@ public sealed class ConPtyTransport : ITransport
                     "ConPty output stream EOF before ready sentinel");
             }
 
-            for (int i = 0; i < n; i++)
-            {
-                window.Add(buf[i]);
-            }
+            window.AddRange(buf[..n]);
 
             if (CollectionsMarshal.AsSpan(window).IndexOf(ready) >= 0)
             {

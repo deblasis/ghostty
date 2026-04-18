@@ -296,7 +296,7 @@ public static class Program
                 int n = t.Output.Read(scratch, 0, scratch.Length);
                 readCalls++;
                 if (n == 0) { Console.Out.WriteLine("  UNEXPECTED EOF"); return 1; }
-                for (int j = 0; j < n; j++) window.Add(scratch[j]);
+                window.AddRange(scratch.AsSpan(0, n));
 
                 int idx = CollectionsMarshal.AsSpan(window).IndexOf(payload.AsSpan());
                 if (idx >= 0) { matchOffset = idx; break; }

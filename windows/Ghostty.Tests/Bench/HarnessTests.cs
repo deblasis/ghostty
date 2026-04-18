@@ -55,7 +55,7 @@ public class HarnessTests
 
         using var t = new FakeTransport(_ => response);
 
-        long[] timings = Harness.RunRoundTrip(t, warmup: 2, samples: 5);
+        long[] timings = Runner.RunRoundTrip(t, warmup: 2, samples: 5);
 
         Assert.Equal(5, timings.Length);
         foreach (var ticks in timings)
@@ -70,7 +70,7 @@ public class HarnessTests
         // In-process FakeTransport echo round-trip should be microseconds
         // to low milliseconds; assert a generous 1s ceiling.
         using var t = new FakeTransport();
-        long[] timings = Harness.RunRoundTrip(t, warmup: 2, samples: 10);
+        long[] timings = Runner.RunRoundTrip(t, warmup: 2, samples: 10);
 
         long oneSecondInTicks = Stopwatch.Frequency;
         foreach (var ticks in timings)
@@ -99,6 +99,6 @@ public class HarnessTests
         using var t = new FakeTransport(_ => null);
 
         Assert.Throws<EndOfStreamException>(() =>
-            Harness.RunRoundTrip(t, warmup: 0, samples: 1));
+            Runner.RunRoundTrip(t, warmup: 0, samples: 1));
     }
 }
