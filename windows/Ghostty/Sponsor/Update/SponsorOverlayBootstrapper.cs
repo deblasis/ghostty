@@ -30,6 +30,7 @@ internal sealed class SponsorOverlayBootstrapper : IDisposable
 
     public SponsorActivationRouter Router => _router;
     public UpdateSimulator Simulator => _simulator;
+    public UpdateService Service => _service;
 
     private SponsorOverlayBootstrapper(
         UpdateService service,

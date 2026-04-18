@@ -463,6 +463,12 @@ public partial class App : Application
         _sponsorOverlay = Ghostty.Sponsor.Update.SponsorOverlayBootstrapper.Wire(
             window, _configService, DispatcherQueue.GetForCurrentThread(), SharedSimulator,
             SharedTokens, loggerFactory: null);
+#if DEBUG
+        // Path A: push the real UpdateService into the palette source now
+        // that Wire() has run. GetCommands() is called on each palette open,
+        // so no additional ViewModel notification is needed.
+        window.RegisterSponsorService(_sponsorOverlay.Service);
+#endif
         if (activationUri is not null)
         {
             _sponsorOverlay?.Router.HandleUri(activationUri);
