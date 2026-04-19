@@ -258,7 +258,68 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     return error.ExecFailedInChild;
 }
 
+/// Process-wide latch for `ensureUtf8Console`. 0 = not started, 1 = in
+/// flight, 2 = done. Accessed via cmpxchg so exactly one thread runs
+/// the init; subsequent callers observe the finished state.
+var utf8_console_state: std.atomic.Value(u32) = .{ .raw = 0 };
+
+/// True once `ensureUtf8Console` successfully attached a hidden console
+/// to the current process. Set only while `utf8_console_state` is in
+/// transition from 1 to 2, read by bypass-path callers to decide whether
+/// CREATE_NO_WINDOW is still required. When false, we inherited a
+/// console from a parent process (e.g. pwsh launching Ghostty for
+/// debugging) and must leave its CP untouched.
+var utf8_console_owned: bool = false;
+
+/// Ghostty.exe is GUI-subsystem on Windows, so by default it has no
+/// attached console. Children spawned from a no-console parent inherit
+/// the OEM default code page (e.g. CP850 on Western European locales),
+/// which silently transcodes any non-OEM Unicode (Nerd Font PUA glyphs,
+/// emoji, CJK) to `?` at the shell before it reaches the VT parser.
+///
+/// This lazily allocates a hidden console with CP = 65001 (UTF-8).
+/// - ConPTY children inherit the parent's output CP into the new
+///   conhost, so `CreatePseudoConsole` then gives the shell UTF-8.
+/// - Raw-pipe (bypass) children normally run with CREATE_NO_WINDOW
+///   and would not see our console at all; once a hidden console
+///   exists we can drop that flag and let the child inherit our
+///   UTF-8 console instead. The caller uses `utf8_console_owned` to
+///   decide.
+///
+/// If AllocConsole fails the process already has an attached console
+/// (e.g. launched from a terminal), and we deliberately do not touch
+/// its CP — that console belongs to the parent, and silently flipping
+/// its encoding would surprise whoever invoked us.
+fn ensureUtf8Console() void {
+    // Fast path: already initialized.
+    if (utf8_console_state.load(.acquire) == 2) return;
+
+    // Exactly one thread enters the init body; losers spin.
+    if (utf8_console_state.cmpxchgStrong(0, 1, .acq_rel, .acquire) != null) {
+        while (utf8_console_state.load(.acquire) != 2) {
+            std.Thread.yield() catch {};
+        }
+        return;
+    }
+
+    if (windows.exp.kernel32.AllocConsole() != 0) {
+        if (windows.exp.kernel32.GetConsoleWindow()) |hwnd| {
+            _ = windows.exp.user32.ShowWindow(hwnd, windows.exp.SW_HIDE);
+        }
+        _ = windows.exp.kernel32.SetConsoleOutputCP(windows.exp.CP_UTF8);
+        _ = windows.exp.kernel32.SetConsoleCP(windows.exp.CP_UTF8);
+        utf8_console_owned = true;
+    }
+
+    utf8_console_state.store(2, .release);
+}
+
 fn startWindows(self: *Command, arena: Allocator) !void {
+    // Before any child spawn, make sure the process owns a UTF-8
+    // console. Idempotent and cheap after the first call. See
+    // `ensureUtf8Console` for the full rationale.
+    ensureUtf8Console();
+
     // CreateProcessW's lpApplicationName requires a fully qualified
     // path. Passing a bare executable name like "cmd.exe" or
     // "pwsh.exe" relies on the current working directory containing
@@ -433,7 +494,16 @@ fn startWindows(self: *Command, arena: Allocator) !void {
     // Suppress console window for raw-pipe sessions. ConPTY attaches the
     // pseudo-console which automatically suppresses the window; raw pipes need
     // the flag explicitly.
-    if (self.pseudo_console == null) {
+    //
+    // Exception: when `ensureUtf8Console` above successfully allocated a
+    // hidden UTF-8 console for this process, letting the child inherit
+    // that console is how we force the child's GetConsoleOutputCP() to
+    // report UTF-8 instead of the OEM CP (see issue #299). CREATE_NO_WINDOW
+    // would explicitly detach the child, so the fallback path (`GetACP`)
+    // would kick in and the child would still see the wrong CP. Our
+    // parent console is already hidden, so inheriting it does NOT add a
+    // visible window — the goal of CREATE_NO_WINDOW is preserved.
+    if (self.pseudo_console == null and !utf8_console_owned) {
         flags |= windows.exp.CREATE_NO_WINDOW;
     }
 
@@ -630,6 +700,41 @@ fn windowsCreateCommandLine(allocator: mem.Allocator, argv: []const []const u8) 
     }
 
     return buf.toOwnedSliceSentinel(0);
+}
+
+test "ensureUtf8Console: idempotent, sets UTF-8 CP when it owns the console" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+
+    // Two back-to-back calls must behave the same; the second observes
+    // the finished latch and does no work. This is the main property
+    // we can assert portably across test hosts — both `zig build test`
+    // (which launches the test binary in a detached state where
+    // AllocConsole semantics vary) and production (GUI-subsystem
+    // Ghostty.exe) must tolerate repeat invocation.
+    ensureUtf8Console();
+    ensureUtf8Console();
+
+    // If `ensureUtf8Console` actually allocated the console (the
+    // production case where Ghostty.exe has no parent console) we
+    // assert the code page was flipped to UTF-8 and the outer
+    // invariant — that ownership is one-way latched — holds on a
+    // third call. We only assert in this branch because under
+    // `zig build test` the test runner may be in a state where
+    // AllocConsole fails with no observable console attached;
+    // `utf8_console_owned` stays false and we skip the CP checks to
+    // keep the test stable across CI environments.
+    if (utf8_console_owned) {
+        try testing.expectEqual(
+            @as(u32, windows.exp.CP_UTF8),
+            windows.exp.kernel32.GetConsoleOutputCP(),
+        );
+        try testing.expectEqual(
+            @as(u32, windows.exp.CP_UTF8),
+            windows.exp.kernel32.GetConsoleCP(),
+        );
+        ensureUtf8Console();
+        try testing.expect(utf8_console_owned);
+    }
 }
 
 test "createNullDelimitedEnvMap" {
