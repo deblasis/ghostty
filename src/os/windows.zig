@@ -30,6 +30,7 @@ pub const STARTF_USESTDHANDLES = windows.STARTF_USESTDHANDLES;
 pub const SYNCHRONIZE = windows.SYNCHRONIZE;
 pub const WAIT_FAILED = windows.WAIT_FAILED;
 pub const WAIT_OBJECT_0 = windows.WAIT_OBJECT_0;
+pub const DUPLICATE_SAME_ACCESS = windows.DUPLICATE_SAME_ACCESS;
 pub const FALSE = windows.FALSE;
 pub const TRUE = windows.TRUE;
 

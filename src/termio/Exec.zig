@@ -130,10 +130,11 @@ pub fn threadEnter(
     // On Windows, get a duplicated process handle for the wait thread.
     // We duplicate so that the wait thread owns its copy and can close it
     // independently of the Command's handle.
-    const win_proc_handle: if (builtin.os.tag == .windows) ?windows.HANDLE else void =
+    const win_proc_handle: if (builtin.os.tag == .windows) windows.HANDLE else void =
         if (comptime builtin.os.tag == .windows) blk: {
         const cmd = switch (self.subprocess.process orelse return error.ProcessNotStarted) {
             .fork_exec => |c| c,
+            .flatpak => unreachable, // Flatpak is Linux-only
         };
         const src = cmd.pid orelse return error.ProcessNoPid;
         var dup: windows.HANDLE = undefined;
@@ -145,7 +146,7 @@ pub fn threadEnter(
             &dup,
             0,
             windows.FALSE,
-            std.os.windows.DUPLICATE_SAME_ACCESS,
+            windows.DUPLICATE_SAME_ACCESS,
         ) == 0) {
             return windows.unexpectedError(windows.kernel32.GetLastError());
         }
@@ -196,7 +197,7 @@ pub fn threadEnter(
     // before we can assign it to our own.
     if (comptime builtin.os.tag == .windows) {
         const ctx = try io.alloc.create(WinProcessWaitCtx);
-        ctx.* = .{ .handle = win_proc_handle.?, .td = td };
+        ctx.* = .{ .handle = win_proc_handle, .td = td };
         // On error: close the dup handle and free ctx. The thread takes
         // ownership of both once it starts.
         errdefer {
