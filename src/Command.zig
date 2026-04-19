@@ -430,13 +430,11 @@ fn startWindows(self: *Command, arena: Allocator) !void {
     var flags: windows.DWORD = windows.exp.CREATE_UNICODE_ENVIRONMENT;
     flags |= windows.exp.EXTENDED_STARTUPINFO_PRESENT;
 
-    // When spawning a console-subsystem process (shell) from a GUI-subsystem
-    // parent (Ghostty.exe via WinUI 3), Windows allocates a visible console
-    // window for the child. ConPTY hides this automatically via pseudo-console
-    // attachment; the bypass path must set CREATE_NO_WINDOW explicitly.
-    // ConPTY overrides this flag anyway, so setting it unconditionally is safe.
+    // Suppress console window for raw-pipe sessions. ConPTY attaches the
+    // pseudo-console which automatically suppresses the window; raw pipes need
+    // the flag explicitly.
     if (self.pseudo_console == null) {
-        flags |= windows.CREATE_NO_WINDOW;
+        flags |= windows.exp.CREATE_NO_WINDOW;
     }
 
     var process_information: windows.PROCESS_INFORMATION = undefined;
