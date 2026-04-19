@@ -13,7 +13,7 @@ namespace Ghostty.Core.Sponsor.Auth;
 /// output, with WINTTY_DEV_JWT preserved as a short-circuit
 /// override for dev smoke paths.
 /// </summary>
-internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
+internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
 {
     private readonly WinttyAuthClient _auth;
     private readonly IJwtStore _store;
@@ -100,12 +100,12 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                 await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), ct).ConfigureAwait(false);
                 _cached = refreshed;
                 _claims = parsed;
-                _logger.LogInformation("[sponsor/auth] reactive refresh succeeded");
+                LogReactiveRefreshSucceeded();
                 ScheduleNextRefresh();
             }
             catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
             {
-                _logger.LogInformation("[sponsor/auth] reactive refresh rejected; clearing cache");
+                LogReactiveRefreshRejected();
                 _cached = null;
                 _claims = null;
                 await SafeDeleteAsync(ct).ConfigureAwait(false);
@@ -113,14 +113,14 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (AuthException ex)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] reactive refresh transient failure");
+                LogReactiveRefreshTransient(ex);
                 // Leave cache alone; next 401 will retry.
             }
         }
         catch (OperationCanceledException) { /* shutdown */ }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[sponsor/auth] reactive refresh unexpected failure");
+            LogReactiveRefreshUnexpected(ex);
         }
         finally
         {
@@ -163,11 +163,11 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                     _claims = JwtClaims.Parse(env);
                     _cached = env;
                     _envVarMode = true;
-                    _logger.LogInformation("[sponsor/auth] using WINTTY_DEV_JWT (expires {Exp})", _claims.ExpiresAt);
+                    LogDevJwtLoaded(_claims.ExpiresAt);
                 }
                 catch (AuthException ex)
                 {
-                    _logger.LogWarning(ex, "[sponsor/auth] WINTTY_DEV_JWT is malformed; ignoring");
+                    LogDevJwtMalformed(ex);
                 }
                 return;
             }
@@ -179,13 +179,13 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] JWT store read failed");
+                LogStoreReadFailed(ex);
                 blob = null;
             }
 
             if (blob is null || blob.Length == 0)
             {
-                _logger.LogInformation("[sponsor/auth] no cached JWT; sign-in required");
+                LogNoCachedJwt();
                 return;
             }
 
@@ -197,7 +197,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (AuthException ex)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] cached JWT malformed; deleting");
+                LogCachedJwtMalformed(ex);
                 await SafeDeleteAsync(ct).ConfigureAwait(false);
                 return;
             }
@@ -205,7 +205,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             var now = _time.GetUtcNow().UtcDateTime;
             if (parsed.ExpiresAt <= now - TimeSpan.FromHours(24))
             {
-                _logger.LogInformation("[sponsor/auth] cached JWT stale by more than 24h; deleting");
+                LogCachedJwtStale();
                 await SafeDeleteAsync(ct).ConfigureAwait(false);
                 return;
             }
@@ -219,19 +219,19 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                     await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), ct).ConfigureAwait(false);
                     _cached = refreshed;
                     _claims = newClaims;
-                    _logger.LogInformation("[sponsor/auth] refreshed expired JWT on boot");
+                    LogBootRefreshSucceeded();
                     ScheduleNextRefresh();
                     return;
                 }
                 catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
                 {
-                    _logger.LogInformation("[sponsor/auth] expired JWT rejected on refresh; deleting");
+                    LogBootRefreshRejected();
                     await SafeDeleteAsync(ct).ConfigureAwait(false);
                     return;
                 }
                 catch (AuthException ex)
                 {
-                    _logger.LogWarning(ex, "[sponsor/auth] refresh failed on boot; keeping nothing cached");
+                    LogBootRefreshFailed(ex);
                     await SafeDeleteAsync(ct).ConfigureAwait(false);
                     return;
                 }
@@ -239,7 +239,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
 
             _cached = jwt;
             _claims = parsed;
-            _logger.LogInformation("[sponsor/auth] loaded cached JWT (expires {Exp})", parsed.ExpiresAt);
+            LogLoadedCachedJwt(parsed.ExpiresAt);
         }
         finally
         {
@@ -250,7 +250,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
     private async Task SafeDeleteAsync(CancellationToken ct)
     {
         try { await _store.DeleteAsync(ct).ConfigureAwait(false); }
-        catch (Exception ex) { _logger.LogDebug(ex, "[sponsor/auth] store delete failed"); }
+        catch (Exception ex) { LogStoreDeleteFailed(ex); }
     }
 
     /// <summary>
@@ -301,12 +301,12 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                 await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), _lifetime.Token).ConfigureAwait(false);
                 _cached = refreshed;
                 _claims = parsed;
-                _logger.LogInformation("[sponsor/auth] proactive refresh succeeded");
+                LogProactiveRefreshSucceeded();
                 ScheduleNextRefresh();
             }
             catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
             {
-                _logger.LogInformation("[sponsor/auth] proactive refresh rejected; clearing");
+                LogProactiveRefreshRejected();
                 _cached = null; _claims = null;
                 await SafeDeleteAsync(_lifetime.Token).ConfigureAwait(false);
                 _refreshTimer?.Dispose();
@@ -315,7 +315,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (AuthException ex)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] proactive refresh transient; retry in 10m");
+                LogProactiveRefreshTransient(ex);
                 _refreshTimer?.Dispose();
                 if (_disposed) return;
                 _refreshTimer = _time.CreateTimer(
@@ -326,7 +326,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
         catch (OperationCanceledException) { /* shutdown */ }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[sponsor/auth] proactive refresh unexpected failure");
+            LogProactiveRefreshUnexpected(ex);
         }
         finally
         {
@@ -359,11 +359,11 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                     try
                     {
                         await _auth.RevokeAsync(current, ct).ConfigureAwait(false);
-                        _logger.LogInformation("[sponsor/auth] revoke acknowledged");
+                        LogRevokeAcknowledged();
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogDebug(ex, "[sponsor/auth] revoke best-effort failed");
+                        LogRevokeBestEffortFailed(ex);
                     }
 
                     await SafeDeleteAsync(ct).ConfigureAwait(false);
@@ -399,7 +399,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             catch (Exception ex) when (ex is System.Net.HttpListenerException
                                           or System.Net.Sockets.SocketException)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] loopback bind failed");
+                LogLoopbackBindFailed(ex);
                 return false;
             }
 
@@ -429,27 +429,26 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("[sponsor/auth] sign-in timed out or cancelled");
+                LogSignInTimedOut();
                 return false;
             }
 
             if (!string.IsNullOrEmpty(callbackResult.Error))
             {
                 // Log length only - never log raw attacker-supplied query strings.
-                _logger.LogInformation("[sponsor/auth] OAuth error query ({Length} chars)",
-                    callbackResult.Error.Length);
+                LogOAuthErrorQuery(callbackResult.Error.Length);
                 return false;
             }
 
             if (callbackResult.Nonce != nonce)
             {
-                _logger.LogWarning("[sponsor/auth] nonce mismatch on callback");
+                LogNonceMismatch();
                 return false;
             }
 
             if (string.IsNullOrEmpty(callbackResult.Token))
             {
-                _logger.LogWarning("[sponsor/auth] callback missing token");
+                LogCallbackMissingToken();
                 return false;
             }
 
@@ -460,13 +459,13 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             }
             catch (AuthException ex)
             {
-                _logger.LogWarning(ex, "[sponsor/auth] callback returned malformed JWT");
+                LogCallbackMalformedJwt(ex);
                 return false;
             }
 
             if (parsed.ExpiresAt <= _time.GetUtcNow().UtcDateTime)
             {
-                _logger.LogWarning("[sponsor/auth] callback JWT is pre-expired");
+                LogCallbackJwtPreExpired();
                 return false;
             }
 
@@ -474,7 +473,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                 Encoding.UTF8.GetBytes(callbackResult.Token), ct).ConfigureAwait(false);
             _cached = callbackResult.Token;
             _claims = parsed;
-            _logger.LogInformation("[sponsor/auth] sign-in complete (exp {Exp})", parsed.ExpiresAt);
+            LogSignInComplete(parsed.ExpiresAt);
             RaiseTokenAcquired();
             return true;
         }
