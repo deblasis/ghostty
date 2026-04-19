@@ -73,9 +73,10 @@ pub fn expand(alloc: Allocator, cmd: []const u8) !?[]u8 {
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     var it = std.mem.tokenizeScalar(u8, PATH, std.fs.path.delimiter);
+    var seen_eacces = false;
     while (it.next()) |search_path| {
         // First, try the command as-is (literal match, or if it has an extension)
-        if (try tryPath(alloc, search_path, cmd, &path_buf)) |result| {
+        if (try tryPathImpl(alloc, search_path, cmd, &path_buf, &seen_eacces)) |result| {
             return result;
         }
 
@@ -90,20 +91,22 @@ pub fn expand(alloc: Allocator, cmd: []const u8) !?[]u8 {
                 @memcpy(cmd_with_ext[cmd.len..][0..ext.len], ext);
                 const cmd_ext_str = cmd_with_ext[0..combined_len];
 
-                if (try tryPath(alloc, search_path, cmd_ext_str, &path_buf)) |result| {
+                if (try tryPathImpl(alloc, search_path, cmd_ext_str, &path_buf, &seen_eacces)) |result| {
                     return result;
                 }
             }
         }
     }
 
+    if (seen_eacces) return error.AccessDenied;
+
     return null;
 }
 
 /// Helper function to try opening a file at search_path/cmd.
 /// Returns the allocated full path on success, null on FileNotFound,
-/// or error on other failures.
-fn tryPath(alloc: Allocator, search_path: []const u8, cmd: []const u8, path_buf: *[std.fs.max_path_bytes]u8) !?[]u8 {
+/// tracks AccessDenied in seen_eacces pointer, or error on other failures.
+fn tryPathImpl(alloc: Allocator, search_path: []const u8, cmd: []const u8, path_buf: *[std.fs.max_path_bytes]u8, seen_eacces: *bool) !?[]u8 {
     const path_len = search_path.len + cmd.len + 1;
     if (path_buf.len < path_len) return error.PathTooLong;
 
@@ -121,7 +124,9 @@ fn tryPath(alloc: Allocator, search_path: []const u8, cmd: []const u8, path_buf:
     ) catch |err| switch (err) {
         error.FileNotFound => return null,
         error.AccessDenied => {
-            // TODO: accumulate and return later so we can try other paths
+            // Accumulate this and return it later so we can try other
+            // paths that we have access to.
+            seen_eacces.* = true;
             return null;
         },
         else => return err,
