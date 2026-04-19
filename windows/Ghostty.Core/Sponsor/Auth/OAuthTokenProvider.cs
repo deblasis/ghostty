@@ -32,6 +32,10 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
     private bool _envVarMode;
     private bool _disposed;
 
+    private ITimer? _refreshTimer;
+    private static readonly TimeSpan RefreshLead    = TimeSpan.FromHours(24);
+    private static readonly TimeSpan TransientRetry = TimeSpan.FromMinutes(10);
+
     public OAuthTokenProvider(
         WinttyAuthClient auth,
         IJwtStore store,
@@ -97,6 +101,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                 _cached = refreshed;
                 _claims = parsed;
                 _logger.LogInformation("[sponsor/auth] reactive refresh succeeded");
+                ScheduleNextRefresh();
             }
             catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
             {
@@ -215,6 +220,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                     _cached = refreshed;
                     _claims = newClaims;
                     _logger.LogInformation("[sponsor/auth] refreshed expired JWT on boot");
+                    ScheduleNextRefresh();
                     return;
                 }
                 catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
@@ -245,6 +251,84 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
     {
         try { await _store.DeleteAsync(ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogDebug(ex, "[sponsor/auth] store delete failed"); }
+    }
+
+    /// <summary>
+    /// Starts the proactive refresh timer after a successful
+    /// InitializeAsync or SignInAsync. No-op in env-var mode (no refresh
+    /// path) and when there is no cached token.
+    /// </summary>
+    public void StartRefreshTimer()
+    {
+        if (_envVarMode) return;
+        if (_claims is null) return;
+        ScheduleNextRefresh();
+    }
+
+    private void ScheduleNextRefresh()
+    {
+        if (_claims is null) return;
+        var now = _time.GetUtcNow();
+        var due = _claims.ExpiresAt - RefreshLead - now.UtcDateTime;
+        if (due <= TimeSpan.Zero) due = TimeSpan.Zero;
+
+        _refreshTimer?.Dispose();
+        _refreshTimer = _time.CreateTimer(
+            _ => _ = OnRefreshTickAsync(),
+            state: null,
+            dueTime: due,
+            period: Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task OnRefreshTickAsync()
+    {
+        if (_disposed) return;
+        if (!await _gate.WaitAsync(0, _lifetime.Token).ConfigureAwait(false))
+        {
+            return; // another refresh already running; it will reschedule
+        }
+        try
+        {
+            var current = _cached;
+            if (string.IsNullOrEmpty(current)) return;
+
+            try
+            {
+                var refreshed = await _auth.RefreshAsync(current, _lifetime.Token).ConfigureAwait(false);
+                var parsed = JwtClaims.Parse(refreshed);
+                await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), _lifetime.Token).ConfigureAwait(false);
+                _cached = refreshed;
+                _claims = parsed;
+                _logger.LogInformation("[sponsor/auth] proactive refresh succeeded");
+                ScheduleNextRefresh();
+            }
+            catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
+            {
+                _logger.LogInformation("[sponsor/auth] proactive refresh rejected; clearing");
+                _cached = null; _claims = null;
+                await SafeDeleteAsync(_lifetime.Token).ConfigureAwait(false);
+                _refreshTimer?.Dispose();
+                _refreshTimer = null;
+                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+            catch (AuthException ex)
+            {
+                _logger.LogWarning(ex, "[sponsor/auth] proactive refresh transient; retry in 10m");
+                _refreshTimer?.Dispose();
+                _refreshTimer = _time.CreateTimer(
+                    _ => _ = OnRefreshTickAsync(), null,
+                    TransientRetry, Timeout.InfiniteTimeSpan);
+            }
+        }
+        catch (OperationCanceledException) { /* shutdown */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[sponsor/auth] proactive refresh unexpected failure");
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private static readonly TimeSpan LoopbackTimeout = TimeSpan.FromSeconds(120);
@@ -351,6 +435,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
         if (_disposed) return;
         _disposed = true;
         try { _lifetime.Cancel(); } catch { /* idempotent */ }
+        _refreshTimer?.Dispose();
         _lifetime.Dispose();
         _gate.Dispose();
     }

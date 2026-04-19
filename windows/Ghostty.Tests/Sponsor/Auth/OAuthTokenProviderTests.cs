@@ -407,4 +407,189 @@ public partial class OAuthTokenProviderTests
             Assert.Equal(0, fired);
             Assert.Empty(handler.Requests); // no refresh call
         }
+
+    // ---------------------------------------------------------------
+    // Task 12 tests: Proactive refresh timer
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// TimeProvider that lets tests advance virtual time and triggers
+    /// timers registered via CreateTimer deterministically.
+    /// </summary>
+    internal sealed class DeterministicTimeProvider : TimeProvider
+    {
+        private readonly List<FakeTimer> _timers = new();
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new FakeTimer(this, callback, state);
+            timer.Schedule(dueTime);
+            return timer;
+        }
+
+        public void Advance(TimeSpan by)
+        {
+            Now = Now.Add(by);
+            // Snapshot + remove fired timers; fire callbacks after the lock.
+            var due = new List<FakeTimer>();
+            lock (_timers)
+            {
+                for (int i = _timers.Count - 1; i >= 0; i--)
+                {
+                    if (_timers[i].DueAt is { } at && at <= Now)
+                    {
+                        due.Add(_timers[i]);
+                        _timers.RemoveAt(i);
+                    }
+                }
+            }
+            foreach (var t in due) t.Fire();
+        }
+
+        internal void Register(FakeTimer timer)
+        {
+            lock (_timers)
+            {
+                _timers.RemoveAll(t => ReferenceEquals(t, timer));
+                _timers.Add(timer);
+            }
+        }
+
+        internal void Unregister(FakeTimer timer)
+        {
+            lock (_timers) { _timers.RemoveAll(t => ReferenceEquals(t, timer)); }
+        }
+    }
+
+    internal sealed class FakeTimer : ITimer
+    {
+        private readonly DeterministicTimeProvider _time;
+        private readonly TimerCallback _callback;
+        private readonly object? _state;
+        public DateTimeOffset? DueAt { get; private set; }
+
+        public FakeTimer(DeterministicTimeProvider time, TimerCallback cb, object? state)
+        {
+            _time = time; _callback = cb; _state = state;
+        }
+
+        public void Schedule(TimeSpan dueTime)
+        {
+            if (dueTime == Timeout.InfiniteTimeSpan) { DueAt = null; _time.Unregister(this); return; }
+            DueAt = _time.GetUtcNow().Add(dueTime);
+            _time.Register(this);
+        }
+
+        public void Fire() => _callback(_state);
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) { Schedule(dueTime); return true; }
+
+        public void Dispose() { _time.Unregister(this); DueAt = null; }
+        public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+    }
+
+    private static (OAuthTokenProvider provider, FakeStore store, FakeBrowser browser, FakeListener listener, FakeHandler handler, TimeProvider time) BuildWithTime(TimeProvider time)
+    {
+        var handler = new FakeHandler();
+        var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.wintty.io") };
+        var auth = new WinttyAuthClient(http, new Uri("https://api.wintty.io"));
+        var store = new FakeStore();
+        var browser = new FakeBrowser();
+        var listener = new FakeListener();
+        var provider = new OAuthTokenProvider(
+            auth, store, browser, listener,
+            new Uri("https://api.wintty.io"),
+            NullLogger<OAuthTokenProvider>.Instance,
+            time,
+            envVarLookup: _ => null);
+        return (provider, store, browser, listener, handler, time);
+    }
+
+    private static string MakeJwtExplicit(DateTimeOffset expAt)
+    {
+        static string B64(byte[] b) => Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var header = B64(Encoding.UTF8.GetBytes("""{"alg":"HS256","typ":"JWT"}"""));
+        var body   = B64(Encoding.UTF8.GetBytes($$"""{"sub":"u","exp":{{expAt.ToUnixTimeSeconds()}},"jti":"j"}"""));
+        var sig    = B64(new byte[] { 1, 2, 3 });
+        return $"{header}.{body}.{sig}";
+    }
+
+    [Fact]
+    public async Task ProactiveRefresh_AtMinus24h_Succeeds()
+    {
+        var time = new DeterministicTimeProvider();
+        var (provider, store, _, _, handler, _) = BuildWithTime(time);
+        var current = MakeJwtExplicit(time.Now.AddHours(48));
+        store.Bytes = Encoding.UTF8.GetBytes(current);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        var refreshed = MakeJwtExplicit(time.Now.AddDays(7));
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"token":"{{refreshed}}"}""",
+                Encoding.UTF8, "application/json"),
+        };
+
+        provider.StartRefreshTimer();
+
+        time.Advance(TimeSpan.FromHours(25)); // cross exp - 24h
+        await Task.Delay(200);
+
+        Assert.Equal(refreshed, await provider.GetTokenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ProactiveRefresh_TransientFailure_ReschedulesAt10m()
+    {
+        var time = new DeterministicTimeProvider();
+        var (provider, store, _, _, handler, _) = BuildWithTime(time);
+        var current = MakeJwtExplicit(time.Now.AddHours(25));
+        store.Bytes = Encoding.UTF8.GetBytes(current);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        provider.StartRefreshTimer();
+
+        time.Advance(TimeSpan.FromHours(2)); // past exp-24h
+        await Task.Delay(200);
+
+        Assert.Equal(current, await provider.GetTokenAsync(CancellationToken.None));
+
+        var refreshed = MakeJwtExplicit(time.Now.AddDays(7));
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"token":"{{refreshed}}"}""",
+                Encoding.UTF8, "application/json"),
+        };
+        time.Advance(TimeSpan.FromMinutes(11));
+        await Task.Delay(200);
+
+        Assert.Equal(refreshed, await provider.GetTokenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ProactiveRefresh_AuthFailure_ClearsAndFiresInvalidated()
+    {
+        var time = new DeterministicTimeProvider();
+        var (provider, store, _, _, handler, _) = BuildWithTime(time);
+        var current = MakeJwtExplicit(time.Now.AddHours(25));
+        store.Bytes = Encoding.UTF8.GetBytes(current);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+        var fired = 0;
+        provider.TokenInvalidated += (_, _) => fired++;
+
+        provider.StartRefreshTimer();
+        time.Advance(TimeSpan.FromHours(2));
+        await Task.Delay(200);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, fired);
+        Assert.Equal(1, store.Deletes);
+    }
     }
