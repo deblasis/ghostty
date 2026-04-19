@@ -915,6 +915,9 @@ const Subprocess = struct {
 
         // Resolve the transport mode from config + shell classification.
         // Windows-only; POSIX ignores opts.mode.
+        // args[0] is the shell executable path (bare basename or full path),
+        // never a joined command line. resolveConptyMode relies on this -
+        // windows_shell.classify does not split tokens on spaces.
         const mode: ptypkg.Mode = if (comptime builtin.os.tag == .windows)
             resolveConptyMode(self.conpty_mode, self.args[0])
         else
@@ -1735,6 +1738,9 @@ pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type
 /// - `.auto` defers to the shell classifier: VT-aware shells use the
 ///   bypass, console-API shells and anything unrecognized fall back
 ///   to ConPTY so unknown programs keep the safe default.
+///
+/// `exe_path` must be a single executable path (basename or full path),
+/// not a joined argv string. Callers holding argv should pass argv[0].
 fn resolveConptyMode(
     cfg: configpkg.Config.ConptyMode,
     exe_path: []const u8,
