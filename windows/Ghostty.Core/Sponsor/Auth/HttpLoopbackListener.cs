@@ -59,6 +59,9 @@ internal sealed class HttpLoopbackListener : ILoopbackListener
             try { _listener.Stop(); } catch { /* already disposed */ }
         });
 
+        const int maxInvalidRequests = 10;
+        int invalidCount = 0;
+
         while (!ct.IsCancellationRequested)
         {
             HttpListenerContext ctx;
@@ -82,6 +85,15 @@ internal sealed class HttpLoopbackListener : ILoopbackListener
             {
                 ctx.Response.StatusCode = 404;
                 ctx.Response.Close();
+                invalidCount++;
+                if (invalidCount >= maxInvalidRequests)
+                {
+                    // Bounds a local process flooding the port with junk
+                    // requests. The legitimate OAuth flow makes exactly one
+                    // call to /cb; anything else is either a broken client
+                    // or an attack and we shouldn't keep the listener open.
+                    return new LoopbackResult(null, null, "too many invalid callbacks");
+                }
                 continue;
             }
 
