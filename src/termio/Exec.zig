@@ -30,6 +30,7 @@ const windows = internal_os.windows;
 const ProcessInfo = @import("../pty.zig").ProcessInfo;
 
 const log = std.log.scoped(.io_exec);
+const log_validate = std.log.scoped(.validate_transport);
 
 /// The termios poll rate in milliseconds.
 const TERMIOS_POLL_MS = 200;
@@ -1745,7 +1746,7 @@ fn resolveConptyMode(
     cfg: configpkg.Config.ConptyMode,
     exe_path: []const u8,
 ) ptypkg.Mode {
-    return switch (cfg) {
+    const resolved: ptypkg.Mode = switch (cfg) {
         .never => .conpty,
         .always => .bypass,
         .auto => switch (internal_os.windows_shell.classify(exe_path)) {
@@ -1753,6 +1754,11 @@ fn resolveConptyMode(
             .console_api, .unknown => .conpty,
         },
     };
+    log_validate.info(
+        "transport resolved: shell=\"{s}\" config_mode={s} resolved={s}",
+        .{ exe_path, @tagName(cfg), @tagName(resolved) },
+    );
+    return resolved;
 }
 
 test "execCommand darwin: shell command" {
