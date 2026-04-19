@@ -12,7 +12,7 @@ namespace Ghostty.Core.Sponsor.Auth;
 /// Worker's TLS connection. Claims are read purely to drive the
 /// proactive refresh schedule and for log diagnostics.
 /// </summary>
-internal sealed class JwtClaims
+internal sealed record JwtClaims
 {
     public required string Subject { get; init; }
     public string? Login { get; init; }
