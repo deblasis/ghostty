@@ -11,11 +11,22 @@ the default `wait-after-command = false` brings the app down
 automatically, and `confirm-close-surface = false` skips the exit
 confirmation prompt.
 
-The pwsh fixtures invoke `emit-osc11.ps1` via `-File`. Keeping the
-emission logic in a standalone script avoids cmd metacharacters in
-the fixture's `command` value (ghostty wraps commands containing
-`&`, `|`, `(`, `)`, `%`, `!` with `cmd /c`, which mangles the
-PowerShell escapes).
+The pwsh fixtures emit OSC 11 via `pwsh.exe -EncodedCommand <base64>`.
+The base64 payload is UTF-16LE of:
+
+```
+[Console]::Out.Write([char]0x1B + ']11;?' + [char]0x1B + '\')
+```
+
+which writes `ESC ]11;? ESC \` (OSC 11 query with ST terminator) to
+stdout and exits. Inlining via `-EncodedCommand` avoids three things
+that broke earlier iterations: cwd-relative script paths (Ghostty's
+working-directory resolution is surprising under launch-by-test),
+PowerShell execution policy blocking `.ps1` loads, and cmd-metachar
+wrapping in ghostty's spawn path (ghostty wraps commands containing
+`&`, `|`, `(`, `)`, `%`, `!` with `cmd /c`, which mangles quoted
+arguments). The base64 alphabet (`A-Za-z0-9+/=`) contains none of
+those.
 
 All `command =` values use the full `.exe` suffix (`pwsh.exe`,
 `cmd.exe`). Ghostty's `internal_os.path.expand` does PATH lookup
