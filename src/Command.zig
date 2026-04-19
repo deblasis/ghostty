@@ -282,11 +282,20 @@ var utf8_console = std.once(ensureUtf8ConsoleImpl);
 /// before it reaches the VT parser.
 ///
 /// This lazily allocates a hidden console with CP = 65001 (UTF-8).
-/// - ConPTY children inherit the parent's output CP into the new
-///   conhost, so `CreatePseudoConsole` gives the shell UTF-8.
 /// - Raw-pipe (bypass) children normally run with CREATE_NO_WINDOW
 ///   and would not see our console at all; once a hidden console
 ///   exists we drop that flag so the child inherits our UTF-8 console.
+///   This is the dominant case: `conpty-mode = auto` (the default)
+///   picks bypass for every VT-aware shell (pwsh, wsl, ssh, bash, nu
+///   — everything `windows_shell.classify` tags `.vt_aware`).
+/// - ConPTY children do NOT benefit. `CreatePseudoConsole` spawns a
+///   fresh `conhost.exe --pty` with the system OEM CP regardless of
+///   our parent CP — verified empirically with `conpty-mode = never`,
+///   pwsh child still reports `[Console]::OutputEncoding.CodePage =
+///   850`. Fixing that path requires shell-specific preamble
+///   injection (e.g. `chcp 65001 >nul &&` for cmd, `[Console]::
+///   OutputEncoding = ...` for pwsh), which is out of scope for this
+///   change. Filed as a followup.
 ///
 /// When we own the console, spawned children join our console's ctrl
 /// process group. A child that calls `GenerateConsoleCtrlEvent(
