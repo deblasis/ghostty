@@ -5,7 +5,7 @@ namespace Ghostty.Core.Sponsor.Auth;
 /// and the OAuth handshake. Mirrors <see cref="Ghostty.Core.Sponsor.Update.UpdateErrorKind"/>
 /// style from D.2 so the token provider can translate at the driver boundary.
 /// </summary>
-public enum AuthErrorKind
+internal enum AuthErrorKind
 {
     /// <summary>DNS, TCP, TLS, or timeout failure reaching the Worker.</summary>
     Network,
