@@ -512,13 +512,14 @@ public partial class App : Application
         var window = new MainWindow(_configService, _bootstrapHost, _lifetimeSupervisor, factory);
         window.Closed += OnAnyWindowClosedInternal;
 #if SPONSOR_BUILD
-        // OAuth boot: load cached JWT + refresh if stale. Intentionally
-        // GetAwaiter().GetResult() because OnLaunched is sync-void and
-        // this must complete before Wire constructs the update pipeline
-        // (which reads GetTokenAsync immediately in its first poll).
-        // Cost: single DPAPI read + at most one HTTP call on expired
-        // tokens; bounded, deterministic, runs on app launch only.
-        SharedTokens.InitializeAsync(System.Threading.CancellationToken.None)
+        // OAuth boot: load cached JWT + refresh if stale. Task.Run pushes the
+        // work off the UI dispatcher so HttpClient continuations never try to
+        // resume on a captured UI SynchronizationContext. Bounded (single DPAPI
+        // read + at most one HTTP call on expired tokens) and must complete
+        // before Wire constructs the update pipeline, which reads GetTokenAsync
+        // immediately in its first poll.
+        System.Threading.Tasks.Task.Run(
+            () => SharedTokens.InitializeAsync(System.Threading.CancellationToken.None))
             .GetAwaiter().GetResult();
 
         // SharedSimulator was already materialized during MainWindow's
