@@ -458,11 +458,10 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
             // guard against a rogue local process racing the real callback.
             var nonce = Convert.ToHexString(
                 System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
-            var callback = $"http://127.0.0.1:{_listener.Port}/cb";
 
             var url = new Uri(
                 $"{_apiBase.GetLeftPart(UriPartial.Authority)}/auth/github/start"
-                + $"?redirect={Uri.EscapeDataString(callback)}"
+                + $"?loopback={_listener.Port}"
                 + $"&nonce={nonce}");
             _browser.Open(url);
 
