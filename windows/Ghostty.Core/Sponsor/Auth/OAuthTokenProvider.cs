@@ -331,6 +331,50 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
         }
     }
 
+    /// <summary>
+    /// Revokes the current session best-effort against the Worker, then
+    /// deletes the local blob. Fires <see cref="TokenInvalidated"/>
+    /// only if there was a token to sign out of. Network/server failures
+    /// on revoke are swallowed - the JWT remains valid on the Worker
+    /// until <c>exp</c> but the local machine no longer has it.
+    /// </summary>
+    public async Task SignOutAsync(CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var current = _cached;
+            _cached = null;
+            _claims = null;
+            _refreshTimer?.Dispose();
+            _refreshTimer = null;
+
+            if (!string.IsNullOrEmpty(current))
+            {
+                if (!_envVarMode)
+                {
+                    try
+                    {
+                        await _auth.RevokeAsync(current, ct).ConfigureAwait(false);
+                        _logger.LogInformation("[sponsor/auth] revoke acknowledged");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "[sponsor/auth] revoke best-effort failed");
+                    }
+
+                    await SafeDeleteAsync(ct).ConfigureAwait(false);
+                }
+
+                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static readonly TimeSpan LoopbackTimeout = TimeSpan.FromSeconds(120);
 
     /// <summary>

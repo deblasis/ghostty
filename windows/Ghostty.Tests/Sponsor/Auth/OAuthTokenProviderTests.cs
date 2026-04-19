@@ -592,4 +592,74 @@ public partial class OAuthTokenProviderTests
         Assert.Equal(1, fired);
         Assert.Equal(1, store.Deletes);
     }
+
+    // ---------------------------------------------------------------
+    // Task 13 tests: SignOutAsync
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public async Task SignOutAsync_RevokeSucceeds_DeletesLocallyAndFires()
+    {
+        var (provider, store, _, _, handler, time) = Build();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        store.Bytes = Encoding.UTF8.GetBytes(jwt);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        var fired = 0;
+        provider.TokenInvalidated += (_, _) => fired++;
+
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.NoContent);
+
+        await provider.SignOutAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Deletes);
+        Assert.Equal(1, fired);
+        Assert.Single(handler.Requests);
+        Assert.Equal("/auth/revoke", handler.Requests[0].RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task SignOutAsync_RevokeFails_StillDeletesLocally()
+    {
+        var (provider, store, _, _, handler, time) = Build();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        store.Bytes = Encoding.UTF8.GetBytes(jwt);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+
+        await provider.SignOutAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Deletes);
+    }
+
+    [Fact]
+    public async Task SignOutAsync_WhenNotSignedIn_IsNoOp()
+    {
+        var (provider, store, _, _, handler, _) = Build();
+
+        await provider.SignOutAsync(CancellationToken.None);
+
+        Assert.Empty(handler.Requests);
+        Assert.Equal(0, store.Deletes);
+    }
+
+    [Fact]
+    public async Task SignOutAsync_EnvVarMode_SkipsRevokeAndDelete()
+    {
+        var time = new FakeTime();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        var (provider, store, _, _, handler, _) = Build(envOverride: jwt);
+        await provider.InitializeAsync(CancellationToken.None);
+
+        await provider.SignOutAsync(CancellationToken.None);
+
+        // Env-var path: no revoke call, no store delete (there's nothing
+        // on disk to delete in env-var mode anyway). Cache clears locally.
+        Assert.Empty(handler.Requests);
+        Assert.Equal(0, store.Deletes);
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+    }
     }
