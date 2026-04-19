@@ -56,7 +56,11 @@ internal sealed class HttpLoopbackListener : ILoopbackListener
 
         using var ctr = ct.Register(() =>
         {
-            try { _listener.Stop(); } catch { /* already disposed */ }
+            // Stop may race Dispose when the caller cancels just as the
+            // listener is being torn down. Only ObjectDisposedException
+            // is expected on that path; everything else bubbles up.
+            try { _listener.Stop(); }
+            catch (ObjectDisposedException) { }
         });
 
         const int maxInvalidRequests = 10;
@@ -136,7 +140,12 @@ internal sealed class HttpLoopbackListener : ILoopbackListener
 
     public void Dispose()
     {
-        try { _listener?.Close(); } catch { /* idempotent */ }
+        // Close is idempotent for the "already stopped" case, but can
+        // still surface ObjectDisposedException when racing a second
+        // Dispose call. Narrow the swallow accordingly so real bugs
+        // (InvalidOperationException from teardown paths) surface.
+        try { _listener?.Close(); }
+        catch (ObjectDisposedException) { }
         _listener = null;
         _started = false;
     }

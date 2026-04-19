@@ -98,9 +98,9 @@ public partial class App : Application
         var localAppData = System.Environment.GetFolderPath(
             System.Environment.SpecialFolder.LocalApplicationData);
         var authDir = System.IO.Path.Combine(localAppData, "Ghostty");
-        var entropy = Ghostty.Core.Sponsor.Auth.DpapiJwtStore.DefaultEntropy;
 
-        var store    = new Ghostty.Core.Sponsor.Auth.DpapiJwtStore(authDir, entropy);
+        var store    = new Ghostty.Core.Sponsor.Auth.DpapiJwtStore(
+            authDir, Ghostty.Core.Sponsor.Auth.DpapiJwtStore.DefaultEntropy);
         var browserLogger = _loggerFactory?.CreateLogger<Ghostty.Core.Sponsor.Auth.DesktopBrowserLauncher>()
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<Ghostty.Core.Sponsor.Auth.DesktopBrowserLauncher>.Instance;
         var browser  = new Ghostty.Core.Sponsor.Auth.DesktopBrowserLauncher(browserLogger);

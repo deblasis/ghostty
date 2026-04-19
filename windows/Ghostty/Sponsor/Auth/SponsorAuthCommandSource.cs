@@ -1,7 +1,6 @@
 #if SPONSOR_BUILD
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using Ghostty.Commands;
 using Ghostty.Core.Sponsor.Auth;
 using Microsoft.Extensions.Logging;
@@ -11,17 +10,19 @@ namespace Ghostty.Sponsor.Auth;
 /// <summary>
 /// Palette entries for OAuth sign-in / sign-out. Visible in release
 /// sponsor builds (not DEBUG-gated like <c>SponsorUpdateCommandSource</c>).
-/// Re-registers its entries on <c>TokenAcquired</c> / <c>TokenInvalidated</c>
-/// via the palette's <see cref="ICommandSource.Refresh"/> contract -
-/// the host calls <see cref="GetCommands"/> every time the palette
-/// opens, so simply triggering a Refresh is enough to flip the visible
-/// entry between "Sign in" and "Sign out".
+/// Tracks sign-in state via <c>TokenAcquired</c> / <c>TokenInvalidated</c>
+/// (which can fire on a ThreadPool thread from the reactive / proactive
+/// refresh paths) with a volatile flag, and computes the visible entry
+/// lazily inside <see cref="GetCommands"/> on the UI thread. This avoids
+/// mutating a shared list off-thread - the palette calls
+/// <see cref="ICommandSource.Refresh"/> then <see cref="GetCommands"/> on
+/// each Open.
 /// </summary>
 internal sealed class SponsorAuthCommandSource : ICommandSource, IDisposable
 {
     private readonly OAuthTokenProvider _provider;
     private readonly ILogger<SponsorAuthCommandSource> _logger;
-    private readonly List<CommandItem> _items = new();
+    private volatile bool _hasToken;
     private bool _disposed;
 
     public SponsorAuthCommandSource(OAuthTokenProvider provider, ILogger<SponsorAuthCommandSource> logger)
@@ -31,47 +32,52 @@ internal sealed class SponsorAuthCommandSource : ICommandSource, IDisposable
         _provider = provider;
         _logger = logger;
 
-        _provider.TokenAcquired    += OnStateChanged;
-        _provider.TokenInvalidated += OnStateChanged;
+        _provider.TokenAcquired    += OnTokenAcquired;
+        _provider.TokenInvalidated += OnTokenInvalidated;
 
-        Refresh();
+        // Seed from the provider's current state. After construction
+        // _hasToken is kept in sync by the event handlers above.
+        _hasToken = provider.HasToken;
     }
 
-    public IReadOnlyList<CommandItem> GetCommands() => _items;
-
-    public void Refresh()
+    public IReadOnlyList<CommandItem> GetCommands()
     {
-        _items.Clear();
-
-        // Snapshot current state. GetTokenAsync is a hot-path synchronous
-        // Task.FromResult under the hood, so GetAwaiter().GetResult() is
-        // safe and non-blocking. We need it synchronously because
-        // GetCommands is called on the UI thread on each palette open.
-        var hasToken = _provider.GetTokenAsync(CancellationToken.None)
-            .GetAwaiter().GetResult() is not null;
-
-        if (!hasToken)
+        // Called on the UI thread by CommandPaletteViewModel.Open.
+        // Reads _hasToken (volatile) and returns a fresh list - no
+        // shared mutable buffer to race against.
+        if (_hasToken)
         {
-            _items.Add(new CommandItem
+            return new[]
+            {
+                new CommandItem
+                {
+                    Id = "wintty.signOut",
+                    Title = "Sign out of wintty",
+                    Description = "Stops sponsor updates on this machine",
+                    Category = CommandCategory.Custom,
+                    Execute = _ => SignOutFireAndForget(),
+                },
+            };
+        }
+
+        return new[]
+        {
+            new CommandItem
             {
                 Id = "wintty.signIn",
                 Title = "Sign in to wintty",
                 Description = "Activate sponsor updates via GitHub",
                 Category = CommandCategory.Custom,
                 Execute = _ => SignInFireAndForget(),
-            });
-        }
-        else
-        {
-            _items.Add(new CommandItem
-            {
-                Id = "wintty.signOut",
-                Title = "Sign out of wintty",
-                Description = "Stops sponsor updates on this machine",
-                Category = CommandCategory.Custom,
-                Execute = _ => SignOutFireAndForget(),
-            });
-        }
+            },
+        };
+    }
+
+    public void Refresh()
+    {
+        // No-op: state lives in _hasToken, which is kept in sync by the
+        // provider's events. GetCommands rebuilds the item list each
+        // call anyway.
     }
 
     private void SignInFireAndForget()
@@ -84,7 +90,7 @@ internal sealed class SponsorAuthCommandSource : ICommandSource, IDisposable
 
     private async System.Threading.Tasks.Task SignInAsync()
     {
-        try { await _provider.SignInAsync(CancellationToken.None); }
+        try { await _provider.SignInAsync(System.Threading.CancellationToken.None); }
         catch (Exception ex) { _logger.LogWarning(ex, "[sponsor/auth] palette SignIn failed"); }
     }
 
@@ -95,18 +101,19 @@ internal sealed class SponsorAuthCommandSource : ICommandSource, IDisposable
 
     private async System.Threading.Tasks.Task SignOutAsync()
     {
-        try { await _provider.SignOutAsync(CancellationToken.None); }
+        try { await _provider.SignOutAsync(System.Threading.CancellationToken.None); }
         catch (Exception ex) { _logger.LogWarning(ex, "[sponsor/auth] palette SignOut failed"); }
     }
 
-    private void OnStateChanged(object? sender, EventArgs e) => Refresh();
+    private void OnTokenAcquired(object? sender, EventArgs e) => _hasToken = true;
+    private void OnTokenInvalidated(object? sender, EventArgs e) => _hasToken = false;
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _provider.TokenAcquired    -= OnStateChanged;
-        _provider.TokenInvalidated -= OnStateChanged;
+        _provider.TokenAcquired    -= OnTokenAcquired;
+        _provider.TokenInvalidated -= OnTokenInvalidated;
     }
 }
 #endif

@@ -17,7 +17,7 @@ internal sealed record JwtClaims
     public required string Subject { get; init; }
     public string? Login { get; init; }
     public int TierCents { get; init; }
-    public IReadOnlyList<string> ChannelAllow { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> ChannelAllow { get; init; } = [];
     public string? DefaultChannel { get; init; }
     public string? JwtId { get; init; }
     public required DateTime ExpiresAt { get; init; }
@@ -106,7 +106,7 @@ internal sealed record JwtClaims
     private static IReadOnlyList<string> ReadStringArray(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var v) || v.ValueKind != JsonValueKind.Array)
-            return Array.Empty<string>();
+            return [];
 
         var list = new List<string>(v.GetArrayLength());
         foreach (var item in v.EnumerateArray())

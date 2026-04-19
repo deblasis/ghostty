@@ -19,6 +19,8 @@ internal interface IJwtStore
     /// <summary>Persists the UTF-8 encoded JWT. Throws on IO failure.</summary>
     Task WriteAsync(byte[] utf8Token, CancellationToken ct);
 
-    /// <summary>Deletes the stored blob. No-op if absent. Swallows IO errors.</summary>
+    /// <summary>Deletes the stored blob. No-op if absent. Throws on
+    /// filesystem failures; callers log once via
+    /// <c>OAuthTokenProvider.SafeDeleteAsync</c>.</summary>
     Task DeleteAsync(CancellationToken ct);
 }

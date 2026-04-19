@@ -91,10 +91,6 @@ public partial class OAuthTokenProviderTests
         return $"{header}.{body}.{sig}";
     }
 
-    // ---------------------------------------------------------------
-    // Task 8 tests
-    // ---------------------------------------------------------------
-
     [Fact]
     public async Task GetTokenAsync_WhenNoCache_ReturnsNull()
     {
@@ -114,9 +110,7 @@ public partial class OAuthTokenProviderTests
         provider.Dispose();
     }
 
-    // ---------------------------------------------------------------
-    // Task 9 tests: InitializeAsync
-    // ---------------------------------------------------------------
+    // InitializeAsync
 
     [Fact]
     public async Task InitializeAsync_WithEnvVar_LoadsVerbatimSkipsStore()
@@ -214,9 +208,7 @@ public partial class OAuthTokenProviderTests
         Assert.Equal(1, store.Deletes);
     }
 
-    // ---------------------------------------------------------------
-    // Task 10 tests: SignInAsync
-    // ---------------------------------------------------------------
+    // SignInAsync
 
     private static string? GetQueryParam(Uri url, string key)
     {
@@ -320,9 +312,8 @@ public partial class OAuthTokenProviderTests
         Assert.False(result);
     }
 
-    // ---------------------------------------------------------------
-    // Task 11 tests: Invalidate reactive refresh
-    // ---------------------------------------------------------------
+    // Invalidate (reactive refresh)
+
         [Fact]
         public async Task Invalidate_RefreshSucceeds_ReplacesCacheDoesNotFire()
         {
@@ -408,9 +399,7 @@ public partial class OAuthTokenProviderTests
             Assert.Empty(handler.Requests); // no refresh call
         }
 
-    // ---------------------------------------------------------------
-    // Task 12 tests: Proactive refresh timer
-    // ---------------------------------------------------------------
+    // Proactive refresh timer
 
     /// <summary>
     /// TimeProvider that lets tests advance virtual time and triggers
@@ -593,9 +582,7 @@ public partial class OAuthTokenProviderTests
         Assert.Equal(1, store.Deletes);
     }
 
-    // ---------------------------------------------------------------
-    // Task 13 tests: SignOutAsync
-    // ---------------------------------------------------------------
+    // SignOutAsync
 
     [Fact]
     public async Task SignOutAsync_RevokeSucceeds_DeletesLocallyAndFires()

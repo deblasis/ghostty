@@ -27,12 +27,13 @@ internal sealed class DpapiJwtStore : IJwtStore
     public const string EntropyLabelV1 = "wintty-sponsor-jwt-v1";
 
     /// <summary>
-    /// Default entropy bytes for DPAPI encryption. Callers building a
-    /// DpapiJwtStore pass <see cref="DefaultEntropy"/>; the constant
-    /// is exposed so the App wiring doesn't have to duplicate the literal.
+    /// Default entropy bytes for DPAPI encryption. Exposed as
+    /// <see cref="ReadOnlySpan{Byte}"/> backed by a UTF-8 string literal
+    /// so the data lives in the PE's read-only section - no heap array
+    /// that an errant caller can mutate out from under every
+    /// subsequent encrypt/decrypt.
     /// </summary>
-    public static readonly byte[] DefaultEntropy =
-        System.Text.Encoding.UTF8.GetBytes(EntropyLabelV1);
+    public static ReadOnlySpan<byte> DefaultEntropy => "wintty-sponsor-jwt-v1"u8;
 
     private const string FileName = "auth.bin";
     private const string PartialSuffix = ".partial";
@@ -40,12 +41,16 @@ internal sealed class DpapiJwtStore : IJwtStore
     private readonly string _root;
     private readonly byte[] _entropy;
 
-    public DpapiJwtStore(string root, byte[] entropy)
+    public DpapiJwtStore(string root, ReadOnlySpan<byte> entropy)
     {
         ArgumentException.ThrowIfNullOrEmpty(root);
-        ArgumentNullException.ThrowIfNull(entropy);
+        if (entropy.IsEmpty)
+            throw new ArgumentException("entropy must not be empty", nameof(entropy));
         _root = root;
-        _entropy = entropy;
+        // Defensive copy: the caller could be handing us a pooled
+        // buffer or a slice of a larger array. We need a stable blob
+        // for the lifetime of this store.
+        _entropy = entropy.ToArray();
 
         Directory.CreateDirectory(_root);
     }
@@ -106,21 +111,15 @@ internal sealed class DpapiJwtStore : IJwtStore
 
     public Task DeleteAsync(CancellationToken ct)
     {
-        try
-        {
-            if (File.Exists(Target))
-                File.Delete(Target);
-            if (File.Exists(Partial))
-                File.Delete(Partial);
-        }
-        catch (IOException)
-        {
-            // Sign-out must not fail on file locks. Logged by caller.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Same reasoning.
-        }
+        // Surface IOException / UnauthorizedAccessException to the
+        // caller (OAuthTokenProvider.SafeDeleteAsync) so the single
+        // logger call there sees the actual failure instead of a
+        // silent success. Double-swallow was losing the only useful
+        // signal we had for "JWT still on disk after sign-out".
+        if (File.Exists(Target))
+            File.Delete(Target);
+        if (File.Exists(Partial))
+            File.Delete(Partial);
         return Task.CompletedTask;
     }
 }

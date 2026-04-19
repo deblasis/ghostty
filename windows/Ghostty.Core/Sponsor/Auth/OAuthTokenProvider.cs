@@ -68,6 +68,14 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
         => Task.FromResult(_cached);
 
     /// <summary>
+    /// Snapshot view of whether we currently hold a token. Read from the
+    /// UI thread by palette command sources that need to pick between
+    /// "Sign in" and "Sign out" entries without blocking on
+    /// <see cref="GetTokenAsync"/>. Volatile-backed via <c>_cached</c>.
+    /// </summary>
+    public bool HasToken => !string.IsNullOrEmpty(_cached);
+
+    /// <summary>
     /// Reactive 401 handler called by <c>WinttyManifestClient</c> when
     /// the Worker rejects our current bearer. Kicks off a single-flight
     /// background refresh. Returns synchronously so the calling HTTP
@@ -78,16 +86,31 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
     public void Invalidate()
     {
         if (_envVarMode) return;
-        _ = Task.Run(() => TryRefreshAsync(_lifetime.Token));
+        if (_disposed) return;
+        // Capture the token before Task.Run schedules; reading
+        // _lifetime.Token after Dispose has disposed the CTS throws
+        // ObjectDisposedException, and we can't observe the exception
+        // from a fire-and-forget Task.Run.
+        CancellationToken token;
+        try { token = _lifetime.Token; }
+        catch (ObjectDisposedException) { return; }
+        _ = Task.Run(() => TryRefreshAsync(token));
     }
 
     private async Task TryRefreshAsync(CancellationToken ct)
     {
-        if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false))
+        if (_disposed) return;
+        try
         {
-            // Another refresh already in flight; let it handle things.
-            return;
+            if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false))
+            {
+                // Another refresh already in flight; let it handle things.
+                return;
+            }
         }
+        catch (ObjectDisposedException) { return; }
+
+        var fireInvalidated = false;
         try
         {
             var current = _cached;
@@ -109,7 +132,7 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
                 _cached = null;
                 _claims = null;
                 await SafeDeleteAsync(ct).ConfigureAwait(false);
-                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+                fireInvalidated = true;
             }
             catch (AuthException ex)
             {
@@ -126,6 +149,12 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
         {
             _gate.Release();
         }
+
+        // Raise outside the gate so a subscriber that re-enters the
+        // provider (e.g. kicking off SignIn) does not deadlock on its
+        // own WaitAsync.
+        if (fireInvalidated)
+            TokenInvalidated?.Invoke(this, EventArgs.Empty);
     }
 
     public event EventHandler? TokenInvalidated;
@@ -285,10 +314,20 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
     private async Task OnRefreshTickAsync()
     {
         if (_disposed) return;
-        if (!await _gate.WaitAsync(0, _lifetime.Token).ConfigureAwait(false))
+        CancellationToken token;
+        try { token = _lifetime.Token; }
+        catch (ObjectDisposedException) { return; }
+
+        try
         {
-            return; // another refresh already running; it will reschedule
+            if (!await _gate.WaitAsync(0, token).ConfigureAwait(false))
+            {
+                return; // another refresh already running; it will reschedule
+            }
         }
+        catch (ObjectDisposedException) { return; }
+
+        var fireInvalidated = false;
         try
         {
             var current = _cached;
@@ -296,9 +335,9 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
 
             try
             {
-                var refreshed = await _auth.RefreshAsync(current, _lifetime.Token).ConfigureAwait(false);
+                var refreshed = await _auth.RefreshAsync(current, token).ConfigureAwait(false);
                 var parsed = JwtClaims.Parse(refreshed);
-                await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), _lifetime.Token).ConfigureAwait(false);
+                await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), token).ConfigureAwait(false);
                 _cached = refreshed;
                 _claims = parsed;
                 LogProactiveRefreshSucceeded();
@@ -308,10 +347,10 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
             {
                 LogProactiveRefreshRejected();
                 _cached = null; _claims = null;
-                await SafeDeleteAsync(_lifetime.Token).ConfigureAwait(false);
+                await SafeDeleteAsync(token).ConfigureAwait(false);
                 _refreshTimer?.Dispose();
                 _refreshTimer = null;
-                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+                fireInvalidated = true;
             }
             catch (AuthException ex)
             {
@@ -332,6 +371,9 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
         {
             _gate.Release();
         }
+
+        if (fireInvalidated)
+            TokenInvalidated?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -344,6 +386,7 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
     public async Task SignOutAsync(CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
+        var fireInvalidated = false;
         try
         {
             var current = _cached;
@@ -369,13 +412,16 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
                     await SafeDeleteAsync(ct).ConfigureAwait(false);
                 }
 
-                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+                fireInvalidated = true;
             }
         }
         finally
         {
             _gate.Release();
         }
+
+        if (fireInvalidated)
+            TokenInvalidated?.Invoke(this, EventArgs.Empty);
     }
 
     private static readonly TimeSpan LoopbackTimeout = TimeSpan.FromSeconds(120);
@@ -390,6 +436,7 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
     public async Task<bool> SignInAsync(CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
+        var fireAcquired = false;
         try
         {
             try
@@ -474,12 +521,18 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
             _cached = callbackResult.Token;
             _claims = parsed;
             LogSignInComplete(parsed.ExpiresAt);
-            RaiseTokenAcquired();
+            fireAcquired = true;
             return true;
         }
         finally
         {
             _gate.Release();
+
+            // Raise outside the gate: a subscriber (e.g. a palette command
+            // source) that re-enters the provider on state change must not
+            // deadlock on its own WaitAsync.
+            if (fireAcquired)
+                RaiseTokenAcquired();
         }
     }
 
@@ -487,7 +540,11 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
     {
         if (_disposed) return;
         _disposed = true;
-        try { _lifetime.Cancel(); } catch { /* idempotent */ }
+        // Dispose racing with a callback already inside Cancel() can
+        // observe ObjectDisposedException; all other throws indicate a
+        // real bug and should not be swallowed.
+        try { _lifetime.Cancel(); }
+        catch (ObjectDisposedException) { }
         _refreshTimer?.Dispose();
         _lifetime.Dispose();
         _gate.Dispose();
