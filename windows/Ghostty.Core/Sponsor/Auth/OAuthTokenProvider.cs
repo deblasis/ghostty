@@ -64,15 +64,63 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
         => Task.FromResult(_cached);
 
     /// <summary>
-    /// Reactive 401 handler. Task 8 skeleton clears the cache and fires
-    /// <see cref="TokenInvalidated"/>. Task 11 replaces this with a
-    /// background refresh attempt that only fires on refresh failure.
+    /// Reactive 401 handler called by <c>WinttyManifestClient</c> when
+    /// the Worker rejects our current bearer. Kicks off a single-flight
+    /// background refresh. Returns synchronously so the calling HTTP
+    /// retry can proceed. In env-var mode this is a no-op (no refresh
+    /// path exists for env tokens). If another refresh is already in
+    /// flight, this caller's retry rides on its result.
     /// </summary>
     public void Invalidate()
     {
-        _cached = null;
-        _claims = null;
-        TokenInvalidated?.Invoke(this, EventArgs.Empty);
+        if (_envVarMode) return;
+        _ = Task.Run(() => TryRefreshAsync(_lifetime.Token));
+    }
+
+    private async Task TryRefreshAsync(CancellationToken ct)
+    {
+        if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false))
+        {
+            // Another refresh already in flight; let it handle things.
+            return;
+        }
+        try
+        {
+            var current = _cached;
+            if (string.IsNullOrEmpty(current)) return;
+
+            try
+            {
+                var refreshed = await _auth.RefreshAsync(current, ct).ConfigureAwait(false);
+                var parsed = JwtClaims.Parse(refreshed);
+                await _store.WriteAsync(Encoding.UTF8.GetBytes(refreshed), ct).ConfigureAwait(false);
+                _cached = refreshed;
+                _claims = parsed;
+                _logger.LogInformation("[sponsor/auth] reactive refresh succeeded");
+            }
+            catch (AuthException ex) when (ex.Kind == AuthErrorKind.Unauthorized)
+            {
+                _logger.LogInformation("[sponsor/auth] reactive refresh rejected; clearing cache");
+                _cached = null;
+                _claims = null;
+                await SafeDeleteAsync(ct).ConfigureAwait(false);
+                TokenInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+            catch (AuthException ex)
+            {
+                _logger.LogWarning(ex, "[sponsor/auth] reactive refresh transient failure");
+                // Leave cache alone; next 401 will retry.
+            }
+        }
+        catch (OperationCanceledException) { /* shutdown */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[sponsor/auth] reactive refresh unexpected failure");
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public event EventHandler? TokenInvalidated;

@@ -114,23 +114,6 @@ public partial class OAuthTokenProviderTests
         provider.Dispose();
     }
 
-    [Fact]
-    public void Invalidate_ClearsCache_FiresTokenInvalidated()
-    {
-        // Minimal skeleton behavior for Task 8: Invalidate synchronously
-        // clears the cached token and fires TokenInvalidated. Reactive
-        // refresh behavior lands in Task 11 - this test will be refined
-        // or superseded then.
-        var (provider, _, _, _, _, _) = Build();
-
-        var fired = 0;
-        provider.TokenInvalidated += (_, _) => fired++;
-
-        provider.Invalidate();
-
-        Assert.Equal(1, fired);
-    }
-
     // ---------------------------------------------------------------
     // Task 9 tests: InitializeAsync
     // ---------------------------------------------------------------
@@ -336,4 +319,92 @@ public partial class OAuthTokenProviderTests
 
         Assert.False(result);
     }
-}
+
+    // ---------------------------------------------------------------
+    // Task 11 tests: Invalidate reactive refresh
+    // ---------------------------------------------------------------
+        [Fact]
+        public async Task Invalidate_RefreshSucceeds_ReplacesCacheDoesNotFire()
+        {
+            var (provider, store, _, _, handler, time) = Build();
+            var current = MakeJwt(time, secondsFromNow: 60);
+            store.Bytes = Encoding.UTF8.GetBytes(current);
+            await provider.InitializeAsync(CancellationToken.None);
+
+            var refreshed = MakeJwt(time, secondsFromNow: 7 * 24 * 3600);
+            handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($$"""{"token":"{{refreshed}}"}""",
+                    Encoding.UTF8, "application/json"),
+            };
+
+            var fired = 0;
+            provider.TokenInvalidated += (_, _) => fired++;
+
+            provider.Invalidate();
+            await Task.Delay(200); // wait for background refresh
+
+            Assert.Equal(refreshed, await provider.GetTokenAsync(CancellationToken.None));
+            Assert.Equal(0, fired);
+        }
+
+        [Fact]
+        public async Task Invalidate_RefreshFailsUnauthorized_ClearsAndFires()
+        {
+            var (provider, store, _, _, handler, time) = Build();
+            var current = MakeJwt(time, secondsFromNow: 60);
+            store.Bytes = Encoding.UTF8.GetBytes(current);
+            await provider.InitializeAsync(CancellationToken.None);
+
+            handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+            var fired = 0;
+            provider.TokenInvalidated += (_, _) => fired++;
+
+            provider.Invalidate();
+            await Task.Delay(200);
+
+            Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+            Assert.Equal(1, fired);
+            Assert.Equal(1, store.Deletes);
+        }
+
+        [Fact]
+        public async Task Invalidate_RefreshFailsTransient_KeepsCacheDoesNotFire()
+        {
+            var (provider, store, _, _, handler, time) = Build();
+            var current = MakeJwt(time, secondsFromNow: 60);
+            store.Bytes = Encoding.UTF8.GetBytes(current);
+            await provider.InitializeAsync(CancellationToken.None);
+
+            handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+
+            var fired = 0;
+            provider.TokenInvalidated += (_, _) => fired++;
+
+            provider.Invalidate();
+            await Task.Delay(200);
+
+            Assert.Equal(current, await provider.GetTokenAsync(CancellationToken.None));
+            Assert.Equal(0, fired);
+        }
+
+        [Fact]
+        public async Task Invalidate_InEnvVarMode_IsNoOp()
+        {
+            var time = new FakeTime();
+            var jwt = MakeJwt(time, secondsFromNow: 3600);
+            var (provider, _, _, _, handler, _) = Build(envOverride: jwt);
+            await provider.InitializeAsync(CancellationToken.None);
+
+            var fired = 0;
+            provider.TokenInvalidated += (_, _) => fired++;
+
+            provider.Invalidate();
+            await Task.Delay(100);
+
+            Assert.Equal(jwt, await provider.GetTokenAsync(CancellationToken.None));
+            Assert.Equal(0, fired);
+            Assert.Empty(handler.Requests); // no refresh call
+        }
+    }
