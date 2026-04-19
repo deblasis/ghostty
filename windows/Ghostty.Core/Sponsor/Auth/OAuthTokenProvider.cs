@@ -451,7 +451,7 @@ internal sealed partial class OAuthTokenProvider : ISponsorTokenProvider, IDispo
             }
 
             // The Worker's /auth/github/start endpoint takes a `nonce` query param
-            // and echoes it verbatim in the final /cb 302. This is an ADDITIONAL
+            // and echoes it verbatim in the final loopback 302. This is an ADDITIONAL
             // CSRF defense on top of the OAuth `state` param (which the Worker
             // owns end-to-end and HS256-signs with its own secret). The client
             // never touches OAuth `state`; our `nonce` is the client-local replay
