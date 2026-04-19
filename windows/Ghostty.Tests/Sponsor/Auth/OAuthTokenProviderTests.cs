@@ -230,4 +230,110 @@ public partial class OAuthTokenProviderTests
         Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
         Assert.Equal(1, store.Deletes);
     }
+
+    // ---------------------------------------------------------------
+    // Task 10 tests: SignInAsync
+    // ---------------------------------------------------------------
+
+    private static string? GetQueryParam(Uri url, string key)
+    {
+        var q = url.Query.TrimStart('?');
+        foreach (var pair in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var idx = pair.IndexOf('=');
+            if (idx < 0) continue;
+            if (Uri.UnescapeDataString(pair[..idx]) == key)
+                return Uri.UnescapeDataString(pair[(idx + 1)..]);
+        }
+        return null;
+    }
+
+    [Fact]
+    public async Task SignInAsync_HappyPath_EchoesNoncePersists()
+    {
+        var (provider, store, browser, listener, _, time) = Build();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        listener.Behavior = _ =>
+        {
+            var opened = browser.Opened[^1];
+            var nonce = GetQueryParam(opened, "nonce")!;
+            return Task.FromResult(new LoopbackResult(jwt, nonce, null));
+        };
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(jwt, await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Writes);
+        Assert.Single(browser.Opened);
+        Assert.Equal("api.wintty.io", browser.Opened[0].Host);
+        Assert.Equal("/auth/github/start", browser.Opened[0].AbsolutePath);
+    }
+
+    [Fact]
+    public async Task SignInAsync_NonceMismatch_ReturnsFalse()
+    {
+        var (provider, _, _, listener, _, time) = Build();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        listener.Behavior = _ => Task.FromResult(new LoopbackResult(jwt, "wrong-nonce", null));
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.False(result);
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SignInAsync_ListenerCanceled_ReturnsFalse()
+    {
+        var (provider, _, _, listener, _, _) = Build();
+        listener.Behavior = ct => Task.FromException<LoopbackResult>(new OperationCanceledException(ct));
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task SignInAsync_OAuthErrorQueryParam_ReturnsFalse()
+    {
+        var (provider, _, _, listener, _, _) = Build();
+        listener.Behavior = _ => Task.FromResult(new LoopbackResult(null, null, "access_denied"));
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task SignInAsync_ReturnedJwtPreExpired_ReturnsFalseDoesNotPersist()
+    {
+        var (provider, store, browser, listener, _, time) = Build();
+        var expired = MakeJwt(time, secondsFromNow: -10);
+        listener.Behavior = _ =>
+        {
+            var nonce = GetQueryParam(browser.Opened[^1], "nonce")!;
+            return Task.FromResult(new LoopbackResult(expired, nonce, null));
+        };
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.False(result);
+        Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
+    public async Task SignInAsync_TokenMissing_ReturnsFalse()
+    {
+        var (provider, _, browser, listener, _, _) = Build();
+        listener.Behavior = _ =>
+        {
+            var nonce = GetQueryParam(browser.Opened[^1], "nonce")!;
+            return Task.FromResult(new LoopbackResult(null, nonce, null));
+        };
+
+        var result = await provider.SignInAsync(CancellationToken.None);
+
+        Assert.False(result);
+    }
 }

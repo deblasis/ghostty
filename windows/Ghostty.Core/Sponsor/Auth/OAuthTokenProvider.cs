@@ -199,6 +199,105 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
         catch (Exception ex) { _logger.LogDebug(ex, "[sponsor/auth] store delete failed"); }
     }
 
+    private static readonly TimeSpan LoopbackTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// Runs the one-shot OAuth loopback flow: starts the listener,
+    /// opens the browser, awaits the callback, validates nonce and
+    /// JWT shape, persists. Returns true on success. Returns false
+    /// on timeout, user cancel, error query, nonce mismatch, or
+    /// pre-expired JWT. Unexpected exceptions propagate.
+    /// </summary>
+    public async Task<bool> SignInAsync(CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            try
+            {
+                _listener.Start();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[sponsor/auth] loopback bind failed");
+                return false;
+            }
+
+            var nonce = Convert.ToHexString(
+                System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
+            var callback = $"http://127.0.0.1:{_listener.Port}/cb";
+
+            var url = new Uri(
+                $"{_apiBase.GetLeftPart(UriPartial.Authority)}/auth/github/start"
+                + $"?redirect={Uri.EscapeDataString(callback)}"
+                + $"&nonce={nonce}");
+            _browser.Open(url);
+
+            using var timeoutCts = new CancellationTokenSource(LoopbackTimeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            LoopbackResult callbackResult;
+            try
+            {
+                callbackResult = await _listener.AwaitCallbackAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("[sponsor/auth] sign-in timed out or cancelled");
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(callbackResult.Error))
+            {
+                // Log length only - never log raw attacker-supplied query strings.
+                _logger.LogInformation("[sponsor/auth] OAuth error query ({Length} chars)",
+                    callbackResult.Error.Length);
+                return false;
+            }
+
+            if (callbackResult.Nonce != nonce)
+            {
+                _logger.LogWarning("[sponsor/auth] nonce mismatch on callback");
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(callbackResult.Token))
+            {
+                _logger.LogWarning("[sponsor/auth] callback missing token");
+                return false;
+            }
+
+            JwtClaims parsed;
+            try
+            {
+                parsed = JwtClaims.Parse(callbackResult.Token);
+            }
+            catch (AuthException ex)
+            {
+                _logger.LogWarning(ex, "[sponsor/auth] callback returned malformed JWT");
+                return false;
+            }
+
+            if (parsed.ExpiresAt <= _time.GetUtcNow().UtcDateTime)
+            {
+                _logger.LogWarning("[sponsor/auth] callback JWT is pre-expired");
+                return false;
+            }
+
+            await _store.WriteAsync(
+                Encoding.UTF8.GetBytes(callbackResult.Token), ct).ConfigureAwait(false);
+            _cached = callbackResult.Token;
+            _claims = parsed;
+            _logger.LogInformation("[sponsor/auth] sign-in complete (exp {Exp})", parsed.ExpiresAt);
+            RaiseTokenAcquired();
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
