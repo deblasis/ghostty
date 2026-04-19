@@ -267,12 +267,14 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
 
     private void ScheduleNextRefresh()
     {
+        if (_disposed) return;
         if (_claims is null) return;
         var now = _time.GetUtcNow();
         var due = _claims.ExpiresAt - RefreshLead - now.UtcDateTime;
         if (due <= TimeSpan.Zero) due = TimeSpan.Zero;
 
         _refreshTimer?.Dispose();
+        if (_disposed) return;  // double-check after the tiny window between the Dispose call above and here
         _refreshTimer = _time.CreateTimer(
             _ => _ = OnRefreshTickAsync(),
             state: null,
@@ -315,6 +317,7 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             {
                 _logger.LogWarning(ex, "[sponsor/auth] proactive refresh transient; retry in 10m");
                 _refreshTimer?.Dispose();
+                if (_disposed) return;
                 _refreshTimer = _time.CreateTimer(
                     _ => _ = OnRefreshTickAsync(), null,
                     TransientRetry, Timeout.InfiniteTimeSpan);
