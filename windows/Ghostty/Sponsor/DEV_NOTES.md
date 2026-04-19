@@ -1,4 +1,4 @@
-# Sponsor — developer notes
+# Sponsor - developer notes
 
 Smoke procedures for sponsor-gated features across Plan D phases.
 
