@@ -2091,3 +2091,14 @@ test "resolveConptyMode: auto picks conpty for unknown (safe default)" {
     try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "my-custom.exe"));
     try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, ""));
 }
+
+test "resolveConptyMode: auto handles path-prefixed shell" {
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "C:\\Windows\\System32\\cmd.exe"));
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "C:/Program Files/PowerShell/7/pwsh.exe"));
+}
+
+test "resolveConptyMode: auto handles quoted shell" {
+    try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "\"pwsh.exe\""));
+    try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "'cmd.exe'"));
+}
