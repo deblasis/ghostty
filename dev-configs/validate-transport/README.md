@@ -17,6 +17,12 @@ the fixture's `command` value (ghostty wraps commands containing
 `&`, `|`, `(`, `)`, `%`, `!` with `cmd /c`, which mangles the
 PowerShell escapes).
 
+All `command =` values use the full `.exe` suffix (`pwsh.exe`,
+`cmd.exe`). Ghostty's `internal_os.path.expand` does PATH lookup
+with the literal name and does not try PATHEXT-style suffix hunting;
+a bare `pwsh` would fail to resolve to `pwsh.exe` and CreateProcessW
+would error with ERROR_FILE_NOT_FOUND.
+
 Never edit these to chase a test failure. If an expected verdict
 changes, update the assertion table in
 `scripts/validate-transport-assert.ps1` in the same commit.
