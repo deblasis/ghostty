@@ -32,7 +32,10 @@ internal sealed class DesktopBrowserLauncher : IBrowserLauncher
                 UseShellExecute = true,
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                                      or System.IO.FileNotFoundException
+                                      or InvalidOperationException
+                                      or ObjectDisposedException)
         {
             // ShellExecute can fail if no default browser is registered,
             // the URL scheme is blocked by policy, or the shell denies
