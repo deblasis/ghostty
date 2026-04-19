@@ -10,6 +10,7 @@ pub const CloseHandle = windows.CloseHandle;
 pub const GetCurrentProcessId = windows.GetCurrentProcessId;
 pub const SetHandleInformation = windows.SetHandleInformation;
 pub const DWORD = windows.DWORD;
+pub const BOOL = windows.BOOL;
 pub const FILE_ATTRIBUTE_NORMAL = windows.FILE_ATTRIBUTE_NORMAL;
 pub const FILE_FLAG_OVERLAPPED = windows.FILE_FLAG_OVERLAPPED;
 pub const FILE_SHARE_READ = windows.FILE_SHARE_READ;
@@ -83,6 +84,10 @@ pub const exp = struct {
         ) callconv(.winapi) windows.BOOL;
         pub extern "kernel32" fn GetConsoleCP() callconv(.winapi) windows.UINT;
         pub extern "kernel32" fn GetConsoleOutputCP() callconv(.winapi) windows.UINT;
+        pub extern "kernel32" fn SetConsoleCtrlHandler(
+            HandlerRoutine: ?*const fn (windows.DWORD) callconv(.winapi) windows.BOOL,
+            Add: windows.BOOL,
+        ) callconv(.winapi) windows.BOOL;
         // std.os.windows.kernel32 only exposes CreateEventExW; add the
         // classic CreateEventW for overlapped I/O wait events.
         pub extern "kernel32" fn CreateEventW(
