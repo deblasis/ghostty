@@ -393,7 +393,8 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
             {
                 _listener.Start();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is System.Net.HttpListenerException
+                                          or System.Net.Sockets.SocketException)
             {
                 _logger.LogWarning(ex, "[sponsor/auth] loopback bind failed");
                 return false;
