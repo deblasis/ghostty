@@ -82,7 +82,15 @@ public partial class App : Application
 
     private Ghostty.Core.Sponsor.Auth.OAuthTokenProvider BuildTokenProvider()
     {
-        _sponsorAuthHttp = new System.Net.Http.HttpClient
+        // AllowAutoRedirect=false so the bearer JWT is not forwarded to a
+        // redirected host if api.wintty.io ever returns a 302. WinttyAuthClient
+        // expects direct 2xx from /auth/refresh and /auth/revoke; any 3xx is
+        // surfaced as AuthErrorKind.ServerError.
+        _sponsorAuthHttp = new System.Net.Http.HttpClient(
+            new System.Net.Http.SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+            })
         {
             Timeout = System.TimeSpan.FromSeconds(30),
         };
