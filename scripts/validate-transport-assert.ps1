@@ -19,7 +19,8 @@
 #>
 param(
     [Parameter(Mandatory)][string]$Row,
-    [string]$LogDir = "$env:LOCALAPPDATA\Ghostty\logs"
+    [string]$LogDir = "$env:LOCALAPPDATA\Ghostty\logs",
+    [string]$Since
 )
 $ErrorActionPreference = 'Stop'
 
@@ -49,6 +50,14 @@ if (-not $log) {
 }
 
 $lines = Get-Content -LiteralPath $log.FullName
+
+# Filter to entries emitted on or after -Since so earlier runs in the
+# same log file cannot contaminate the result. Log lines begin with
+# "YYYY-MM-DDTHH:MM:SS.fffZ |"; compare lexicographically against the
+# caller-provided ISO-8601 UTC timestamp.
+if ($PSBoundParameters.ContainsKey('Since') -and $Since) {
+    $lines = $lines | Where-Object { $_.Length -ge 24 -and $_.Substring(0, 24) -ge $Since }
+}
 
 # Verdict: "transport resolved: shell=\"...\" config_mode=<mode> resolved=<transport>"
 $verdictMatch = $lines |

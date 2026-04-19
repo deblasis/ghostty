@@ -57,7 +57,11 @@ $originalXdg = if ($originalXdgSet) { $env:XDG_CONFIG_HOME } else { $null }
 
 try {
     $env:XDG_CONFIG_HOME = $tempXdg
-    Write-Host "launching: $ExePath (XDG_CONFIG_HOME=$tempXdg)"
+    # Capture UTC start time at millisecond precision so the assertion
+    # can filter log entries to just this run's window. Log lines are
+    # "YYYY-MM-DDTHH:MM:SS.fffZ | ..." so a lexical >= comparison works.
+    $runStart = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    Write-Host "launching: $ExePath (XDG_CONFIG_HOME=$tempXdg) since=$runStart"
     $proc = Start-Process -FilePath $ExePath -PassThru
     $exited = $proc.WaitForExit($TimeoutMs)
     if (-not $exited) {
@@ -73,7 +77,7 @@ try {
         Write-Host "app exited with code $($proc.ExitCode); running assertion"
     }
 
-    pwsh -NoProfile -File scripts/validate-transport-assert.ps1 -Row $Row
+    pwsh -NoProfile -File scripts/validate-transport-assert.ps1 -Row $Row -Since $runStart
     exit $LASTEXITCODE
 }
 finally {
