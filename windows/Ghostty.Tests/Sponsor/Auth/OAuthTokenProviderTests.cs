@@ -130,4 +130,104 @@ public partial class OAuthTokenProviderTests
 
         Assert.Equal(1, fired);
     }
+
+    // ---------------------------------------------------------------
+    // Task 9 tests: InitializeAsync
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public async Task InitializeAsync_WithEnvVar_LoadsVerbatimSkipsStore()
+    {
+        var time = new FakeTime { Now = DateTimeOffset.UtcNow };
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        var (provider, store, _, _, _, _) = Build(envOverride: jwt);
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Equal(jwt, await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(0, store.Reads);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithNoStoredBlob_StaysNoToken()
+    {
+        var (provider, store, _, _, _, _) = Build();
+        store.Bytes = null;
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Reads);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithValidStoredBlob_LoadsIntoCache()
+    {
+        var (provider, store, _, _, _, time) = Build();
+        var jwt = MakeJwt(time, secondsFromNow: 3600);
+        store.Bytes = Encoding.UTF8.GetBytes(jwt);
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Equal(jwt, await provider.GetTokenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithExpiredButRefreshableBlob_RefreshesAndReplaces()
+    {
+        var (provider, store, _, _, handler, time) = Build();
+        var oldJwt = MakeJwt(time, secondsFromNow: -3600);
+        store.Bytes = Encoding.UTF8.GetBytes(oldJwt);
+        var newJwt = MakeJwt(time, secondsFromNow: 3600);
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"token":"{{newJwt}}"}""",
+                Encoding.UTF8, "application/json"),
+        };
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Equal(newJwt, await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Writes);
+        Assert.Equal(newJwt, Encoding.UTF8.GetString(store.Bytes!));
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithStaleBlobPast24h_DeletesAndStaysNoToken()
+    {
+        var (provider, store, _, _, _, time) = Build();
+        var stale = MakeJwt(time, secondsFromNow: -48 * 3600);
+        store.Bytes = Encoding.UTF8.GetBytes(stale);
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Deletes);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithMalformedBlob_DeletesAndStaysNoToken()
+    {
+        var (provider, store, _, _, _, _) = Build();
+        store.Bytes = Encoding.UTF8.GetBytes("not-a-jwt");
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Deletes);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_RefreshFailsUnauthorized_DeletesAndStaysNoToken()
+    {
+        var (provider, store, _, _, handler, time) = Build();
+        var expired = MakeJwt(time, secondsFromNow: -60);
+        store.Bytes = Encoding.UTF8.GetBytes(expired);
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+        await provider.InitializeAsync(CancellationToken.None);
+
+        Assert.Null(await provider.GetTokenAsync(CancellationToken.None));
+        Assert.Equal(1, store.Deletes);
+    }
 }
