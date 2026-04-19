@@ -41,10 +41,10 @@ pub const Preamble = enum {
     pwsh,
 
     /// Argv elements to append after the user's existing argv so that
-    /// the configured shell runs the UTF-8 setup at startup.
-    /// Returns a slice of string literals owned by `.rodata`; callers
-    /// that need sentinel-terminated copies must dupe.
-    pub fn suffix(self: Preamble) []const []const u8 {
+    /// the configured shell runs the UTF-8 setup at startup. String
+    /// literals live in `.rodata`, so callers using an arena for argv
+    /// can append the returned slices directly without duping.
+    pub fn suffix(self: Preamble) []const [:0]const u8 {
         return switch (self) {
             .none => &.{},
             .cmd => &cmd_suffix,
@@ -52,8 +52,8 @@ pub const Preamble = enum {
         };
     }
 
-    const cmd_suffix = [_][]const u8{ "/K", "chcp 65001 >nul" };
-    const pwsh_suffix = [_][]const u8{
+    const cmd_suffix = [_][:0]const u8{ "/K", "chcp 65001 >nul" };
+    const pwsh_suffix = [_][:0]const u8{
         "-NoExit",
         "-Command",
         // Set both output *and* input encodings: the output side fixes

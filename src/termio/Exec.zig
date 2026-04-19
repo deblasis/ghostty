@@ -1921,9 +1921,10 @@ fn maybeInjectUtf8Preamble(
     const suffix = preamble.suffix();
     const out = try alloc.alloc([:0]const u8, args.len + suffix.len);
     @memcpy(out[0..args.len], args);
-    for (suffix, 0..) |s, i| {
-        out[args.len + i] = try alloc.dupeZ(u8, s);
-    }
+    // The suffix elements are `.rodata` string literals; they outlive
+    // any arena and spawning reads them during CreateProcess. No dupe
+    // needed, matching how `"/C"` is appended inline elsewhere here.
+    @memcpy(out[args.len..], suffix);
     return out;
 }
 
