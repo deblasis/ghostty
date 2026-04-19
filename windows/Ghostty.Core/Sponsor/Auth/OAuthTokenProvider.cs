@@ -403,6 +403,12 @@ internal sealed class OAuthTokenProvider : ISponsorTokenProvider, IDisposable
                 return false;
             }
 
+            // The Worker's /auth/github/start endpoint takes a `nonce` query param
+            // and echoes it verbatim in the final /cb 302. This is an ADDITIONAL
+            // CSRF defense on top of the OAuth `state` param (which the Worker
+            // owns end-to-end and HS256-signs with its own secret). The client
+            // never touches OAuth `state`; our `nonce` is the client-local replay
+            // guard against a rogue local process racing the real callback.
             var nonce = Convert.ToHexString(
                 System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
             var callback = $"http://127.0.0.1:{_listener.Port}/cb";
