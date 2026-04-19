@@ -98,10 +98,7 @@ public partial class App : Application
         var localAppData = System.Environment.GetFolderPath(
             System.Environment.SpecialFolder.LocalApplicationData);
         var authDir = System.IO.Path.Combine(localAppData, "Ghostty");
-        // App-specific entropy salt; not a secret. Bounds the DPAPI
-        // envelope to this app so other user-scoped applications can't
-        // Unprotect with the default (empty) entropy.
-        var entropy = System.Text.Encoding.UTF8.GetBytes("wintty-sponsor-jwt-v1");
+        var entropy = Ghostty.Core.Sponsor.Auth.DpapiJwtStore.DefaultEntropy;
 
         var store    = new Ghostty.Core.Sponsor.Auth.DpapiJwtStore(authDir, entropy);
         var browserLogger = _loggerFactory?.CreateLogger<Ghostty.Core.Sponsor.Auth.DesktopBrowserLauncher>()

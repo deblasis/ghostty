@@ -17,6 +17,23 @@ namespace Ghostty.Core.Sponsor.Auth;
 [SupportedOSPlatform("windows")]
 internal sealed class DpapiJwtStore : IJwtStore
 {
+    /// <summary>
+    /// Label embedded in the DPAPI entropy blob. Not a secret; bounds
+    /// the envelope to this app so other user-scoped applications
+    /// calling ProtectedData.Unprotect with default entropy can't read
+    /// our JWT. Increment the -vN suffix if the JWT format ever
+    /// changes in a backwards-incompatible way.
+    /// </summary>
+    public const string EntropyLabelV1 = "wintty-sponsor-jwt-v1";
+
+    /// <summary>
+    /// Default entropy bytes for DPAPI encryption. Callers building a
+    /// DpapiJwtStore pass <see cref="DefaultEntropy"/>; the constant
+    /// is exposed so the App wiring doesn't have to duplicate the literal.
+    /// </summary>
+    public static readonly byte[] DefaultEntropy =
+        System.Text.Encoding.UTF8.GetBytes(EntropyLabelV1);
+
     private const string FileName = "auth.bin";
     private const string PartialSuffix = ".partial";
 
