@@ -281,10 +281,12 @@ pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
 
     exec.read_thread.join();
 
-    // Join the Windows process-exit watcher thread. subprocess.stop() above
-    // already called TerminateProcess + WaitForSingleObject if the process was
-    // still running, so the wait thread will have unblocked and is either done
-    // or nearly done.
+    // Join the Windows process-exit watcher thread. If the child already
+    // exited naturally, winProcessWaitThread has already called
+    // processExitCommon and returned. If we killed it via subprocess.stop()
+    // above, it will call processExitCommon now - the extra child_exited
+    // push is harmless because td is still valid until join() returns and
+    // surface_mailbox is thread-safe.
     if (comptime builtin.os.tag == .windows) {
         if (exec.process_wait_thread) |wt| wt.join();
     }
@@ -335,6 +337,9 @@ pub fn resize(
 fn processExitCommon(td: *termio.Termio.ThreadData, exit_code: u32) void {
     assert(td.backend == .exec);
     const execdata = &td.backend.exec;
+    // Non-atomic write is intentional and matches the POSIX xev-callback-thread
+    // pattern. Single-byte writes are architecturally atomic on x86/ARM and the
+    // read in queueWrite tolerates a stale value for one cycle.
     execdata.exited = true;
 
     // Determine how long the process was running for.
@@ -1401,10 +1406,16 @@ fn winProcessWaitThread(alloc: Allocator, ctx: *WinProcessWaitCtx) void {
     defer alloc.destroy(ctx);
     defer windows.CloseHandle(ctx.handle);
 
-    const result = windows.kernel32.WaitForSingleObject(ctx.handle, windows.INFINITE);
-    if (result == windows.WAIT_FAILED) {
-        log.err("proc-wait: WaitForSingleObject failed err={}", .{windows.kernel32.GetLastError()});
-        return;
+    switch (windows.kernel32.WaitForSingleObject(ctx.handle, windows.INFINITE)) {
+        windows.WAIT_OBJECT_0 => {},
+        windows.WAIT_FAILED => {
+            log.err("proc-wait: WaitForSingleObject failed err={}", .{windows.kernel32.GetLastError()});
+            return;
+        },
+        else => |r| {
+            log.err("proc-wait: WaitForSingleObject unexpected result={x}", .{r});
+            return;
+        },
     }
 
     var exit_code: windows.DWORD = 1;
