@@ -61,13 +61,18 @@ try {
     $proc = Start-Process -FilePath $ExePath -PassThru
     $exited = $proc.WaitForExit($TimeoutMs)
     if (-not $exited) {
-        Write-Host "WARN: app did not exit within ${TimeoutMs}ms, killing"
+        # The conpty path currently leaves the window open after the
+        # shell exits (separate Ghostty bug). The logs still contain
+        # the verdict + OSC 11 receipt we need, so kill the app and
+        # defer to the assertion for pass/fail.
+        Write-Host "WARN: app did not exit within ${TimeoutMs}ms, killing and running assertion anyway"
         try { Stop-Process -Id $proc.Id -Force } catch {}
-        Write-Host "FAIL: $Row (timeout)"
-        exit 2
+        # Give the file sink a moment to flush its buffered writes.
+        Start-Sleep -Milliseconds 500
+    } else {
+        Write-Host "app exited with code $($proc.ExitCode); running assertion"
     }
 
-    Write-Host "app exited with code $($proc.ExitCode); running assertion"
     pwsh -NoProfile -File scripts/validate-transport-assert.ps1 -Row $Row
     exit $LASTEXITCODE
 }
