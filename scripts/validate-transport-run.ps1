@@ -3,11 +3,16 @@
     Run one conpty-mode smoke row end-to-end.
 
 .DESCRIPTION
-    Copies dev-configs/validate-transport/<Row>.conf to a temp file,
-    launches the built Ghostty.exe with --config-file pointing at it,
-    waits up to -TimeoutMs for exit, then invokes
+    Copies dev-configs/validate-transport/<Row>.conf into an isolated
+    XDG_CONFIG_HOME directory (as ghostty/config.ghostty), launches
+    the built Ghostty.exe with XDG_CONFIG_HOME pointing at it, waits
+    up to -TimeoutMs for exit, then invokes
     scripts/validate-transport-assert.ps1 -Row <Row> and exits with
     its exit code.
+
+    The WinUI shell does not honor a --config-file CLI flag - it calls
+    ghostty_config_load_default_files which reads from the XDG path.
+    So we isolate via environment instead of argv.
 
     Assumes the app is already built. Call from `just
     validate-transport-smoke <Row>` which chains the build.
@@ -38,19 +43,41 @@ if (-not (Test-Path $ExePath)) {
     exit 2
 }
 
-$tmpConfig = Join-Path $env:TEMP "ghostty-validate-$Row.conf"
-Copy-Item -LiteralPath $fixturePath -Destination $tmpConfig -Force
+# Isolated XDG_CONFIG_HOME: Ghostty looks up its default config at
+# $XDG_CONFIG_HOME/ghostty/config.ghostty. Stage our fixture there
+# and point the env var at the temp dir.
+$tempXdg = Join-Path $env:TEMP "ghostty-validate-xdg-$Row-$((New-Guid).Guid)"
+$ghosttyDir = Join-Path $tempXdg 'ghostty'
+New-Item -ItemType Directory -Path $ghosttyDir -Force | Out-Null
+$configPath = Join-Path $ghosttyDir 'config.ghostty'
+Copy-Item -LiteralPath $fixturePath -Destination $configPath -Force
 
-Write-Host "launching: $ExePath --config-file=$tmpConfig"
-$proc = Start-Process -FilePath $ExePath -ArgumentList "--config-file=$tmpConfig" -PassThru
-$exited = $proc.WaitForExit($TimeoutMs)
-if (-not $exited) {
-    Write-Host "WARN: app did not exit within ${TimeoutMs}ms, killing"
-    try { Stop-Process -Id $proc.Id -Force } catch {}
-    Write-Host "FAIL: $Row (timeout)"
-    exit 2
+$originalXdgSet = Test-Path Env:XDG_CONFIG_HOME
+$originalXdg = if ($originalXdgSet) { $env:XDG_CONFIG_HOME } else { $null }
+
+try {
+    $env:XDG_CONFIG_HOME = $tempXdg
+    Write-Host "launching: $ExePath (XDG_CONFIG_HOME=$tempXdg)"
+    $proc = Start-Process -FilePath $ExePath -PassThru
+    $exited = $proc.WaitForExit($TimeoutMs)
+    if (-not $exited) {
+        Write-Host "WARN: app did not exit within ${TimeoutMs}ms, killing"
+        try { Stop-Process -Id $proc.Id -Force } catch {}
+        Write-Host "FAIL: $Row (timeout)"
+        exit 2
+    }
+
+    Write-Host "app exited with code $($proc.ExitCode); running assertion"
+    pwsh -NoProfile -File scripts/validate-transport-assert.ps1 -Row $Row
+    exit $LASTEXITCODE
 }
-
-Write-Host "app exited with code $($proc.ExitCode); running assertion"
-pwsh -NoProfile -File scripts/validate-transport-assert.ps1 -Row $Row
-exit $LASTEXITCODE
+finally {
+    if ($originalXdgSet) {
+        $env:XDG_CONFIG_HOME = $originalXdg
+    } else {
+        Remove-Item Env:XDG_CONFIG_HOME -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $tempXdg) {
+        Remove-Item -LiteralPath $tempXdg -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
