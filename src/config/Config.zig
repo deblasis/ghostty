@@ -2856,8 +2856,6 @@ keybind: Keybinds = .{},
 /// Console API programs. Resize signalling under bypass is
 /// best-effort via CSI 8;rows;cols t; use `conpty-mode = never` if
 /// precise resize behavior matters.
-///
-/// Available since: <next version>
 @"conpty-mode": if (builtin.os.tag == .windows) ConptyMode else void =
     if (builtin.os.tag == .windows) .auto else {},
 

@@ -6,12 +6,12 @@
 //! Win32 Console API. A shell can be recognized here without being
 //! recognized there (e.g. `wsl.exe`) and vice versa.
 //!
-//! Ported 1:1 from the merged C# ShellDetector in
-//! windows/Ghostty.Core/Shell/ShellDetector.cs (PR # 266). Keep the
-//! two tables in sync until the C# side is retired.
+//! The C# port at windows/Ghostty.Core/Shell/ShellDetector.cs keeps
+//! the same table; edit both together until the C# side is retired.
 
 const std = @import("std");
 const testing = std.testing;
+const log = std.log.scoped(.windows_shell);
 
 pub const Awareness = enum {
     unknown,
@@ -62,7 +62,11 @@ pub fn classify(exe_path: []const u8) Awareness {
 
     // StaticStringMap is case-sensitive; lowercase into a stack buffer.
     var buf: [64]u8 = undefined;
-    if (base.len > buf.len) return .unknown;
+    if (base.len > buf.len) {
+        // Any realistic shell basename fits; log for diagnosability.
+        log.debug("shell basename too long ({d}B) - treating as unknown", .{base.len});
+        return .unknown;
+    }
     const lower = std.ascii.lowerString(buf[0..base.len], base);
 
     return known.get(lower) orelse .unknown;

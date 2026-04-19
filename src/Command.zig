@@ -388,8 +388,8 @@ fn startWindows(self: *Command, arena: Allocator) !void {
         @memcpy(handles, unique[0..unique_len]);
 
         // lpValue for PROC_THREAD_ATTRIBUTE_HANDLE_LIST is the handles
-        // array pointer passed BY VALUE (not by ref) - the same lesson
-        // PR # 270 enforced for PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE.
+        // array pointer passed BY VALUE (not by ref), matching how
+        // PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE above passes `pseudo_console`.
         if (windows.exp.kernel32.UpdateProcThreadAttribute(
             attribute_list_buf.ptr,
             0,

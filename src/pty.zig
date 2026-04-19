@@ -498,19 +498,22 @@ const WindowsPty = struct {
 
     /// Bypass-mode resize signal: write `CSI 8 ; rows ; cols t` (XTWINOPS)
     /// to the parent-side input pipe so that a VT-aware child parses it
-    /// as a size change. Full resize parity (SIGWINCH via WSL interop,
-    /// per-shell signalling) is a follow-up (# 263 section 5).
+    /// as a size change.
     ///
-    /// Best-effort: if the child isn't reading we don't want to stall
-    /// the UI thread, so the overlapped WriteFile is bounded by a 100 ms
-    /// wait; on timeout we cancel the I/O and log a warning.
-    fn writeResizeSequence(self: *Pty, size: winsize) SetSizeError!void {
+    /// Best-effort by design: if the child isn't reading we don't want
+    /// to stall the UI thread, so the overlapped WriteFile is bounded
+    /// by a 100 ms wait and any failure is logged, not returned. Full
+    /// resize parity (SIGWINCH via WSL interop, per-shell signalling)
+    /// is a deferred follow-up.
+    fn writeResizeSequence(self: *Pty, size: winsize) void {
         var buf: [32]u8 = undefined;
+        // 32 bytes fits any "\x1b[8;rows;cols t" for u16 dimensions,
+        // so bufPrint cannot actually fail. Treat as unreachable.
         const seq = std.fmt.bufPrint(
             &buf,
             "\x1b[8;{d};{d}t",
             .{ size.ws_row, size.ws_col },
-        ) catch return error.ResizeFailed;
+        ) catch unreachable;
 
         var overlapped = std.mem.zeroes(windows.OVERLAPPED);
         overlapped.hEvent = windows.exp.kernel32.CreateEventW(
@@ -519,7 +522,10 @@ const WindowsPty = struct {
             windows.FALSE,
             null,
         );
-        if (overlapped.hEvent == null) return error.ResizeFailed;
+        if (overlapped.hEvent == null) {
+            log.warn("bypass resize signal: CreateEventW failed", .{});
+            return;
+        }
         defer _ = windows.CloseHandle(overlapped.hEvent.?);
 
         var written: windows.DWORD = 0;
@@ -569,10 +575,9 @@ const WindowsPty = struct {
                 );
                 if (result != windows.S_OK) return error.ResizeFailed;
             },
-            .bypass => self.writeResizeSequence(size) catch |err| {
-                log.warn("bypass resize write error: {}", .{err});
-                // Fall through: update self.size regardless.
-            },
+            // Best-effort: any transport failure is logged inside
+            // writeResizeSequence; we still record `self.size` below.
+            .bypass => self.writeResizeSequence(size),
         }
         self.size = size;
     }
