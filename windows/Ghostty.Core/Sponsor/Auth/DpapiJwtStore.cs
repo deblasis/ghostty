@@ -36,45 +36,55 @@ internal sealed class DpapiJwtStore : IJwtStore
     private string Target  => Path.Combine(_root, FileName);
     private string Partial => Path.Combine(_root, FileName + PartialSuffix);
 
-    public Task<byte[]?> ReadAsync(CancellationToken ct)
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT",
+        "IL3050:RequiresDynamicCode",
+        Justification = "ProtectedData.Protect/Unprotect are trim-safe P/Invoke wrappers; no dynamic codegen.")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "ProtectedData.Protect/Unprotect do not require reflection on application types.")]
+    public async Task<byte[]?> ReadAsync(CancellationToken ct)
     {
         if (!File.Exists(Target))
-            return Task.FromResult<byte[]?>(null);
+            return null;
 
         try
         {
-            var encrypted = File.ReadAllBytes(Target);
-#pragma warning disable IL2026, IL3050
-            // ProtectedData is Windows-only and trim-safe in practice.
+            var encrypted = await File.ReadAllBytesAsync(Target, ct).ConfigureAwait(false);
+            // Note: ProtectedData.Unprotect has no async equivalent. It is a
+            // fast in-memory call (microseconds for our ~1KB JWT) so the
+            // sync call on the awaiting thread is fine.
             var plain = ProtectedData.Unprotect(encrypted, _entropy, DataProtectionScope.CurrentUser);
-#pragma warning restore IL2026, IL3050
-            return Task.FromResult<byte[]?>(plain);
+            return plain;
         }
         catch (CryptographicException)
         {
             // Entropy mismatch, corrupted blob, or a different user's
             // session. Treat as "no valid token" and let the caller
             // decide whether to delete.
-            return Task.FromResult<byte[]?>(null);
+            return null;
         }
         catch (IOException)
         {
-            return Task.FromResult<byte[]?>(null);
+            return null;
         }
     }
 
-    public Task WriteAsync(byte[] utf8Token, CancellationToken ct)
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT",
+        "IL3050:RequiresDynamicCode",
+        Justification = "ProtectedData.Protect/Unprotect are trim-safe P/Invoke wrappers; no dynamic codegen.")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "ProtectedData.Protect/Unprotect do not require reflection on application types.")]
+    public async Task WriteAsync(byte[] utf8Token, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(utf8Token);
 
-#pragma warning disable IL2026, IL3050
-        // ProtectedData is Windows-only and trim-safe in practice.
         var encrypted = ProtectedData.Protect(utf8Token, _entropy, DataProtectionScope.CurrentUser);
-#pragma warning restore IL2026, IL3050
-        File.WriteAllBytes(Partial, encrypted);
-        // File.Move with overwrite:true is atomic on NTFS.
+        await File.WriteAllBytesAsync(Partial, encrypted, ct).ConfigureAwait(false);
+        // File.Move with overwrite:true is atomic on NTFS when source and
+        // target are on the same volume. LocalApplicationData lives on the
+        // user profile drive, so Partial and Target are always co-located.
         File.Move(Partial, Target, overwrite: true);
-        return Task.CompletedTask;
     }
 
     public Task DeleteAsync(CancellationToken ct)
