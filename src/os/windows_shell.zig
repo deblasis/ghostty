@@ -59,16 +59,31 @@ pub const Preamble = enum {
     /// terminator the shell needs so the caller can just concatenate it
     /// in front of the user's script. See `suffix` for the
     /// non-conflicting argv-append form.
+    ///
+    /// SECURITY: the returned strings are compile-time constants. Do
+    /// not interpolate user input into a new prefix string - that
+    /// would turn this into a shell-injection sink.
+    ///
+    /// The pwsh prefix uses `[System.Text.UTF8Encoding]::new()` whose
+    /// parameterless ctor defaults to `encoderShouldEmitUTF8Identifier
+    /// = false` (no BOM) and `throwOnInvalidBytes = false` (lenient
+    /// decode - U+FFFD substitution on malformed bytes). Both are the
+    /// right choice for a terminal; do not switch to
+    /// `[Encoding]::UTF8` or a stricter ctor without understanding the
+    /// BOM side effects on piped output.
     pub fn prefix(self: Preamble) []const u8 {
         return switch (self) {
             .none => "",
-            // cmd's `&&` runs the user's script only if chcp succeeded;
-            // `>nul` silences the "Active code page: 65001" banner so
-            // the user's first line of output isn't displaced.
+            // cmd's `&&` only runs the user's script when chcp
+            // succeeded. chcp 65001 has no failure modes on supported
+            // Windows SKUs; the `&&` variant matches the shell-wrap
+            // path in Exec.zig so both entrypoints behave identically
+            // if a future SKU ever breaks chcp. `>nul` silences the
+            // "Active code page: 65001" banner.
             .cmd => "chcp 65001 >nul && ",
-            // `;` chains statements in PowerShell; we set output first
-            // so any error in input assignment doesn't leave the pane
-            // half-configured. See `suffix` for why both directions.
+            // `;` chains statements in PowerShell. Output encoding
+            // first, then input so piped stdout and redirected stdin
+            // match. See `suffix` for why we set both.
             .pwsh => "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::InputEncoding = [Console]::OutputEncoding; ",
         };
     }

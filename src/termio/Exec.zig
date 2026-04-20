@@ -1922,11 +1922,24 @@ fn maybeInjectUtf8Preamble(
     // UTF-8 by *wrapping* their script instead of appending to argv.
     // For `-File` and `-EncodedCommand` that's not feasible (modifying
     // a script file or re-encoding base64 is too brittle); we bail and
-    // log so users can see why their preamble was skipped.
+    // log so users can see why their preamble was skipped. For pwsh
+    // scripts whose first non-whitespace token must stay first-
+    // statement (`param(...)`, `#requires`, `{ ... }`) we also bail,
+    // because prepending demotes those constructs silently.
     switch (findPreambleConflict(args, preamble)) {
         .none => return appendSuffix(alloc, args, preamble),
         .cmd_script => |idx| return wrapScript(alloc, args, idx, preamble.prefix()),
-        .pwsh_command => |idx| return wrapScript(alloc, args, idx, preamble.prefix()),
+        .pwsh_command => |idx| {
+            if (pwshTailRequiresFirstStatement(args[idx + 1 ..])) |reason| {
+                log.debug(
+                    "UTF-8 preamble skipped: pwsh -Command script starts with {s} " ++
+                        "which must remain the first statement",
+                    .{reason},
+                );
+                return args;
+            }
+            return wrapScript(alloc, args, idx, preamble.prefix());
+        },
         .pwsh_file, .pwsh_encoded_command => |idx| {
             log.debug(
                 "UTF-8 preamble skipped: arg[{d}]=\"{s}\" consumes the user script opaquely",
@@ -1935,6 +1948,40 @@ fn maybeInjectUtf8Preamble(
             return args;
         },
     }
+}
+
+/// If the first tail arg's leading token is a pwsh construct that must
+/// sit at the top of the script (`param(...)`, `#requires`, or a bare
+/// `{ ... }` scriptblock literal), return a short description for the
+/// skip log. Returns null when prepending our setup is safe.
+///
+/// Rationale:
+/// - `param(...)` must be the first statement in a script; moving it
+///   lower causes `The param statement can only be used as the first
+///   statement in the body of a script`.
+/// - `#requires -Version X` directives only take effect when they sit
+///   on the first non-comment line; otherwise they are parsed as
+///   comments and silently no-op.
+/// - A leading `{ ... }` at the top of a `-Command` script is
+///   interpreted as a scriptblock *literal* expression (its value is
+///   produced and discarded). Our prepend would not change the meaning
+///   here but would suppress whatever the user was hoping to observe;
+///   the safer choice is to leave their argv as-is.
+fn pwshTailRequiresFirstStatement(tail: []const [:0]const u8) ?[]const u8 {
+    if (tail.len == 0) return null;
+    const first = std.mem.trimLeft(u8, tail[0], " \t\r\n");
+    if (first.len == 0) return null;
+    if (first[0] == '{') return "a scriptblock literal";
+    if (asciiStartsWithIgnoreCase(first, "#requires")) return "a #requires directive";
+    if (asciiStartsWithIgnoreCase(first, "param(") or
+        asciiStartsWithIgnoreCase(first, "param ("))
+        return "a param() block";
+    return null;
+}
+
+fn asciiStartsWithIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (haystack.len < needle.len) return false;
+    return std.ascii.eqlIgnoreCase(haystack[0..needle.len], needle);
 }
 
 /// Append the preamble's argv suffix to `args`. Caller owns the result.
@@ -1961,10 +2008,15 @@ fn appendSuffix(
 /// `windowsCreateCommandLine` in Command.zig) so args that originally
 /// contained spaces or quotes round-trip correctly: tokens like
 /// `C:\Program Files` are re-wrapped in quotes when joined back.
-/// Both cmd.exe (`/C`/`/K` re-reads the full command line after the
-/// flag, using MS-C-runtime parsing internally) and pwsh (`-Command`
-/// concatenates the remaining positional args, treating quoted runs as
-/// single tokens) then see the same token structure the user supplied.
+///
+/// The resulting command line survives cmd's two-rule `/C` interaction
+/// documented in `cmd /?`: when our wrapped arg contains any embedded
+/// quotes (because we re-quoted a path with spaces), `lpCommandLine`
+/// has inner `"` characters and cmd falls into rule 1 ("preserve
+/// quoting as seen"). When it contains none, the outermost quoting
+/// `windowsCreateCommandLine` adds is trivially symmetric and rule 2
+/// ("strip outer quotes") is safe to apply. Either way cmd sees the
+/// same tokens the user originally wrote.
 ///
 /// When `flag_idx+1 == args.len` (flag is the last arg, so there is
 /// nothing to wrap) we leave argv alone rather than fabricate a bare
@@ -1979,28 +2031,48 @@ fn wrapScript(
     const tail = args[flag_idx + 1 ..];
     if (tail.len == 0) return args;
 
-    var buf: std.Io.Writer.Allocating = .init(alloc);
-    defer buf.deinit();
-    const writer = &buf.writer;
+    // `std.Io.Writer.Allocating`'s drain can only fail with
+    // `error.WriteFailed`, and the backing is our own allocator, so
+    // the only realistic cause is OOM. Fold the single inner function
+    // into one `catch` to keep the hot path readable.
+    const wrapped = buildWrappedScript(alloc, prefix_text, tail) catch
+        return error.OutOfMemory;
 
-    writer.writeAll(prefix_text) catch return Allocator.Error.OutOfMemory;
-    for (tail, 0..) |arg, i| {
-        if (i > 0) writer.writeByte(' ') catch return Allocator.Error.OutOfMemory;
-        writeQuotedArg(writer, arg) catch return Allocator.Error.OutOfMemory;
-    }
-
-    const wrapped = buf.toOwnedSliceSentinel(0) catch return Allocator.Error.OutOfMemory;
     const out = try alloc.alloc([:0]const u8, head.len + 1);
     @memcpy(out[0..head.len], head);
     out[head.len] = wrapped;
     return out;
 }
 
+fn buildWrappedScript(
+    alloc: Allocator,
+    prefix_text: []const u8,
+    tail: []const [:0]const u8,
+) ![:0]u8 {
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    errdefer buf.deinit();
+    const writer = &buf.writer;
+
+    try writer.writeAll(prefix_text);
+    for (tail, 0..) |arg, i| {
+        if (i > 0) try writer.writeByte(' ');
+        try writeQuotedArg(writer, arg);
+    }
+    return try buf.toOwnedSliceSentinel(0);
+}
+
 /// Serialize `arg` into `writer` using the MS C runtime quoting rules
 /// (CommandLineToArgvW inverse). Matches `windowsCreateCommandLine` in
-/// Command.zig - we duplicate here rather than cross-module to avoid
-/// leaking an internal helper, and the per-arg surface area is small
-/// enough that drift is easy to audit.
+/// Command.zig byte-for-byte; we duplicate here rather than cross-
+/// module to avoid leaking an internal helper, and the per-arg surface
+/// area is small enough that drift is easy to audit.
+///
+/// Note cmd.exe uses its OWN parser for `/C` tokenization (special
+/// chars `& | < > ^ ( )`, not CRT-style backslash escaping). The round
+/// trip works here because each individual arg survives both parsers
+/// identically: our quoted output has no unescaped cmd metacharacters,
+/// and cmd's rules don't consume backslashes. Do not extend this to
+/// emit cmd-specific escape sequences without adding tests.
 fn writeQuotedArg(writer: *std.Io.Writer, arg: []const u8) !void {
     if (std.mem.indexOfAny(u8, arg, " \t\n\"") == null) {
         try writer.writeAll(arg);
@@ -2831,6 +2903,160 @@ test "execCommand windows: pwsh with trailing -Command (no script) leaves args u
     try testing.expectEqual(@as(usize, 2), result.len);
     try testing.expectEqualStrings("pwsh.exe", result[0]);
     try testing.expectEqualStrings("-Command", result[1]);
+}
+
+test "writeQuotedArg: MS C runtime quoting edge cases" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Case = struct { in: []const u8, out: []const u8 };
+    const cases: []const Case = &.{
+        // No whitespace or quotes: pass through untouched.
+        .{ .in = "hello", .out = "hello" },
+        // Embedded space: wrap whole arg in quotes.
+        .{ .in = "C:\\Program Files", .out = "\"C:\\Program Files\"" },
+        // Embedded tab/newline: still quotes.
+        .{ .in = "a\tb", .out = "\"a\tb\"" },
+        // Embedded quote: escape as \", no outer backslash needed.
+        .{ .in = "a\"b", .out = "\"a\\\"b\"" },
+        // Trailing backslash in a quoted arg: double the backslash run
+        // so the closing quote isn't escaped.
+        .{ .in = "foo bar\\", .out = "\"foo bar\\\\\"" },
+        // Backslash-quote sequence: 2n+1 backslashes before the quote.
+        .{ .in = "a\\\"b c", .out = "\"a\\\\\\\"b c\"" },
+    };
+
+    for (cases) |c| {
+        var buf: std.Io.Writer.Allocating = .init(alloc);
+        defer buf.deinit();
+        try writeQuotedArg(&buf.writer, c.in);
+        try testing.expectEqualStrings(c.out, buf.writer.buffered());
+    }
+}
+
+test "execCommand windows: cmd with trailing /c (no script) leaves args untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(arena.allocator(), "cmd.exe /c", .never);
+
+    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqualStrings("cmd.exe", result[0]);
+    try testing.expectEqualStrings("/c", result[1]);
+}
+
+test "execCommand windows: pwsh -Command with param() is left untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // Prepending `[Console]::...; ` would demote the param() block out
+    // of first-statement position and break pwsh's parse. The skip
+    // branch is preferred: user keeps their script, we log why the
+    // preamble was not injected.
+    //
+    // We build argv directly because the string-shell path triggers
+    // `windowsShellNeedsCmdWrapping` on `(` / `)` and would re-route
+    // through cmd.exe, which is a separate code path with its own
+    // chcp prepend (covered by other tests).
+    const result = try execCommand(
+        arena.allocator(),
+        .{ .direct = &.{
+            "pwsh.exe",
+            "-Command",
+            "param($x) Write-Host $x",
+        } },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+        .never,
+    );
+
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
+    try testing.expectEqualStrings("param($x) Write-Host $x", result[2]);
+}
+
+test "execCommand windows: pwsh -Command with #requires is left untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `#requires -Version 7` must be the first non-comment/non-blank
+    // line; prepending `[Console]::...; ` silently demotes it to a
+    // plain comment.
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -Command \"#requires -Version 7\"",
+        .never,
+    );
+
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
+    try testing.expectEqualStrings("#requires -Version 7", result[2]);
+}
+
+test "execCommand windows: pwsh -Command with leading scriptblock is left untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `-Command "{ Get-Date }"` is unusual but legal; prepending our
+    // setup would turn the scriptblock into a discarded literal value
+    // rather than something that executes.
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -Command \"{ Get-Date }\"",
+        .never,
+    );
+
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
+    try testing.expectEqualStrings("{ Get-Date }", result[2]);
+}
+
+test "execCommand windows: pwsh -Command with leading whitespace + param is left untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // Detection must trim leading whitespace, otherwise a formatted
+    // `-Command "  param(...)"` silently regresses. Use direct argv
+    // so `(`/`)` don't route through the cmd-wrap path.
+    const result = try execCommand(
+        arena.allocator(),
+        .{ .direct = &.{
+            "pwsh.exe",
+            "-Command",
+            "  param($x) 'ok'",
+        } },
+        struct {
+            fn get(_: Allocator) !PasswdEntry {
+                return .{};
+            }
+        },
+        .never,
+    );
+
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
+    try testing.expectEqualStrings("  param($x) 'ok'", result[2]);
 }
 
 test "execCommand windows: pwsh with benign args gets appended preamble" {
