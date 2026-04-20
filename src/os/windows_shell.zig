@@ -52,6 +52,27 @@ pub const Preamble = enum {
         };
     }
 
+    /// Text to prepend to a user-supplied script when the user already
+    /// consumed the shell's "rest of command line" slot (e.g. `cmd /C
+    /// <script>`, `pwsh -Command <script>`). The returned slice is an
+    /// empty string for `.none`; otherwise it ends in whatever statement
+    /// terminator the shell needs so the caller can just concatenate it
+    /// in front of the user's script. See `suffix` for the
+    /// non-conflicting argv-append form.
+    pub fn prefix(self: Preamble) []const u8 {
+        return switch (self) {
+            .none => "",
+            // cmd's `&&` runs the user's script only if chcp succeeded;
+            // `>nul` silences the "Active code page: 65001" banner so
+            // the user's first line of output isn't displaced.
+            .cmd => "chcp 65001 >nul && ",
+            // `;` chains statements in PowerShell; we set output first
+            // so any error in input assignment doesn't leave the pane
+            // half-configured. See `suffix` for why both directions.
+            .pwsh => "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::InputEncoding = [Console]::OutputEncoding; ",
+        };
+    }
+
     const cmd_suffix = [_][:0]const u8{ "/K", "chcp 65001 >nul" };
     const pwsh_suffix = [_][:0]const u8{
         "-NoExit",
@@ -288,4 +309,23 @@ test "utf8Preamble: suffix argv matches ConPTY setup contract" {
 
     // none: empty.
     try testing.expectEqual(@as(usize, 0), Preamble.none.suffix().len);
+}
+
+test "utf8Preamble: prefix ends with shell-appropriate separator" {
+    // cmd: `&&` chains on success, preserving the user's script when
+    // chcp somehow fails; trailing space so concatenation doesn't
+    // mash into the user's script.
+    const cmd_prefix = Preamble.cmd.prefix();
+    try testing.expect(std.mem.startsWith(u8, cmd_prefix, "chcp 65001"));
+    try testing.expect(std.mem.endsWith(u8, cmd_prefix, " && "));
+
+    // pwsh: `;` is a statement separator; trailing space keeps the
+    // wrapped script readable in logs.
+    const pwsh_prefix = Preamble.pwsh.prefix();
+    try testing.expect(std.mem.indexOf(u8, pwsh_prefix, "[Console]::OutputEncoding") != null);
+    try testing.expect(std.mem.indexOf(u8, pwsh_prefix, "[Console]::InputEncoding") != null);
+    try testing.expect(std.mem.endsWith(u8, pwsh_prefix, "; "));
+
+    // none: empty.
+    try testing.expectEqualStrings("", Preamble.none.prefix());
 }

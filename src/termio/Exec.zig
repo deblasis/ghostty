@@ -1916,8 +1916,33 @@ fn maybeInjectUtf8Preamble(
 
     const preamble = internal_os.windows_shell.utf8Preamble(args[0]);
     if (preamble == .none) return args;
-    if (preambleArgsConflict(args, preamble)) return args;
 
+    // If the user passed a flag that already consumes "the rest of the
+    // command line" (cmd `/C`/`/K`, pwsh `-Command`), we can still get
+    // UTF-8 by *wrapping* their script instead of appending to argv.
+    // For `-File` and `-EncodedCommand` that's not feasible (modifying
+    // a script file or re-encoding base64 is too brittle); we bail and
+    // log so users can see why their preamble was skipped.
+    switch (findPreambleConflict(args, preamble)) {
+        .none => return appendSuffix(alloc, args, preamble),
+        .cmd_script => |idx| return wrapScript(alloc, args, idx, preamble.prefix()),
+        .pwsh_command => |idx| return wrapScript(alloc, args, idx, preamble.prefix()),
+        .pwsh_file, .pwsh_encoded_command => |idx| {
+            log.debug(
+                "UTF-8 preamble skipped: arg[{d}]=\"{s}\" consumes the user script opaquely",
+                .{ idx, args[idx] },
+            );
+            return args;
+        },
+    }
+}
+
+/// Append the preamble's argv suffix to `args`. Caller owns the result.
+fn appendSuffix(
+    alloc: Allocator,
+    args: []const [:0]const u8,
+    preamble: internal_os.windows_shell.Preamble,
+) Allocator.Error![]const [:0]const u8 {
     const suffix = preamble.suffix();
     const out = try alloc.alloc([:0]const u8, args.len + suffix.len);
     @memcpy(out[0..args.len], args);
@@ -1928,57 +1953,166 @@ fn maybeInjectUtf8Preamble(
     return out;
 }
 
-/// Returns true if the existing argv already contains a flag that
-/// would conflict with our preamble suffix. We bail out in that case
-/// rather than silently duplicating `-Command` / `/C` and breaking
-/// whatever the user configured.
-fn preambleArgsConflict(
+/// Wrap the user-supplied script that sits at `args[flag_idx+1..]` by
+/// prepending `prefix_text` and collapsing the tail into a single argv
+/// element. Produces `args[0..flag_idx+1] ++ [prefix_text ++ tail]`.
+///
+/// The tail is re-serialized with MS-C-runtime quoting rules (matching
+/// `windowsCreateCommandLine` in Command.zig) so args that originally
+/// contained spaces or quotes round-trip correctly: tokens like
+/// `C:\Program Files` are re-wrapped in quotes when joined back.
+/// Both cmd.exe (`/C`/`/K` re-reads the full command line after the
+/// flag, using MS-C-runtime parsing internally) and pwsh (`-Command`
+/// concatenates the remaining positional args, treating quoted runs as
+/// single tokens) then see the same token structure the user supplied.
+///
+/// When `flag_idx+1 == args.len` (flag is the last arg, so there is
+/// nothing to wrap) we leave argv alone rather than fabricate a bare
+/// preamble that would change how the shell interprets the flag.
+fn wrapScript(
+    alloc: Allocator,
+    args: []const [:0]const u8,
+    flag_idx: usize,
+    prefix_text: []const u8,
+) Allocator.Error![]const [:0]const u8 {
+    const head = args[0 .. flag_idx + 1];
+    const tail = args[flag_idx + 1 ..];
+    if (tail.len == 0) return args;
+
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    defer buf.deinit();
+    const writer = &buf.writer;
+
+    writer.writeAll(prefix_text) catch return Allocator.Error.OutOfMemory;
+    for (tail, 0..) |arg, i| {
+        if (i > 0) writer.writeByte(' ') catch return Allocator.Error.OutOfMemory;
+        writeQuotedArg(writer, arg) catch return Allocator.Error.OutOfMemory;
+    }
+
+    const wrapped = buf.toOwnedSliceSentinel(0) catch return Allocator.Error.OutOfMemory;
+    const out = try alloc.alloc([:0]const u8, head.len + 1);
+    @memcpy(out[0..head.len], head);
+    out[head.len] = wrapped;
+    return out;
+}
+
+/// Serialize `arg` into `writer` using the MS C runtime quoting rules
+/// (CommandLineToArgvW inverse). Matches `windowsCreateCommandLine` in
+/// Command.zig - we duplicate here rather than cross-module to avoid
+/// leaking an internal helper, and the per-arg surface area is small
+/// enough that drift is easy to audit.
+fn writeQuotedArg(writer: *std.Io.Writer, arg: []const u8) !void {
+    if (std.mem.indexOfAny(u8, arg, " \t\n\"") == null) {
+        try writer.writeAll(arg);
+        return;
+    }
+    try writer.writeByte('"');
+    var backslash_count: usize = 0;
+    for (arg) |byte| switch (byte) {
+        '\\' => backslash_count += 1,
+        '"' => {
+            try writer.splatByteAll('\\', backslash_count * 2 + 1);
+            try writer.writeByte('"');
+            backslash_count = 0;
+        },
+        else => {
+            try writer.splatByteAll('\\', backslash_count);
+            try writer.writeByte(byte);
+            backslash_count = 0;
+        },
+    };
+    try writer.splatByteAll('\\', backslash_count * 2);
+    try writer.writeByte('"');
+}
+
+/// Which preamble-conflicting flag the user supplied, and where it
+/// sits in argv. The payload index points at the flag itself; the
+/// script argument (if any) sits at `idx + 1`.
+const PreambleConflict = union(enum) {
+    none,
+    /// cmd.exe `/C` or `/K`: everything after is a command string we
+    /// can safely prepend `chcp 65001 >nul && ` to.
+    cmd_script: usize,
+    /// pwsh `-Command`: the tail is a script we can prepend the
+    /// `[Console]::*Encoding = ...` setup to.
+    pwsh_command: usize,
+    /// pwsh `-File`: the tail is a path to a script we must not
+    /// modify. Skip and log.
+    pwsh_file: usize,
+    /// pwsh `-EncodedCommand`: the tail is base64-encoded UTF-16LE.
+    /// Rewriting would need a decode/encode round-trip that's out of
+    /// scope here; skip and log.
+    pwsh_encoded_command: usize,
+};
+
+fn findPreambleConflict(
     args: []const [:0]const u8,
     preamble: internal_os.windows_shell.Preamble,
-) bool {
-    if (args.len <= 1) return false;
+) PreambleConflict {
+    if (args.len <= 1) return .none;
     return switch (preamble) {
-        .none => false,
-        .cmd => for (args[1..]) |arg| {
-            // Only `/C` and `/K` consume "the rest of the command line"
-            // and would swallow our preamble. Single-dash `-c` is not
-            // recognized by cmd.exe.
-            if (arg.len != 2 or arg[0] != '/') continue;
-            const c = std.ascii.toLower(arg[1]);
-            if (c == 'c' or c == 'k') break true;
-        } else false,
-        .pwsh => for (args[1..]) |arg| {
-            if (pwshFlagConflicts(arg)) break true;
-        } else false,
+        .none => .none,
+        .cmd => blk: {
+            for (args[1..], 1..) |arg, i| {
+                // Only `/C` and `/K` consume "the rest of the command
+                // line" and would swallow our preamble. Single-dash
+                // `-c` is not recognized by cmd.exe.
+                if (arg.len != 2 or arg[0] != '/') continue;
+                const c = std.ascii.toLower(arg[1]);
+                if (c == 'c' or c == 'k') break :blk .{ .cmd_script = i };
+            }
+            break :blk .none;
+        },
+        .pwsh => blk: {
+            for (args[1..], 1..) |arg, i| switch (pwshConflictKind(arg)) {
+                .none => {},
+                .command => break :blk .{ .pwsh_command = i },
+                .file => break :blk .{ .pwsh_file = i },
+                .encoded_command => break :blk .{ .pwsh_encoded_command = i },
+            };
+            break :blk .none;
+        },
     };
 }
 
-/// Returns true if `arg` is a PowerShell flag whose presence would
-/// conflict with appending `-NoExit -Command <setup>`. We detect the
-/// flags by prefix because PowerShell accepts any unambiguous prefix
-/// of a flag name (e.g. `-Com` for `-Command`).
-fn pwshFlagConflicts(arg: []const u8) bool {
-    if (arg.len < 2 or arg[0] != '-') return false;
+const PwshConflictKind = enum {
+    none,
+    /// `-Command`, `-c`, or any unambiguous prefix like `-Com`.
+    command,
+    /// `-File`, `-f`, or any unambiguous prefix like `-Fi`.
+    file,
+    /// `-EncodedCommand`, `-ec`, `-enc`, or any unambiguous prefix.
+    encoded_command,
+};
+
+/// Classify a single pwsh/powershell argv element as a preamble
+/// conflict. We match by unambiguous prefix because PowerShell accepts
+/// any prefix of a flag name (e.g. `-Com` resolves to `-Command`).
+fn pwshConflictKind(arg: []const u8) PwshConflictKind {
+    if (arg.len < 2 or arg[0] != '-') return .none;
 
     var buf: [32]u8 = undefined;
     const tail_len = arg.len - 1;
     // Anything longer than a real PS flag name cannot be a conflict.
-    if (tail_len > buf.len) return false;
+    if (tail_len > buf.len) return .none;
     const lower = std.ascii.lowerString(buf[0..tail_len], arg[1..]);
 
-    // Exact matches for short forms and unambiguous 2-letter abbreviations.
-    if (std.mem.eql(u8, lower, "c")) return true;
-    if (std.mem.eql(u8, lower, "f")) return true;
-    if (std.mem.eql(u8, lower, "ec")) return true;
-    if (std.mem.eql(u8, lower, "enc")) return true;
+    // Exact matches for short forms and unambiguous 2-letter
+    // abbreviations. These take precedence over prefix matches.
+    if (std.mem.eql(u8, lower, "c")) return .command;
+    if (std.mem.eql(u8, lower, "f")) return .file;
+    if (std.mem.eql(u8, lower, "ec")) return .encoded_command;
+    if (std.mem.eql(u8, lower, "enc")) return .encoded_command;
 
-    // Prefix matches (length >= 3 avoids colliding with -ConfigurationName
-    // which also starts with -C, or -Format* which starts with -F).
-    if (lower.len >= 3 and std.mem.startsWith(u8, "command", lower)) return true;
-    if (lower.len >= 3 and std.mem.startsWith(u8, "file", lower)) return true;
-    if (lower.len >= 4 and std.mem.startsWith(u8, "encodedcommand", lower)) return true;
+    // Prefix matches. We require length >= 3 for command/file to avoid
+    // colliding with `-ConfigurationName` (starts with -C) or
+    // `-Format*` (starts with -F). `encodedcommand` has `ec` covered
+    // above, so the prefix path starts at length 4 (`-enco`).
+    if (lower.len >= 3 and std.mem.startsWith(u8, "command", lower)) return .command;
+    if (lower.len >= 3 and std.mem.startsWith(u8, "file", lower)) return .file;
+    if (lower.len >= 4 and std.mem.startsWith(u8, "encodedcommand", lower)) return .encoded_command;
 
-    return false;
+    return .none;
 }
 
 /// Get information about the process(es) running within the backend. Returns
@@ -2509,7 +2643,7 @@ test "execCommand windows: always mode (bypass) never injects preamble" {
     try testing.expectEqualStrings("pwsh.exe", pwsh_result[0]);
 }
 
-test "execCommand windows: cmd with existing /c arg skips preamble" {
+test "execCommand windows: cmd with existing /c arg wraps user script" {
     if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
 
     const testing = std.testing;
@@ -2517,17 +2651,37 @@ test "execCommand windows: cmd with existing /c arg skips preamble" {
     defer arena.deinit();
     const result = try testExecWindowsShell(arena.allocator(), "cmd.exe /c echo hi", .auto);
 
-    // User's `/c` already consumes "the rest of the command line";
-    // appending `/K chcp ...` after it would either be ignored by cmd
-    // or parsed as part of the user's echo, so we skip.
-    try testing.expectEqual(@as(usize, 4), result.len);
+    // User's `/c` consumes "the rest of the command line", so we wrap
+    // instead of appending: collapse the tail tokens back into one
+    // script and prepend `chcp 65001 >nul && ` (see issue # 299).
+    try testing.expectEqual(@as(usize, 3), result.len);
     try testing.expectEqualStrings("cmd.exe", result[0]);
     try testing.expectEqualStrings("/c", result[1]);
-    try testing.expectEqualStrings("echo", result[2]);
-    try testing.expectEqualStrings("hi", result[3]);
+    try testing.expectEqualStrings("chcp 65001 >nul && echo hi", result[2]);
 }
 
-test "execCommand windows: pwsh with existing -Command skips preamble" {
+test "execCommand windows: cmd with existing /K arg wraps user script" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "cmd.exe /K title UTF8",
+        .never,
+    );
+
+    // /K keeps the shell interactive after running the script; the
+    // wrap still applies because cmd re-reads everything after /K as
+    // one command line.
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("cmd.exe", result[0]);
+    try testing.expectEqualStrings("/K", result[1]);
+    try testing.expectEqualStrings("chcp 65001 >nul && title UTF8", result[2]);
+}
+
+test "execCommand windows: pwsh with existing -Command wraps user script" {
     if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
 
     const testing = std.testing;
@@ -2539,13 +2693,144 @@ test "execCommand windows: pwsh with existing -Command skips preamble" {
         .never,
     );
 
-    // Duplicating -Command confuses pwsh's arg parser; let the user's
-    // explicit script run as configured.
+    // -Command consumes "the rest of the command line". We collapse
+    // the user's tail tokens back into one script and prepend the
+    // [Console]::*Encoding setup so their script runs UTF-8.
     try testing.expectEqual(@as(usize, 4), result.len);
     try testing.expectEqualStrings("pwsh.exe", result[0]);
     try testing.expectEqualStrings("-NoProfile", result[1]);
     try testing.expectEqualStrings("-Command", result[2]);
-    try testing.expectEqualStrings("Write-Host", result[3]);
+    try testing.expect(std.mem.startsWith(u8, result[3], "[Console]::OutputEncoding"));
+    try testing.expect(std.mem.indexOf(u8, result[3], "[Console]::InputEncoding") != null);
+    try testing.expect(std.mem.endsWith(u8, result[3], "; Write-Host"));
+}
+
+test "execCommand windows: pwsh with multi-token -Command script is joined" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -Command Write-Host hello world",
+        .never,
+    );
+
+    // pwsh joins remaining positional args after `-Command` into the
+    // script; our wrap must match that behavior by space-joining the
+    // tail before prepending the setup.
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
+    try testing.expect(std.mem.endsWith(u8, result[2], "; Write-Host hello world"));
+}
+
+test "execCommand windows: cmd /c with quoted path preserves quoting on wrap" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // The config tokenizer strips the outer quotes, giving us
+    // ["cmd.exe", "/c", "dir", "C:\\Program Files"]. If we space-join
+    // blindly, cmd would see `dir C:\Program Files` and break path
+    // resolution. The wrap must re-quote args containing spaces so
+    // cmd re-tokenizes into `dir "C:\Program Files"` on the inside.
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "cmd.exe /c dir \"C:\\Program Files\"",
+        .auto,
+    );
+
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("cmd.exe", result[0]);
+    try testing.expectEqualStrings("/c", result[1]);
+    try testing.expectEqualStrings(
+        "chcp 65001 >nul && dir \"C:\\Program Files\"",
+        result[2],
+    );
+}
+
+test "execCommand windows: pwsh with -c short form wraps user script" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -c Write-Host",
+        .never,
+    );
+
+    // `-c` is the unambiguous 2-letter short form of -Command; treat
+    // it the same as the long form.
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-c", result[1]);
+    try testing.expect(std.mem.endsWith(u8, result[2], "; Write-Host"));
+}
+
+test "execCommand windows: pwsh with -File leaves args untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -File C:\\scripts\\my.ps1",
+        .never,
+    );
+
+    // We can't safely rewrite a user-supplied script file. Leave argv
+    // intact; a log.debug tells operators why the preamble was
+    // skipped. Users who need UTF-8 in -File scripts set
+    // [Console]::OutputEncoding themselves (documented in issue # 299).
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-File", result[1]);
+    try testing.expectEqualStrings("C:\\scripts\\my.ps1", result[2]);
+}
+
+test "execCommand windows: pwsh with -EncodedCommand leaves args untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -EncodedCommand VwByAGkAdABlAC0ASABvAHMAdAAgAGgAaQA=",
+        .never,
+    );
+
+    // -EncodedCommand takes base64-encoded UTF-16LE. Rewriting would
+    // require a decode/re-encode round-trip; we skip to stay
+    // conservative.
+    try testing.expectEqual(@as(usize, 3), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-EncodedCommand", result[1]);
+}
+
+test "execCommand windows: pwsh with trailing -Command (no script) leaves args untouched" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const result = try testExecWindowsShell(
+        arena.allocator(),
+        "pwsh.exe -Command",
+        .never,
+    );
+
+    // No tail after `-Command`: fabricating one would change whatever
+    // pwsh does by default with a bare flag. Keep argv intact.
+    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+    try testing.expectEqualStrings("-Command", result[1]);
 }
 
 test "execCommand windows: pwsh with benign args gets appended preamble" {
