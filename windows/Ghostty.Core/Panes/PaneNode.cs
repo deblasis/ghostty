@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("wintty")]
+[assembly: InternalsVisibleTo("Wintty")]
 [assembly: InternalsVisibleTo("Ghostty.Tests")]
 
 namespace Ghostty.Core.Panes;
