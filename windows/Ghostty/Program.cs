@@ -15,7 +15,7 @@ namespace Ghostty;
 public static partial class Program
 {
     /// <summary>
-    /// Exit codes for Ghostty.exe. Distinct values let callers
+    /// Exit codes for wintty.exe. Distinct values let callers
     /// (launchers, tests, CI, <c>just run-win</c>) tell apart "refused
     /// to start" from "crashed mid-run". CLI actions
     /// (<c>ghostty +list-themes</c> etc.) bypass this scheme and
