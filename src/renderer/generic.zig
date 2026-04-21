@@ -469,14 +469,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Initialize the front and back textures at 1x1 px, this
                 // is slightly wasteful but it's only done once so whatever.
                 const front_texture = try Texture.init(
-                    api.textureOptions(),
+                    api.renderTargetTextureOptions(),
                     1,
                     1,
                     null,
                 );
                 errdefer front_texture.deinit();
                 const back_texture = try Texture.init(
-                    api.textureOptions(),
+                    api.renderTargetTextureOptions(),
                     1,
                     1,
                     null,
@@ -508,14 +508,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 height: usize,
             ) !void {
                 const front_texture = try Texture.init(
-                    api.textureOptions(),
+                    api.renderTargetTextureOptions(),
                     @intCast(width),
                     @intCast(height),
                     null,
                 );
                 errdefer front_texture.deinit();
                 const back_texture = try Texture.init(
-                    api.textureOptions(),
+                    api.renderTargetTextureOptions(),
                     @intCast(width),
                     @intCast(height),
                     null,

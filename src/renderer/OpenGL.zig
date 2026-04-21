@@ -365,6 +365,10 @@ pub inline fn textureOptions(self: OpenGL) Texture.Options {
     };
 }
 
+pub inline fn renderTargetTextureOptions(self: OpenGL) Texture.Options {
+    return self.textureOptions();
+}
+
 /// Returns the options to use when constructing samplers.
 pub inline fn samplerOptions(self: OpenGL) Sampler.Options {
     _ = self;

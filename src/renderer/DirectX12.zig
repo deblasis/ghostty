@@ -864,6 +864,19 @@ pub inline fn textureOptions(self: DirectX12) Texture.Options {
     };
 }
 
+/// Options for creating textures that serve as both render targets and
+/// shader resources. Used by CustomShaderState for ping-pong textures.
+pub inline fn renderTargetTextureOptions(self: DirectX12) Texture.Options {
+    return .{
+        .device = if (self.dev) |*d| d.device else null,
+        .command_list = self.pending_command_list,
+        .srv_heap = if (self.srv_heap) |*h| @constCast(h) else null,
+        .rtv_heap = if (self.rtv_heap) |*h| @constCast(h) else null,
+        .pixel_format = .B8G8R8A8_UNORM,
+        .render_target = true,
+    };
+}
+
 pub inline fn samplerOptions(self: DirectX12) Sampler.Options {
     return .{
         .device = if (self.dev) |*d| d.device else null,

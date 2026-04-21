@@ -314,6 +314,10 @@ pub inline fn textureOptions(self: Metal) Texture.Options {
     };
 }
 
+pub inline fn renderTargetTextureOptions(self: Metal) Texture.Options {
+    return self.textureOptions();
+}
+
 pub inline fn samplerOptions(self: Metal) Sampler.Options {
     return .{
         .device = self.device,
