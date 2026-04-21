@@ -553,10 +553,8 @@ pub fn initShaders(
     alloc: Allocator,
     custom_shaders: []const [:0]const u8,
 ) !shaders.Shaders {
-    _ = alloc;
-    _ = custom_shaders;
     const dev_device = if (self.dev) |*d| d.device else null;
-    return shaders.Shaders.init(dev_device);
+    return shaders.Shaders.init(dev_device, alloc, custom_shaders);
 }
 
 /// Called by the apprt (via generic.zig) when the surface is resized.
