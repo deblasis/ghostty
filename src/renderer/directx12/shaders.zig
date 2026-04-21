@@ -4,10 +4,13 @@
 //! for all 5 pipelines. GPU data structs are imported from gpu_data.zig.
 const std = @import("std");
 const builtin = @import("builtin");
+const com = @import("com.zig");
 
 const d3d12 = @import("d3d12.zig");
 const gpu_data = @import("gpu_data.zig");
 const Pipeline = @import("Pipeline.zig");
+
+const log = std.log.scoped(.dx12_shaders);
 
 pub const Uniforms = gpu_data.Uniforms;
 pub const CellText = gpu_data.CellText;
@@ -38,6 +41,129 @@ const shader_bytecode = if (builtin.os.tag == .windows) struct {
     const bg_image_vs: []const u8 = &.{};
     const bg_image_ps: []const u8 = &.{};
 };
+
+/// Compile HLSL source to DXIL bytecode using DXC.
+/// Returns null on failure. Caller owns returned memory.
+fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point: [*:0]const u16) error{OutOfMemory}!?[]const u8 {
+    // Load DXC library
+    const dxc_lib = d3d12.DxcLibrary.load() orelse {
+        log.warn("DXC library load failed", .{});
+        return null;
+    };
+    defer dxc_lib.deinit();
+
+    // Create DXC utils
+    var utils_raw: ?*anyopaque = null;
+    if (com.FAILED(dxc_lib.createInstance(&d3d12.CLSID_DxcUtils, &d3d12.IDxcUtils.IID, &utils_raw))) {
+        log.warn("DXC utils creation failed", .{});
+        return null;
+    }
+    const utils: *d3d12.IDxcUtils = @ptrCast(@alignCast(utils_raw));
+    defer _ = utils.Release();
+
+    // Create compiler
+    var compiler_raw: ?*anyopaque = null;
+    if (com.FAILED(dxc_lib.createInstance(&d3d12.CLSID_DxcCompiler, &d3d12.IDxcCompiler3.IID, &compiler_raw))) {
+        log.warn("DXC compiler creation failed", .{});
+        return null;
+    }
+    const compiler: *d3d12.IDxcCompiler3 = @ptrCast(@alignCast(compiler_raw));
+    defer _ = compiler.Release();
+
+    // Create include handler
+    var include_handler_raw: ?*anyopaque = null;
+    if (com.FAILED(utils.CreateDefaultIncludeHandler(&d3d12.IDxcUtils.IID, &include_handler_raw))) {
+        log.warn("DXC include handler creation failed", .{});
+        return null;
+    }
+    const include_handler: *anyopaque = @ptrCast(@alignCast(include_handler_raw));
+    defer {
+        const include_handler_iface: *d3d12.IDxcUtils = @ptrCast(@alignCast(include_handler_raw));
+        _ = include_handler_iface.Release();
+    }
+
+    // Prepare source buffer
+    const source_buffer = d3d12.DxcBuffer{
+        .Ptr = source.ptr,
+        .Size = source.len,
+        .Encoding = 0, // UTF-8
+    };
+
+    // Build compilation arguments: -T ps_6_0 -E <entry> -O3 -Zpc
+    const target_profile = std.unicode.utf8ToUtf16LeStringLiteral("ps_6_0");
+    const opt_level = std.unicode.utf8ToUtf16LeStringLiteral("-O3");
+    const packing = std.unicode.utf8ToUtf16LeStringLiteral("-Zpc");
+
+    const args = [_]?[*:0]const u16{
+        target_profile,
+        entry_point,
+        opt_level,
+        packing,
+    };
+
+    // Compile
+    var result_raw: ?*anyopaque = null;
+    const hr = compiler.Compile(
+        &source_buffer,
+        &args,
+        args.len,
+        include_handler,
+        &d3d12.IDxcResult.IID,
+        &result_raw,
+    );
+
+    if (com.FAILED(hr)) {
+        log.warn("DXC compile failed HRESULT=0x{x}", .{hr});
+        return null;
+    }
+
+    const result: *d3d12.IDxcResult = @ptrCast(@alignCast(result_raw));
+    defer _ = result.Release();
+
+    // Check compilation status
+    const status = result.GetStatus();
+    if (com.FAILED(status)) {
+        logCompileErrors(result);
+        return null;
+    }
+
+    // Extract DXIL bytecode
+    var bytecode_raw: ?*anyopaque = null;
+    var output_object: ?*anyopaque = null;
+    if (com.FAILED(result.GetOutput(d3d12.DXC_OUT_KIND.OBJECT, &d3d12.IDxcBlobUtf8.IID, &bytecode_raw, &output_object))) {
+        log.warn("DXC GetOutput(OBJECT) failed", .{});
+        return null;
+    }
+
+    const bytecode: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(bytecode_raw));
+    defer _ = bytecode.Release();
+
+    // Copy into allocator-owned slice
+    const ptr = bytecode.GetBufferPointer();
+    const size = bytecode.GetBufferSize();
+    const slice = try alloc.alloc(u8, size);
+    const src_ptr: [*]const u8 = @ptrCast(ptr);
+    @memcpy(slice, src_ptr);
+    return slice;
+}
+
+/// Log compilation errors from IDxcResult.
+fn logCompileErrors(result: *d3d12.IDxcResult) void {
+    var error_blob_raw: ?*anyopaque = null;
+    var error_output: ?*anyopaque = null;
+    if (com.FAILED(result.GetOutput(d3d12.DXC_OUT_KIND.ERRORS, &d3d12.IDxcBlobUtf8.IID, &error_blob_raw, &error_output))) {
+        log.warn("DXC failed to retrieve error blob", .{});
+        return;
+    }
+
+    if (error_blob_raw) |raw| {
+        const error_blob: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(raw));
+        defer _ = error_blob.Release();
+
+        const error_str = error_blob.GetStringPointer();
+        log.warn("DXC compilation errors: {s}", .{error_str});
+    }
+}
 
 // --- Input element descriptions for instanced pipelines ---
 const PER_INSTANCE = d3d12.D3D12_INPUT_CLASSIFICATION.PER_INSTANCE_DATA;
@@ -214,6 +340,7 @@ pub const Shaders = struct {
         RootSignatureSerializeFailed,
         RootSignatureCreationFailed,
         PipelineStateCreationFailed,
+        OutOfMemory,
     };
 
     /// Release all PSOs that have been created so far.
@@ -226,7 +353,7 @@ pub const Shaders = struct {
 
     /// Initialize all 5 pipelines from embedded DXIL bytecode.
     /// On non-Windows, returns default-initialized (empty) pipelines.
-    pub fn init(device: ?*d3d12.ID3D12Device) InitError!Shaders {
+    pub fn init(device: ?*d3d12.ID3D12Device, alloc: std.mem.Allocator, custom_shaders: []const [:0]const u8) InitError!Shaders {
         const dev = device orelse return .{};
 
         // All pipelines share a single root signature.
@@ -275,9 +402,50 @@ pub const Shaders = struct {
             .blend = .premultiplied_alpha,
         });
 
+        // Compile custom post-process shaders
+        var post_list = std.ArrayListUnmanaged(Pipeline){};
+        errdefer {
+            for (post_list.items) |*p| p.deinit();
+            post_list.deinit(alloc);
+        }
+
+        const entry_point_utf8 = "main0";
+        const entry_point_w = std.unicode.utf8ToUtf16LeAllocZ(std.heap.c_allocator, entry_point_utf8) catch |err| {
+            log.warn("UTF-16 conversion failed for entry point: {}", .{err});
+            return .{ .root_signature = root_sig, .pipelines = pipelines };
+        };
+        defer std.heap.c_allocator.free(entry_point_w);
+
+        for (custom_shaders) |source| {
+            const dxil = compileHlslToDxil(alloc, source, entry_point_w) catch |err| {
+                log.warn("custom shader compilation failed: {}", .{err});
+                continue;
+            } orelse {
+                log.warn("custom shader compilation failed, skipping", .{});
+                continue;
+            };
+
+            const pso = Pipeline.init(.{
+                .device = dev,
+                .root_signature = root_sig,
+                .vs_bytecode = shader_bytecode.bg_color_vs,
+                .ps_bytecode = dxil,
+                .blend = .none,
+            }) catch |err| {
+                log.warn("custom PSO creation failed: {}", .{err});
+                alloc.free(dxil);
+                continue;
+            };
+
+            try post_list.append(alloc, pso);
+        }
+
+        const post_pipelines = try post_list.toOwnedSlice(alloc);
+
         return .{
             .root_signature = root_sig,
             .pipelines = pipelines,
+            .post_pipelines = post_pipelines,
         };
     }
 
@@ -346,7 +514,7 @@ test "Shaders default is empty" {
 }
 
 test "Shaders.init returns default on null device" {
-    const s = try Shaders.init(null);
+    const s = try Shaders.init(null, std.testing.allocator, &.{});
     try std.testing.expect(s.root_signature == null);
     try std.testing.expect(s.pipelines.bg_color.pso == null);
     try std.testing.expect(s.pipelines.cell_text.pso == null);
