@@ -313,7 +313,20 @@ public sealed partial class TerminalControl : UserControl
         _selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
         surfaceConfig.Userdata = GCHandle.ToIntPtr(_selfHandle);
 
-        _surface = NativeMethods.SurfaceNew(app, surfaceConfig);
+        // SurfaceNew triggers the full renderer init chain including
+        // glslang + SPIRV-Cross for custom shader compilation. These
+        // C++ compiler libraries have deep stack frames that exceed
+        // the WinUI UI thread's default stack. Run on a dedicated thread
+        // with 8 MB to avoid StackOverflowException.
+        Ghostty.Interop.GhosttySurface surfaceResult = default;
+        var surfaceNewThread = new Thread(() =>
+        {
+            surfaceResult = NativeMethods.SurfaceNew(app, surfaceConfig);
+        }, 8 * 1024 * 1024);
+        surfaceNewThread.IsBackground = true;
+        surfaceNewThread.Start();
+        surfaceNewThread.Join();
+        _surface = surfaceResult;
         // Drop our ref: libghostty does not retain the panel pointer.
         SwapChainPanelInterop.Release(panelPtr);
         Host.Register(_surface, this);

@@ -47,7 +47,7 @@ const shader_bytecode = if (builtin.os.tag == .windows) struct {
 fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point: [*:0]const u16) error{OutOfMemory}!?[]const u8 {
     // Load DXC library
     const dxc_lib = d3d12.DxcLibrary.load() orelse {
-        log.warn("DXC library load failed", .{});
+        log.warn("DXC library load failed - dxcompiler.dll not found", .{});
         return null;
     };
     defer dxc_lib.deinit();
@@ -72,7 +72,7 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
 
     // Create include handler
     var include_handler_raw: ?*anyopaque = null;
-    if (com.FAILED(utils.CreateDefaultIncludeHandler(&d3d12.IDxcUtils.IID, &include_handler_raw))) {
+    if (com.FAILED(utils.CreateDefaultIncludeHandler(&include_handler_raw))) {
         log.warn("DXC include handler creation failed", .{});
         return null;
     }

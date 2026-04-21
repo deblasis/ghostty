@@ -1584,14 +1584,14 @@ pub const DxcBuffer = extern struct {
 };
 
 // IDxcBlobUtf8
-// Inherits: IUnknown (3) = 3 inherited slots
+// Inherits: IUnknown(3) > IDxcBlob(2) > IDxcBlobEncoding(1) > IDxcBlobUtf8(2) = 8 total
 pub const IDxcBlobUtf8 = extern struct {
     vtable: *const VTable,
     pub const IID = GUID{
-        .data1 = 0x3DA71C46,
-        .data2 = 0x0F1E,
-        .data3 = 0x4397,
-        .data4 = .{ 0x9A, 0x0F, 0x75, 0x74, 0x52, 0x49, 0xE4, 0x86 },
+        .data1 = 0x3DA636C9,
+        .data2 = 0xBA71,
+        .data3 = 0x4024,
+        .data4 = .{ 0xA3, 0x01, 0x30, 0xCB, 0xF1, 0x25, 0x30, 0x5B },
     };
 
     pub const VTable = extern struct {
@@ -1599,12 +1599,14 @@ pub const IDxcBlobUtf8 = extern struct {
         QueryInterface: *const fn (*IDxcBlobUtf8, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
         AddRef: *const fn (*IDxcBlobUtf8) callconv(.winapi) u32,
         Release: *const fn (*IDxcBlobUtf8) callconv(.winapi) u32,
-        // IDxcBlobUtf8 (slots 3-7)
+        // IDxcBlob (slots 3-4)
         GetBufferPointer: *const fn (*IDxcBlobUtf8) callconv(.winapi) *anyopaque,
         GetBufferSize: *const fn (*IDxcBlobUtf8) callconv(.winapi) usize,
+        // IDxcBlobEncoding (slot 5)
+        GetEncoding: Reserved,
+        // IDxcBlobUtf8 (slots 6-7)
         GetStringPointer: *const fn (*IDxcBlobUtf8) callconv(.winapi) [*:0]const u8,
         GetStringLength: *const fn (*IDxcBlobUtf8) callconv(.winapi) usize,
-        GetEncoding: Reserved, // Reserved for future use
     };
 
     pub inline fn GetBufferPointer(self: *IDxcBlobUtf8) *anyopaque {
@@ -1629,14 +1631,14 @@ pub const IDxcBlobUtf8 = extern struct {
 };
 
 // IDxcResult
-// Inherits: IUnknown (3) = 3 inherited slots
+// Inherits: IUnknown(3) > IDxcOperationResult(3) > IDxcResult(5) = 11 total
 pub const IDxcResult = extern struct {
     vtable: *const VTable,
     pub const IID = GUID{
-        .data1 = 0x58346F6C,
-        .data2 = 0x5C5A,
-        .data3 = 0x4A43,
-        .data4 = .{ 0x95, 0x14, 0x22, 0x2C, 0x58, 0x72, 0x7B, 0x12 },
+        .data1 = 0x58346CDA,
+        .data2 = 0xDDE7,
+        .data3 = 0x4497,
+        .data4 = .{ 0x94, 0x61, 0x6F, 0x87, 0xAF, 0x5E, 0x06, 0x59 },
     };
 
     pub const VTable = extern struct {
@@ -1644,18 +1646,22 @@ pub const IDxcResult = extern struct {
         QueryInterface: *const fn (*IDxcResult, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
         AddRef: *const fn (*IDxcResult) callconv(.winapi) u32,
         Release: *const fn (*IDxcResult) callconv(.winapi) u32,
-        // IDxcResult (slots 3-9)
-        GetStatus: *const fn (*IDxcResult) callconv(.winapi) HRESULT,
-        GetResult: Reserved, // Reserved for future use
-        GetErrorBuffer: Reserved, // Reserved
+        // IDxcOperationResult (slots 3-5)
+        GetStatus: *const fn (*IDxcResult, *HRESULT) callconv(.winapi) HRESULT,
+        GetResult: Reserved,
+        GetErrorBuffer: Reserved,
+        // IDxcResult (slots 6-10)
+        HasOutput: Reserved,
         GetOutput: *const fn (*IDxcResult, DXC_OUT_KIND, *const GUID, *?*anyopaque, *?*anyopaque) callconv(.winapi) HRESULT,
-        GetNumOutputs: Reserved, // Reserved
-        GetOutputByIndex: Reserved, // Reserved
-        PrimaryOutput: Reserved, // Reserved
+        GetNumOutputs: Reserved,
+        GetOutputByIndex: Reserved,
+        PrimaryOutput: Reserved,
     };
 
     pub inline fn GetStatus(self: *IDxcResult) HRESULT {
-        return self.vtable.GetStatus(self);
+        var status: HRESULT = 0;
+        _ = self.vtable.GetStatus(self, &status);
+        return status;
     }
 
     pub inline fn GetOutput(self: *IDxcResult, kind: DXC_OUT_KIND, riid: *const GUID, ppvObject: *?*anyopaque, ppOutputObject: *?*anyopaque) HRESULT {
@@ -1668,14 +1674,14 @@ pub const IDxcResult = extern struct {
 };
 
 // IDxcUtils
-// Inherits: IUnknown (3) = 3 inherited slots
+// Inherits: IUnknown(3) + 13 own methods = 16 total
 pub const IDxcUtils = extern struct {
     vtable: *const VTable,
     pub const IID = GUID{
-        .data1 = 0x4E5E8B36,
-        .data2 = 0x83C1,
-        .data3 = 0x4B68,
-        .data4 = .{ 0xB4, 0xD4, 0x04, 0x76, 0x01, 0x1C, 0xCA, 0x19 },
+        .data1 = 0x4605C4CB,
+        .data2 = 0x2019,
+        .data3 = 0x492A,
+        .data4 = .{ 0xAD, 0xA4, 0x65, 0xF2, 0x0B, 0xB7, 0xD6, 0x7F },
     };
 
     pub const VTable = extern struct {
@@ -1683,18 +1689,24 @@ pub const IDxcUtils = extern struct {
         QueryInterface: *const fn (*IDxcUtils, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
         AddRef: *const fn (*IDxcUtils) callconv(.winapi) u32,
         Release: *const fn (*IDxcUtils) callconv(.winapi) u32,
-        // IDxcUtils (slots 3-9)
-        CreateBlobFromBlob: Reserved, // Reserved
-        CreateBlobFromPinned: Reserved, // Reserved
-        MoveToBlob: Reserved, // Reserved
-        CreateReflection: Reserved, // Reserved
-        CreateDefaultIncludeHandler: *const fn (*IDxcUtils, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
-        GetBlobAsUtf8: Reserved, // Reserved
-        GetBlobAsWide: Reserved, // Reserved
+        // IDxcUtils (slots 3-15)
+        CreateBlobFromBlob: Reserved,
+        CreateBlobFromPinned: Reserved,
+        MoveToBlob: Reserved,
+        CreateBlob: Reserved,
+        LoadFile: Reserved,
+        CreateReadOnlyStreamFromBlob: Reserved,
+        CreateDefaultIncludeHandler: *const fn (*IDxcUtils, *?*anyopaque) callconv(.winapi) HRESULT,
+        GetBlobAsUtf8: Reserved,
+        GetBlobAsWide: Reserved,
+        GetDxilContainerPart: Reserved,
+        CreateReflection: Reserved,
+        BuildArguments: Reserved,
+        GetPDBContents: Reserved,
     };
 
-    pub inline fn CreateDefaultIncludeHandler(self: *IDxcUtils, riid: *const GUID, pp: *?*anyopaque) HRESULT {
-        return self.vtable.CreateDefaultIncludeHandler(self, riid, pp);
+    pub inline fn CreateDefaultIncludeHandler(self: *IDxcUtils, pp: *?*anyopaque) HRESULT {
+        return self.vtable.CreateDefaultIncludeHandler(self, pp);
     }
 
     pub inline fn Release(self: *IDxcUtils) u32 {
@@ -1703,14 +1715,14 @@ pub const IDxcUtils = extern struct {
 };
 
 // IDxcCompiler3
-// Inherits: IUnknown (3) = 3 inherited slots
+// Inherits: IUnknown(3) + 2 own methods = 5 total
 pub const IDxcCompiler3 = extern struct {
     vtable: *const VTable,
     pub const IID = GUID{
-        .data1 = 0x4E57E975,
-        .data2 = 0x30B1,
-        .data3 = 0x48A5,
-        .data4 = .{ 0xA2, 0xE0, 0x24, 0x98, 0x2E, 0x8E, 0x62, 0x30 },
+        .data1 = 0x228B4687,
+        .data2 = 0x5A6A,
+        .data3 = 0x4730,
+        .data4 = .{ 0x90, 0x0C, 0x97, 0x02, 0xB2, 0x20, 0x3F, 0x54 },
     };
 
     pub const VTable = extern struct {
@@ -1718,7 +1730,7 @@ pub const IDxcCompiler3 = extern struct {
         QueryInterface: *const fn (*IDxcCompiler3, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
         AddRef: *const fn (*IDxcCompiler3) callconv(.winapi) u32,
         Release: *const fn (*IDxcCompiler3) callconv(.winapi) u32,
-        // IDxcCompiler3 (slots 3-8)
+        // IDxcCompiler3 (slots 3-4)
         Compile: *const fn (
             *IDxcCompiler3,
             *const DxcBuffer,
@@ -1728,12 +1740,7 @@ pub const IDxcCompiler3 = extern struct {
             *const GUID,
             *?*anyopaque,
         ) callconv(.winapi) HRESULT,
-        Disassemble: Reserved, // Reserved
-        GetDebugExtra: Reserved, // Reserved
-        GetVersion: Reserved, // Reserved
-        GetVersionEx: Reserved, // Reserved
-        GetCustomVersionString: Reserved, // Reserved
-        SetCustomVersionString: Reserved, // Reserved
+        Disassemble: Reserved,
     };
 
     pub inline fn Compile(
@@ -1771,8 +1778,7 @@ pub const DxcLibrary = struct {
         };
 
         // Get the DxcCreateInstance function
-        const proc_name = std.unicode.utf8ToUtf16LeStringLiteral("DxcCreateInstance");
-        const proc = GetProcAddress(dll, proc_name) orelse {
+        const proc = std.os.windows.kernel32.GetProcAddress(dll, "DxcCreateInstance") orelse {
             std.os.windows.FreeLibrary(dll);
             return null;
         };
@@ -1817,12 +1823,6 @@ pub extern "kernel32" fn CloseHandle(
 ) callconv(.winapi) BOOL;
 
 pub const INFINITE: u32 = 0xFFFFFFFF;
-
-// Manual GetProcAddress declaration for DXC library loading
-pub extern "kernel32" fn GetProcAddress(
-    hModule: std.os.windows.HMODULE,
-    lpProcName: [*:0]const u16,
-) callconv(.winapi) ?*anyopaque;
 
 // --- Tests ---
 
@@ -1953,29 +1953,34 @@ test "DXC_OUT_KIND has OBJECT and ERRORS variants" {
 }
 
 test "IDxcBlobUtf8 has expected vtable field count" {
-    // IUnknown(3) + 5 methods = 8 slots
+    // IUnknown(3) + IDxcBlob(2) + IDxcBlobEncoding(1) + IDxcBlobUtf8(2) = 8 slots
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(IDxcBlobUtf8));
     const vtable_size = @sizeOf(IDxcBlobUtf8.VTable);
-    // 8 function pointers
     const expected_size = 8 * @sizeOf(*anyopaque);
     try std.testing.expectEqual(expected_size, vtable_size);
 }
 
 test "IDxcResult has expected vtable field count" {
-    // IUnknown(3) + 7 methods = 10 slots
+    // IUnknown(3) + IDxcOperationResult(3) + IDxcResult(5) = 11 slots
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(IDxcResult));
     const vtable_size = @sizeOf(IDxcResult.VTable);
-    // 10 function pointers
-    const expected_size = 10 * @sizeOf(*anyopaque);
+    const expected_size = 11 * @sizeOf(*anyopaque);
+    try std.testing.expectEqual(expected_size, vtable_size);
+}
+
+test "IDxcUtils has expected vtable field count" {
+    // IUnknown(3) + 13 methods = 16 slots
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(IDxcUtils));
+    const vtable_size = @sizeOf(IDxcUtils.VTable);
+    const expected_size = 16 * @sizeOf(*anyopaque);
     try std.testing.expectEqual(expected_size, vtable_size);
 }
 
 test "IDxcCompiler3 has expected vtable field count" {
-    // IUnknown(3) + 7 methods = 10 slots
+    // IUnknown(3) + Compile + Disassemble = 5 slots
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(IDxcCompiler3));
     const vtable_size = @sizeOf(IDxcCompiler3.VTable);
-    // 10 function pointers
-    const expected_size = 10 * @sizeOf(*anyopaque);
+    const expected_size = 5 * @sizeOf(*anyopaque);
     try std.testing.expectEqual(expected_size, vtable_size);
 }
 
