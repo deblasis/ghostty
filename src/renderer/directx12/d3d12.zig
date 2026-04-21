@@ -1929,9 +1929,9 @@ test "CommandList vtable passes descriptor handles as raw scalars" {
 }
 
 test "DxcBuffer is extern struct with expected field order" {
-    try std.testing.expectEqual(@sizeOf(?*const anyopaque), @sizeOf(@TypeOf(DxcBuffer.Ptr)));
-    try std.testing.expectEqual(@sizeOf(usize), @sizeOf(@TypeOf(DxcBuffer.Size)));
-    try std.testing.expectEqual(@sizeOf(u32), @sizeOf(@TypeOf(DxcBuffer.Encoding)));
+    try std.testing.expectEqual(@sizeOf(?*const anyopaque), @sizeOf(@FieldType(DxcBuffer, "Ptr")));
+    try std.testing.expectEqual(@sizeOf(usize), @sizeOf(@FieldType(DxcBuffer, "Size")));
+    try std.testing.expectEqual(@sizeOf(u32), @sizeOf(@FieldType(DxcBuffer, "Encoding")));
 }
 
 test "DXC_OUT_KIND has OBJECT and ERRORS variants" {
@@ -1958,21 +1958,21 @@ test "IDxcResult has expected vtable field count" {
 }
 
 test "IDxcCompiler3 has expected vtable field count" {
-    // IUnknown(3) + 6 methods = 9 slots
+    // IUnknown(3) + 7 methods = 10 slots
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(IDxcCompiler3));
     const vtable_size = @sizeOf(IDxcCompiler3.VTable);
-    // 9 function pointers
-    const expected_size = 9 * @sizeOf(*anyopaque);
+    // 10 function pointers
+    const expected_size = 10 * @sizeOf(*anyopaque);
     try std.testing.expectEqual(expected_size, vtable_size);
 }
 
 test "DxcLibrary.load returns null when dxcompiler.dll absent" {
     // This test just verifies the struct compiles and the method exists.
     // We don't actually call load() since it would fail if dxcompiler.dll is present.
-    try std.testing.expectEqual(@sizeOf(?std.os.windows.HMODULE), @sizeOf(@TypeOf(DxcLibrary.dll)));
-    try std.testing.expectEqual(@sizeOf(?*const fn (*const GUID, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT), @sizeOf(@TypeOf(DxcLibrary.create_instance)));
+    try std.testing.expectEqual(@sizeOf(?std.os.windows.HMODULE), @sizeOf(@FieldType(DxcLibrary, "dll")));
+    try std.testing.expectEqual(@sizeOf(?*const fn (*const GUID, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT), @sizeOf(@FieldType(DxcLibrary, "create_instance")));
 }
 
 test "CLSID constants are distinct" {
-    try std.testing.expect(!std.mem.eql(u8, &@as([16]u8, CLSID_DxcUtils.data4), &@as([16]u8, CLSID_DxcCompiler.data4)));
+    try std.testing.expect(!std.mem.eql(u8, &CLSID_DxcUtils.data4, &CLSID_DxcCompiler.data4));
 }

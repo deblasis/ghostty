@@ -78,7 +78,8 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     }
     const include_handler: *anyopaque = @ptrCast(@alignCast(include_handler_raw));
     defer {
-        const include_handler_iface: *d3d12.IDxcUtils = @ptrCast(@alignCast(include_handler_raw));
+        // Release as IUnknown interface since it's not used after compilation
+        const include_handler_iface: *com.IUnknown = @ptrCast(@alignCast(include_handler_raw));
         _ = include_handler_iface.Release();
     }
 
@@ -90,12 +91,16 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     };
 
     // Build compilation arguments: -T ps_6_0 -E <entry> -O3 -Zpc
+    const target_flag = std.unicode.utf8ToUtf16LeStringLiteral("-T");
     const target_profile = std.unicode.utf8ToUtf16LeStringLiteral("ps_6_0");
+    const entry_flag = std.unicode.utf8ToUtf16LeStringLiteral("-E");
     const opt_level = std.unicode.utf8ToUtf16LeStringLiteral("-O3");
     const packing = std.unicode.utf8ToUtf16LeStringLiteral("-Zpc");
 
     const args = [_]?[*:0]const u16{
+        target_flag,
         target_profile,
+        entry_flag,
         entry_point,
         opt_level,
         packing,
