@@ -432,6 +432,19 @@ pub const D3D12_HEAP_PROPERTIES = extern struct {
     VisibleNodeMask: u32,
 };
 
+pub const D3D12_CLEAR_VALUE = extern struct {
+    Format: DXGI_FORMAT,
+    u: extern union {
+        Color: [4]f32,
+        DepthStencil: D3D12_DEPTH_STENCIL_VALUE,
+    },
+};
+
+pub const D3D12_DEPTH_STENCIL_VALUE = extern struct {
+    Depth: f32,
+    Stencil: u8,
+};
+
 pub const D3D12_RESOURCE_DESC = extern struct {
     Dimension: D3D12_RESOURCE_DIMENSION,
     Alignment: u64,

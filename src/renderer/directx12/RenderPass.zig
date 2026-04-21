@@ -115,9 +115,40 @@ pub fn begin(opts: Options) RenderPass {
                     cl.ClearRenderTargetView(t.rtv_handle, &color, 0, null);
                 }
             },
-            .texture => {
-                // Texture targets will be handled when Texture.zig gets
-                // a real GPU resource implementation.
+            .texture => |*t| {
+                if (t.resource == null) continue;
+                const rtv = t.rtv.cpu;
+                if (rtv.ptr == 0) continue;
+
+                // Transition from shader resource to render target.
+                t.transitionBarrier(
+                    cl,
+                    ResourceStates.PIXEL_SHADER_RESOURCE,
+                    ResourceStates.RENDER_TARGET,
+                );
+
+                // Collect RTV handle.
+                if (rtv_count < rtv_handles.len) {
+                    rtv_handles[rtv_count] = rtv;
+                    rtv_count += 1;
+                }
+
+                // Use the first valid target for viewport dimensions.
+                if (rtv_count == 1) {
+                    vp_width = t.width;
+                    vp_height = t.height;
+                }
+
+                // Clear if requested.
+                if (at.clear_color) |c| {
+                    const color = [4]f32{
+                        @floatCast(c[0]),
+                        @floatCast(c[1]),
+                        @floatCast(c[2]),
+                        @floatCast(c[3]),
+                    };
+                    cl.ClearRenderTargetView(rtv, &color, 0, null);
+                }
             },
         }
     }
@@ -291,7 +322,14 @@ pub fn complete(self: *const RenderPass) void {
                     ResourceStates.PRESENT,
                 );
             },
-            .texture => {},
+            .texture => |*t| {
+                if (t.resource == null) continue;
+                t.transitionBarrier(
+                    cl,
+                    ResourceStates.RENDER_TARGET,
+                    ResourceStates.PIXEL_SHADER_RESOURCE,
+                );
+            },
         }
     }
 }
