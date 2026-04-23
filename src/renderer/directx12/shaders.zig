@@ -458,6 +458,9 @@ pub const Shaders = struct {
 
         for (custom_shaders) |source| {
             const dxil = compileHlslToDxil(alloc, source, entry_point_w) catch continue orelse continue;
+            // D3D12 copies bytecode into the PSO during CreateGraphicsPipelineState,
+            // so the allocation can be freed immediately after PSO creation.
+            defer alloc.free(dxil);
 
             const pso = Pipeline.init(.{
                 .device = dev,
@@ -467,7 +470,6 @@ pub const Shaders = struct {
                 .blend = .none,
             }) catch |err| {
                 log.warn("custom shader PSO creation failed: {}", .{err});
-                alloc.free(dxil);
                 continue;
             };
 
