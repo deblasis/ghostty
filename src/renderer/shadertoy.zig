@@ -82,8 +82,6 @@ pub fn loadFromFile(
     target: Target,
 ) ![:0]const u8 {
     if (builtin.os.tag == .windows) {
-        std.debug.print("[shadertoy] loadFromFile: spawning thread for path={s}\n", .{path});
-
         const Ctx = struct {
             alloc_gpa: Allocator,
             path: []const u8,
@@ -91,13 +89,7 @@ pub fn loadFromFile(
             result: anyerror![:0]const u8 = error.Unexpected,
 
             fn run(self: *@This()) void {
-                std.debug.print("[shadertoy] compileShader: thread started\n", .{});
                 self.result = compileShader(self.alloc_gpa, self.path, self.target);
-                if (self.result) |_| {
-                    std.debug.print("[shadertoy] compileShader: succeeded\n", .{});
-                } else |err| {
-                    std.debug.print("[shadertoy] compileShader: failed err={}\n", .{err});
-                }
             }
         };
 
@@ -112,9 +104,7 @@ pub fn loadFromFile(
             Ctx.run,
             .{&ctx},
         ) catch return error.OutOfMemory;
-        std.debug.print("[shadertoy] loadFromFile: thread spawned, waiting\n", .{});
         thread.join();
-        std.debug.print("[shadertoy] loadFromFile: thread joined\n", .{});
 
         return ctx.result;
     }
@@ -131,8 +121,6 @@ fn compileShader(
     var arena = ArenaAllocator.init(alloc_gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
-
-    std.debug.print("[shadertoy] compileShader: reading file path={s}\n", .{path});
 
     // Read it all into memory -- we don't expect shaders to be large.
     const src = src: {
@@ -154,12 +142,9 @@ fn compileShader(
         try stream.writer.writeByte(0);
         break :glsl stream.written()[0 .. stream.written().len - 1 :0];
     };
-    std.debug.print("[shadertoy] compileShader: GLSL prefix done, len={}\n", .{glsl.len});
-
     // On Windows, use the MSVC-compiled shader_wrapper.dll for the full
     // GLSL -> SPIR-V -> HLSL pipeline to avoid C++ ABI issues.
     if (builtin.os.tag == .windows and target == .hlsl) {
-        std.debug.print("[shadertoy] compileShader: using shader_wrapper.dll\n", .{});
         return glslang.wrapper.compileToHlsl(alloc_gpa, glsl) catch |err| {
             log.warn("wrapper compile failed path={s} err={}", .{ path, err });
             return err;
@@ -185,7 +170,6 @@ fn compileShader(
         try list.appendSlice(alloc, stream.written());
         break :spirv list.items;
     };
-    std.debug.print("[shadertoy] compileShader: SPIR-V done len={}, converting to target\n", .{spirv.len});
 
     // Convert to target format
     return switch (target) {
@@ -217,10 +201,8 @@ pub fn spirvFromGlsl(
     // So we can run unit tests without fear.
     if (builtin.is_test) try glslang.testing.ensureInit();
 
-    std.debug.print("[shadertoy] spirvFromGlsl: calling glslang_default_resource\n", .{});
     const c = glslang.c;
     const resource = c.glslang_default_resource();
-    std.debug.print("[shadertoy] spirvFromGlsl: resource ptr={}\n", .{@intFromPtr(resource)});
     const input: c.glslang_input_t = .{
         .language = c.GLSLANG_SOURCE_GLSL,
         .stage = c.GLSLANG_STAGE_FRAGMENT,
@@ -242,24 +224,9 @@ pub fn spirvFromGlsl(
         },
         .callbacks_ctx = null,
     };
-    std.debug.print("[shadertoy] spirvFromGlsl: input struct created, calling Shader.create\n", .{});
-
-    // Diagnostic: test basic C++ lifecycle before full compilation
-    {
-        const test_shader = glslang.Shader.create(&input) catch |err| {
-            std.debug.print("[shadertoy] spirvFromGlsl: DIAG create FAILED err={}\n", .{err});
-            return err;
-        };
-        std.debug.print("[shadertoy] spirvFromGlsl: DIAG test shader created, trying getInfoLog\n", .{});
-        const info = test_shader.getInfoLog() catch "(null)";
-        std.debug.print("[shadertoy] spirvFromGlsl: DIAG getInfoLog OK len={}, trying delete\n", .{info.len});
-        test_shader.delete();
-        std.debug.print("[shadertoy] spirvFromGlsl: DIAG test shader deleted OK\n", .{});
-    }
 
     const shader = try glslang.Shader.create(&input);
     defer shader.delete();
-    std.debug.print("[shadertoy] spirvFromGlsl: shader created, calling preprocess\n", .{});
 
     shader.preprocess(&input) catch |err| {
         if (errlog) |ptr| ptr.fromShader(shader) catch {};

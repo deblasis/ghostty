@@ -33,6 +33,10 @@ pub const Options = struct {
     /// a new one from the heap. Used during resize to avoid overwriting
     /// other frames' in-flight RTV descriptors.
     rtv_slot: ?DescriptorHeap.Descriptor = null,
+    /// When non-null, reuse this SRV descriptor slot instead of allocating
+    /// a new one from the heap. Used during resize to prevent SRV heap
+    /// exhaustion from leaked descriptors.
+    srv_slot: ?DescriptorHeap.Descriptor = null,
 };
 
 pub const Error = error{
@@ -92,10 +96,8 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
         createTextureResource(device, @intCast(width), @intCast(height), opts.pixel_format) orelse return error.TextureCreateFailed;
     errdefer _ = resource.Release();
 
-    // Allocate SRV descriptor.
-    // Note: the linear allocator has no individual free, so a failed init()
-    // after this point permanently consumes one descriptor slot.
-    const srv = srv_heap.allocate() catch return error.TextureCreateFailed;
+    // Allocate or reuse SRV descriptor.
+    const srv = if (opts.srv_slot) |slot| slot else srv_heap.allocate() catch return error.TextureCreateFailed;
 
     // Create the SRV.
     const srv_desc = d3d12.D3D12_SHADER_RESOURCE_VIEW_DESC{
@@ -120,33 +122,12 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
         .index = 0,
     };
     if (opts.render_target) {
-        const rtv_heap = opts.rtv_heap orelse {
-            std.debug.print("[texture] render-target texture: rtv_heap is null\n", .{});
-            return error.TextureCreateFailed;
-        };
+        const rtv_heap = opts.rtv_heap orelse return error.TextureCreateFailed;
         if (opts.rtv_slot) |slot| {
             // Reuse a pre-allocated RTV descriptor slot (e.g. during resize).
             rtv = slot;
-            std.debug.print("[texture] RTV reused: index={}, size={}x{}\n", .{
-                rtv.index,
-                width,
-                height,
-            });
         } else {
-            rtv = rtv_heap.allocate() catch {
-                std.debug.print("[texture] RTV heap FULL (allocated={}, capacity={})\n", .{
-                    rtv_heap.allocated,
-                    rtv_heap.capacity,
-                });
-                return error.TextureCreateFailed;
-            };
-            std.debug.print("[texture] RTV allocated: index={}, heap {}/{}, size={}x{}\n", .{
-                rtv.index,
-                rtv_heap.allocated,
-                rtv_heap.capacity,
-                width,
-                height,
-            });
+            rtv = rtv_heap.allocate() catch return error.TextureCreateFailed;
         }
         device.CreateRenderTargetView(resource, null, rtv.cpu);
     }

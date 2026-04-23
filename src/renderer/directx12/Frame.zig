@@ -167,7 +167,12 @@ pub fn complete(self: *Frame, sync: bool) void {
     // If the frame was never initialized (stub path), report healthy
     // and let the generic renderer continue its lifecycle.
     const command_list = self.command_list orelse {
-        self.renderer.frameCompleted(.healthy);
+        // Defer frameCompleted to drawFrameEnd after the fence signal.
+        const api: *DirectX12 = &self.renderer.api;
+        api.pending_complete = .{
+            .renderer = self.renderer,
+            .health = .healthy,
+        };
         return;
     };
 
@@ -177,7 +182,14 @@ pub fn complete(self: *Frame, sync: bool) void {
         break :blk .unhealthy;
     } else .healthy;
 
-    self.renderer.frameCompleted(health);
+    // Don't call frameCompleted here. The semaphore release must happen
+    // after the GPU fence is signaled in drawFrameEnd, because
+    // frame.resize() reuses descriptor slots that the GPU may still read.
+    const api: *DirectX12 = &self.renderer.api;
+    api.pending_complete = .{
+        .renderer = self.renderer,
+        .health = health,
+    };
 }
 
 // --- Tests ---

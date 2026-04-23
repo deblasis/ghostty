@@ -45,17 +45,11 @@ const shader_bytecode = if (builtin.os.tag == .windows) struct {
 /// Compile HLSL source to DXIL bytecode using DXC.
 /// Returns null on failure. Caller owns returned memory.
 fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point: [*:0]const u16) error{OutOfMemory}!?[]const u8 {
-    // Load DXC library
-    std.debug.print("[dx12_shaders] compileHlslToDxil: source len={}\n", .{source.len});
-    // Dump first 800 chars of HLSL to verify b1→b0 remap and cbuffer layout.
-    const dump_len = @min(source.len, 800);
-    std.debug.print("[dx12_shaders] HLSL dump:\n{s}\n[end dump]\n", .{source[0..dump_len]});
     const dxc_lib = d3d12.DxcLibrary.load() orelse {
-        std.debug.print("[dx12_shaders] DXC library load FAILED - dxcompiler.dll not found\n", .{});
+        log.warn("dxcompiler.dll not found, cannot compile custom shader", .{});
         return null;
     };
     defer dxc_lib.deinit();
-    std.debug.print("[dx12_shaders] DXC library loaded OK\n", .{});
 
     // Create DXC utils
     var utils_raw: ?*anyopaque = null;
@@ -123,7 +117,7 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     );
 
     if (com.FAILED(hr)) {
-        std.debug.print("[dx12_shaders] DXC Compile() FAILED HRESULT=0x{x}\n", .{hr});
+        log.warn("DXC Compile() failed, hr=0x{x}", .{hr});
         return null;
     }
 
@@ -133,28 +127,20 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     // Check compilation status
     const status = result.GetStatus();
     if (com.FAILED(status)) {
-        std.debug.print("[dx12_shaders] DXC compile status FAILED hr=0x{x}\n", .{status});
+        log.warn("DXC compile failed, status=0x{x}", .{status});
         logCompileErrors(result);
         return null;
     }
-    std.debug.print("[dx12_shaders] DXC compile status OK\n", .{});
 
     // Extract DXIL bytecode
     var bytecode_raw: ?*anyopaque = null;
     var output_object: ?*anyopaque = null;
-    // IDxcBlob IID - DXIL output is IDxcBlob, not IDxcBlobUtf8
-    const IDXC_BLOB_IID = com.GUID{
-        .data1 = 0x8BA5FB08,
-        .data2 = 0x5195,
-        .data3 = 0x40e2,
-        .data4 = .{ 0xAC, 0x58, 0x0D, 0x98, 0x9C, 0x3A, 0x01, 0x02 },
-    };
-    const get_output_hr = result.GetOutput(d3d12.DXC_OUT_KIND.OBJECT, &IDXC_BLOB_IID, &bytecode_raw, &output_object);
+    // DXIL output is IDxcBlob, not IDxcBlobUtf8
+    const get_output_hr = result.GetOutput(d3d12.DXC_OUT_KIND.OBJECT, &d3d12.IDxcBlob.IID, &bytecode_raw, &output_object);
     if (com.FAILED(get_output_hr)) {
-        std.debug.print("[dx12_shaders] DXC GetOutput(OBJECT) FAILED hr=0x{x}\n", .{get_output_hr});
+        log.warn("DXC GetOutput(OBJECT) failed, hr=0x{x}", .{get_output_hr});
         return null;
     }
-    std.debug.print("[dx12_shaders] DXC GetOutput OK, bytecode_raw={*}\n", .{bytecode_raw});
 
     // output_object is a secondary COM reference (IDxcBlobWide with the
     // output filename) that must be released to avoid leaking on every
@@ -181,7 +167,6 @@ fn logCompileErrors(result: *d3d12.IDxcResult) void {
     var error_blob_raw: ?*anyopaque = null;
     var error_output: ?*anyopaque = null;
     if (com.FAILED(result.GetOutput(d3d12.DXC_OUT_KIND.ERRORS, &d3d12.IDxcBlobUtf8.IID, &error_blob_raw, &error_output))) {
-        std.debug.print("[dx12_shaders] DXC failed to retrieve error blob\n", .{});
         return;
     }
 
@@ -189,16 +174,16 @@ fn logCompileErrors(result: *d3d12.IDxcResult) void {
         const error_blob: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(raw));
         defer _ = error_blob.Release();
 
-        // error_output is a secondary COM reference that must be released.
         if (error_output) |eo| {
             const wide: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(eo));
             _ = wide.Release();
         }
 
         const error_str = error_blob.GetStringPointer();
-        std.debug.print("[dx12_shaders] DXC errors: {s}\n", .{error_str});
-    } else {
-        std.debug.print("[dx12_shaders] DXC: no error blob available\n", .{});
+        const error_slice = std.mem.sliceTo(error_str, 0);
+        if (error_slice.len > 0) {
+            log.warn("DXC errors: {s}", .{error_slice});
+        }
     }
 }
 
@@ -444,7 +429,6 @@ pub const Shaders = struct {
         });
 
         // Compile custom post-process shaders
-        std.debug.print("[dx12_shaders] custom_shaders count={}\n", .{custom_shaders.len});
         var post_list = std.ArrayListUnmanaged(Pipeline){};
         errdefer {
             for (post_list.items) |*p| p.deinit();
@@ -473,16 +457,7 @@ pub const Shaders = struct {
         const custom_root_sig = post_root_sig orelse root_sig;
 
         for (custom_shaders) |source| {
-            std.debug.print("[dx12_shaders] compiling custom shader, source len={}\n", .{source.len});
-
-            const dxil = compileHlslToDxil(alloc, source, entry_point_w) catch |err| {
-                std.debug.print("[dx12_shaders] DXC compile error: {}\n", .{err});
-                continue;
-            } orelse {
-                std.debug.print("[dx12_shaders] DXC compile returned null, skipping\n", .{});
-                continue;
-            };
-            std.debug.print("[dx12_shaders] DXIL bytecode len={}\n", .{dxil.len});
+            const dxil = compileHlslToDxil(alloc, source, entry_point_w) catch continue orelse continue;
 
             const pso = Pipeline.init(.{
                 .device = dev,
@@ -491,12 +466,11 @@ pub const Shaders = struct {
                 .ps_bytecode = dxil,
                 .blend = .none,
             }) catch |err| {
-                std.debug.print("[dx12_shaders] PSO creation failed: {}\n", .{err});
+                log.warn("custom shader PSO creation failed: {}", .{err});
                 alloc.free(dxil);
                 continue;
             };
 
-            std.debug.print("[dx12_shaders] custom PSO created OK\n", .{});
             try post_list.append(alloc, pso);
         }
 

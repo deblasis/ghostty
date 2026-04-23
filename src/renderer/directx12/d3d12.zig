@@ -1583,6 +1583,40 @@ pub const DxcBuffer = extern struct {
     Encoding: u32,
 };
 
+// IDxcBlob
+// Inherits: IUnknown(3) > IDxcBlob(2) = 5 total
+pub const IDxcBlob = extern struct {
+    vtable: *const VTable,
+    pub const IID = GUID{
+        .data1 = 0x8BA5FB08,
+        .data2 = 0x5195,
+        .data3 = 0x40e2,
+        .data4 = .{ 0xAC, 0x58, 0x0D, 0x98, 0x9C, 0x3A, 0x01, 0x02 },
+    };
+
+    pub const VTable = extern struct {
+        // IUnknown (slots 0-2)
+        QueryInterface: *const fn (*IDxcBlob, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
+        AddRef: *const fn (*IDxcBlob) callconv(.winapi) u32,
+        Release: *const fn (*IDxcBlob) callconv(.winapi) u32,
+        // IDxcBlob (slots 3-4)
+        GetBufferPointer: *const fn (*IDxcBlob) callconv(.winapi) *anyopaque,
+        GetBufferSize: *const fn (*IDxcBlob) callconv(.winapi) usize,
+    };
+
+    pub inline fn GetBufferPointer(self: *IDxcBlob) *anyopaque {
+        return self.vtable.GetBufferPointer(self);
+    }
+
+    pub inline fn GetBufferSize(self: *IDxcBlob) usize {
+        return self.vtable.GetBufferSize(self);
+    }
+
+    pub inline fn Release(self: *IDxcBlob) u32 {
+        return self.vtable.Release(self);
+    }
+};
+
 // IDxcBlobUtf8
 // Inherits: IUnknown(3) > IDxcBlob(2) > IDxcBlobEncoding(1) > IDxcBlobUtf8(2) = 8 total
 pub const IDxcBlobUtf8 = extern struct {

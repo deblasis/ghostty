@@ -52,6 +52,11 @@ pub const custom_shader_target: shadertoy.Target = .hlsl;
 /// DX12 uses top-left origin, same as Metal.
 pub const custom_shader_y_is_down = true;
 
+/// DX12 uses a fixed B8G8R8A8_UNORM pixel format regardless of blending
+/// mode, so blending changes don't require shader/pipeline recompilation.
+/// Metal needs reinit because it switches between bgra8unorm/srgb.
+pub const blending_requires_shader_reinit = false;
+
 /// Triple buffering for DX12, matching Metal's swap chain depth.
 pub const swap_chain_count = 3;
 
@@ -148,6 +153,17 @@ init_command_list: ?*d3d12.ID3D12GraphicsCommandList = null,
 /// to record the fence value against the correct frame slot.
 /// Must be saved here because GetCurrentBackBufferIndex advances after Present.
 pending_frame_index: u32 = 0,
+
+/// Deferred frame completion state. DX12 must signal the GPU fence before
+/// releasing the frame semaphore (which happens in frameCompleted), because
+/// frame.resize() reuses descriptor slots that the GPU may still be reading.
+/// Metal's completion handler naturally runs after GPU finish; DX12's
+/// complete() runs before command list execution, so we defer frameCompleted
+/// to drawFrameEnd() which runs after ExecuteCommandLists + Signal.
+pending_complete: ?struct {
+    renderer: *Renderer,
+    health: rendererpkg.Health,
+} = null,
 
 /// Desired surface dimensions, updated by setTargetSize.
 ///
@@ -544,6 +560,20 @@ pub fn drawFrameStart(self: *DirectX12) void {
 }
 
 pub fn drawFrameEnd(self: *DirectX12) void {
+    // Release the frame semaphore after all GPU work is submitted.
+    // frameCompleted (called by the defer below) posts the swap-chain
+    // semaphore, which allows the next frame to proceed.  In Metal the
+    // completion handler fires after the GPU finishes; DX12's complete()
+    // fires before ExecuteCommandLists, so we must defer the semaphore
+    // release until after the fence signal to prevent frame.resize()
+    // from overwriting descriptor slots the GPU hasn't finished reading.
+    defer {
+        if (self.pending_complete) |pc| {
+            self.pending_complete = null;
+            pc.renderer.frameCompleted(pc.health);
+        }
+    }
+
     const dev_ptr = &(self.dev orelse return);
     const cl = self.pending_command_list orelse return;
     self.pending_command_list = null;
@@ -775,7 +805,7 @@ pub inline fn beginFrame(
     {
         const drr = dev_ptr.device.GetDeviceRemovedReason();
         if (com.FAILED(drr)) {
-            std.debug.print("[dx12] beginFrame: device already removed, reason=0x{x}\n", .{@as(u32, @bitCast(drr))});
+            log.err("device removed, reason=0x{x}", .{@as(u32, @bitCast(drr))});
             api.handleDeviceRemoved();
             return error.DeviceLost;
         }
@@ -936,9 +966,13 @@ pub inline fn textureOptions(self: DirectX12) Texture.Options {
 
 /// Options for creating textures that serve as both render targets and
 /// shader resources. Used by CustomShaderState for ping-pong textures.
-/// When `rtv_slot` is provided, the texture reuses that RTV descriptor
-/// instead of allocating a new one (for resize without heap reset).
-pub inline fn renderTargetTextureOptions(self: DirectX12, rtv_slot: ?DescriptorHeap.Descriptor) Texture.Options {
+/// When descriptor slots are provided, the texture reuses them instead of
+/// allocating new ones (for resize without heap exhaustion).
+pub inline fn renderTargetTextureOptions(
+    self: DirectX12,
+    rtv_slot: ?DescriptorHeap.Descriptor,
+    srv_slot: ?DescriptorHeap.Descriptor,
+) Texture.Options {
     return .{
         .device = if (self.dev) |*d| d.device else null,
         .command_list = self.pending_command_list,
@@ -947,6 +981,7 @@ pub inline fn renderTargetTextureOptions(self: DirectX12, rtv_slot: ?DescriptorH
         .pixel_format = .B8G8R8A8_UNORM,
         .render_target = true,
         .rtv_slot = rtv_slot,
+        .srv_slot = srv_slot,
     };
 }
 

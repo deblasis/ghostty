@@ -320,7 +320,9 @@ pub inline fn textureOptions(self: Metal) Texture.Options {
     };
 }
 
-pub inline fn renderTargetTextureOptions(self: Metal) Texture.Options {
+pub inline fn renderTargetTextureOptions(self: Metal, rtv_slot: anytype, srv_slot: anytype) Texture.Options {
+    _ = rtv_slot;
+    _ = srv_slot;
     return self.textureOptions();
 }
 
