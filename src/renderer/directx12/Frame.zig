@@ -153,8 +153,8 @@ pub fn renderPass(
     const api = &self.renderer.api;
     return RenderPass.begin(.{
         .command_list = cl,
-        .srv_heap = if (api.srv_heap) |*h| @constCast(h) else null,
-        .sampler_heap = if (api.sampler_heap) |*h| @constCast(h) else null,
+        .srv_heap = api.srv_heap,
+        .sampler_heap = api.sampler_heap,
         .attachments = attachments,
     });
 }

@@ -73,9 +73,57 @@ pub fn loadFromFiles(
     return try list.toOwnedSlice(alloc_gpa);
 }
 
-/// Load a single shader from a file and convert it to the target language
-/// ready to be used with renderers.
+/// Load a single shader from a file and convert it to the target language.
+/// On Windows, runs the compilation on a fresh OS thread to avoid C++
+/// runtime thread-local state issues when called from .NET threads.
 pub fn loadFromFile(
+    alloc_gpa: Allocator,
+    path: []const u8,
+    target: Target,
+) ![:0]const u8 {
+    if (builtin.os.tag == .windows) {
+        std.debug.print("[shadertoy] loadFromFile: spawning thread for path={s}\n", .{path});
+
+        const Ctx = struct {
+            alloc_gpa: Allocator,
+            path: []const u8,
+            target: Target,
+            result: anyerror![:0]const u8 = error.Unexpected,
+
+            fn run(self: *@This()) void {
+                std.debug.print("[shadertoy] compileShader: thread started\n", .{});
+                self.result = compileShader(self.alloc_gpa, self.path, self.target);
+                if (self.result) |_| {
+                    std.debug.print("[shadertoy] compileShader: succeeded\n", .{});
+                } else |err| {
+                    std.debug.print("[shadertoy] compileShader: failed err={}\n", .{err});
+                }
+            }
+        };
+
+        var ctx: Ctx = .{
+            .alloc_gpa = alloc_gpa,
+            .path = path,
+            .target = target,
+        };
+
+        const thread = std.Thread.spawn(
+            .{ .stack_size = 8 * 1024 * 1024 },
+            Ctx.run,
+            .{&ctx},
+        ) catch return error.OutOfMemory;
+        std.debug.print("[shadertoy] loadFromFile: thread spawned, waiting\n", .{});
+        thread.join();
+        std.debug.print("[shadertoy] loadFromFile: thread joined\n", .{});
+
+        return ctx.result;
+    }
+
+    return compileShader(alloc_gpa, path, target);
+}
+
+/// Compile a shader file through the full GLSL -> SPIR-V -> target pipeline.
+fn compileShader(
     alloc_gpa: Allocator,
     path: []const u8,
     target: Target,
@@ -83,6 +131,8 @@ pub fn loadFromFile(
     var arena = ArenaAllocator.init(alloc_gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
+
+    std.debug.print("[shadertoy] compileShader: reading file path={s}\n", .{path});
 
     // Read it all into memory -- we don't expect shaders to be large.
     const src = src: {
@@ -104,8 +154,19 @@ pub fn loadFromFile(
         try stream.writer.writeByte(0);
         break :glsl stream.written()[0 .. stream.written().len - 1 :0];
     };
+    std.debug.print("[shadertoy] compileShader: GLSL prefix done, len={}\n", .{glsl.len});
 
-    // Convert to SPIR-V
+    // On Windows, use the MSVC-compiled shader_wrapper.dll for the full
+    // GLSL -> SPIR-V -> HLSL pipeline to avoid C++ ABI issues.
+    if (builtin.os.tag == .windows and target == .hlsl) {
+        std.debug.print("[shadertoy] compileShader: using shader_wrapper.dll\n", .{});
+        return glslang.wrapper.compileToHlsl(alloc_gpa, glsl) catch |err| {
+            log.warn("wrapper compile failed path={s} err={}", .{ path, err });
+            return err;
+        };
+    }
+
+    // Convert to SPIR-V (non-Windows or non-HLSL path)
     const spirv: []const u8 = spirv: {
         var stream: std.Io.Writer.Allocating = .init(alloc);
         var errlog: SpirvLog = .{ .alloc = alloc };
@@ -118,21 +179,16 @@ pub fn loadFromFile(
                     errlog.debug,
                 });
             }
-
             return err;
         };
-
-        // SpirV pointer must be aligned to 4 bytes since we expect
-        // a slice of words.
         var list: std.ArrayListAligned(u8, .of(u32)) = .empty;
         try list.appendSlice(alloc, stream.written());
         break :spirv list.items;
     };
+    std.debug.print("[shadertoy] compileShader: SPIR-V done len={}, converting to target\n", .{spirv.len});
 
-    // Convert to MSL
+    // Convert to target format
     return switch (target) {
-        // Important: using the alloc_gpa here on purpose because this
-        // is the final result that will be returned to the caller.
         .glsl => try glslFromSpv(alloc_gpa, spirv),
         .msl => try mslFromSpv(alloc_gpa, spirv),
         .hlsl => try hlslFromSpv(alloc_gpa, spirv),
@@ -161,7 +217,10 @@ pub fn spirvFromGlsl(
     // So we can run unit tests without fear.
     if (builtin.is_test) try glslang.testing.ensureInit();
 
+    std.debug.print("[shadertoy] spirvFromGlsl: calling glslang_default_resource\n", .{});
     const c = glslang.c;
+    const resource = c.glslang_default_resource();
+    std.debug.print("[shadertoy] spirvFromGlsl: resource ptr={}\n", .{@intFromPtr(resource)});
     const input: c.glslang_input_t = .{
         .language = c.GLSLANG_SOURCE_GLSL,
         .stage = c.GLSLANG_STAGE_FRAGMENT,
@@ -175,11 +234,32 @@ pub fn spirvFromGlsl(
         .force_default_version_and_profile = 0,
         .forward_compatible = 0,
         .messages = c.GLSLANG_MSG_DEFAULT_BIT,
-        .resource = c.glslang_default_resource(),
+        .resource = resource,
+        .callbacks = .{
+            .include_system = null,
+            .include_local = null,
+            .free_include_result = null,
+        },
+        .callbacks_ctx = null,
     };
+    std.debug.print("[shadertoy] spirvFromGlsl: input struct created, calling Shader.create\n", .{});
+
+    // Diagnostic: test basic C++ lifecycle before full compilation
+    {
+        const test_shader = glslang.Shader.create(&input) catch |err| {
+            std.debug.print("[shadertoy] spirvFromGlsl: DIAG create FAILED err={}\n", .{err});
+            return err;
+        };
+        std.debug.print("[shadertoy] spirvFromGlsl: DIAG test shader created, trying getInfoLog\n", .{});
+        const info = test_shader.getInfoLog() catch "(null)";
+        std.debug.print("[shadertoy] spirvFromGlsl: DIAG getInfoLog OK len={}, trying delete\n", .{info.len});
+        test_shader.delete();
+        std.debug.print("[shadertoy] spirvFromGlsl: DIAG test shader deleted OK\n", .{});
+    }
 
     const shader = try glslang.Shader.create(&input);
     defer shader.delete();
+    std.debug.print("[shadertoy] spirvFromGlsl: shader created, calling preprocess\n", .{});
 
     shader.preprocess(&input) catch |err| {
         if (errlog) |ptr| ptr.fromShader(shader) catch {};

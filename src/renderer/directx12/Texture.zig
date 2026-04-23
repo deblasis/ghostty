@@ -29,6 +29,10 @@ pub const Options = struct {
     /// and a shader resource (via SRV). The resource is created with
     /// ALLOW_RENDER_TARGET flag. No initial data upload is performed.
     render_target: bool = false,
+    /// When non-null, reuse this RTV descriptor slot instead of allocating
+    /// a new one from the heap. Used during resize to avoid overwriting
+    /// other frames' in-flight RTV descriptors.
+    rtv_slot: ?DescriptorHeap.Descriptor = null,
 };
 
 pub const Error = error{
@@ -116,8 +120,34 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
         .index = 0,
     };
     if (opts.render_target) {
-        const rtv_heap = opts.rtv_heap orelse return error.TextureCreateFailed;
-        rtv = rtv_heap.allocate() catch return error.TextureCreateFailed;
+        const rtv_heap = opts.rtv_heap orelse {
+            std.debug.print("[texture] render-target texture: rtv_heap is null\n", .{});
+            return error.TextureCreateFailed;
+        };
+        if (opts.rtv_slot) |slot| {
+            // Reuse a pre-allocated RTV descriptor slot (e.g. during resize).
+            rtv = slot;
+            std.debug.print("[texture] RTV reused: index={}, size={}x{}\n", .{
+                rtv.index,
+                width,
+                height,
+            });
+        } else {
+            rtv = rtv_heap.allocate() catch {
+                std.debug.print("[texture] RTV heap FULL (allocated={}, capacity={})\n", .{
+                    rtv_heap.allocated,
+                    rtv_heap.capacity,
+                });
+                return error.TextureCreateFailed;
+            };
+            std.debug.print("[texture] RTV allocated: index={}, heap {}/{}, size={}x{}\n", .{
+                rtv.index,
+                rtv_heap.allocated,
+                rtv_heap.capacity,
+                width,
+                height,
+            });
+        }
         device.CreateRenderTargetView(resource, null, rtv.cpu);
     }
 
@@ -133,7 +163,7 @@ pub fn init(opts: Options, width: usize, height: usize, data: ?[]const u8) Error
         .device = device,
         .command_list = opts.command_list,
         .state = if (opts.render_target)
-            d3d12.D3D12_RESOURCE_STATES.RENDER_TARGET
+            d3d12.D3D12_RESOURCE_STATES.PIXEL_SHADER_RESOURCE
         else
             d3d12.D3D12_RESOURCE_STATES.COPY_DEST,
     };
@@ -411,7 +441,7 @@ fn createRenderTargetResource(device: *d3d12.ID3D12Device, width: u32, height: u
         &heap_props,
         0,
         &desc,
-        d3d12.D3D12_RESOURCE_STATES.RENDER_TARGET,
+        d3d12.D3D12_RESOURCE_STATES.PIXEL_SHADER_RESOURCE,
         &clear_value,
         &d3d12.ID3D12Resource.IID,
         @ptrCast(&resource),

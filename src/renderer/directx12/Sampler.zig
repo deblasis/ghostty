@@ -48,7 +48,7 @@ pub fn init(opts: Options) Error!Sampler {
         .ComparisonFunc = .NEVER,
         .BorderColor = .{ 0.0, 0.0, 0.0, 0.0 },
         .MinLOD = 0.0,
-        .MaxLOD = 0.0,
+        .MaxLOD = 3.402823466e+38,
     };
     device.CreateSampler(&sampler_desc, desc.cpu);
 

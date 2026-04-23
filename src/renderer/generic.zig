@@ -469,14 +469,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Initialize the front and back textures at 1x1 px, this
                 // is slightly wasteful but it's only done once so whatever.
                 const front_texture = try Texture.init(
-                    api.renderTargetTextureOptions(),
+                    api.renderTargetTextureOptions(null),
                     1,
                     1,
                     null,
                 );
                 errdefer front_texture.deinit();
                 const back_texture = try Texture.init(
-                    api.renderTargetTextureOptions(),
+                    api.renderTargetTextureOptions(null),
                     1,
                     1,
                     null,
@@ -507,15 +507,24 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 width: usize,
                 height: usize,
             ) !void {
+                // Reuse the existing RTV descriptor slots so each frame keeps
+                // its dedicated slots.  This prevents frames from overwriting
+                // each other's RTV descriptors while the GPU is in-flight.
+                const RtDescriptor = @TypeOf(self.front_texture.rtv);
+                const front_rtv_slot: ?RtDescriptor =
+                    if (self.front_texture.rtv.cpu.ptr != 0) self.front_texture.rtv else null;
+                const back_rtv_slot: ?RtDescriptor =
+                    if (self.back_texture.rtv.cpu.ptr != 0) self.back_texture.rtv else null;
+
                 const front_texture = try Texture.init(
-                    api.renderTargetTextureOptions(),
+                    api.renderTargetTextureOptions(front_rtv_slot),
                     @intCast(width),
                     @intCast(height),
                     null,
                 );
                 errdefer front_texture.deinit();
                 const back_texture = try Texture.init(
-                    api.renderTargetTextureOptions(),
+                    api.renderTargetTextureOptions(back_rtv_slot),
                     @intCast(width),
                     @intCast(height),
                     null,
@@ -805,6 +814,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         pub fn deinit(self: *Self) void {
+            // Ensure the GPU is idle before freeing any GPU resources.
+            // DX12 requires explicit synchronization; Metal and OpenGL
+            // drivers handle this automatically (no-op).
+            self.api.waitGpu();
+
             if (self.overlay) |*overlay| overlay.deinit(self.alloc);
             self.terminal_state.deinit(self.alloc);
             if (self.search_selected_match) |*m| m.arena.deinit();
@@ -845,17 +859,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             defer arena.deinit();
             const arena_alloc = arena.allocator();
 
+            std.debug.print("[generic] initShaders: custom shader paths={}\n", .{self.config.custom_shaders.value.items.len});
+
             // Load our custom shaders
             const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
                 arena_alloc,
                 self.config.custom_shaders,
                 GraphicsAPI.custom_shader_target,
             ) catch |err| err: {
-                log.warn("error loading custom shaders err={}", .{err});
+                std.debug.print("[generic] initShaders: loadFromFiles FAILED err={}\n", .{err});
                 break :err &.{};
             };
 
             const has_custom_shaders = custom_shaders.len > 0;
+            std.debug.print("[generic] initShaders: loaded {} custom shaders, has={}\n", .{ custom_shaders.len, has_custom_shaders });
+            if (custom_shaders.len > 0) {
+                std.debug.print("[generic] initShaders: first shader len={}\n", .{custom_shaders[0].len});
+            }
 
             var shaders = try self.api.initShaders(
                 self.alloc,
@@ -863,6 +883,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             );
             errdefer shaders.deinit(self.alloc);
 
+            std.debug.print("[generic] initShaders: post_pipelines={}\n", .{shaders.post_pipelines.len});
             self.shaders = shaders;
             self.has_custom_shaders = has_custom_shaders;
         }
@@ -1554,6 +1575,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 frame.target.height != self.size.screen.height or
                 frame.target_config_modified != self.target_config_modified)
             {
+                std.debug.print("[generic] frame resize: {}x{} -> {}x{}\n", .{
+                    frame.target.width,
+                    frame.target.height,
+                    self.size.screen.width,
+                    self.size.screen.height,
+                });
                 try frame.resize(
                     self.api,
                     self.size.screen.width,
@@ -1610,10 +1637,36 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 try self.syncAtlasTexture(&self.font_grid.atlas_color, &frame.color);
             }
 
+            // Determine if we can use the custom shader path.  All post-process
+            // resources must be valid -- if any are null (e.g. a texture failed
+            // to create during resize), fall back to direct-to-target rendering
+            // so the terminal stays visible instead of crashing the GPU driver.
+            const use_custom_shader = use_custom_shader: {
+                const state = frame.custom_shader_state orelse break :use_custom_shader false;
+                if (state.front_texture.resource == null or
+                    state.back_texture.resource == null or
+                    state.front_texture.rtv.cpu.ptr == 0 or
+                    state.back_texture.rtv.cpu.ptr == 0 or
+                    state.front_texture.srv.gpu.ptr == 0 or
+                    state.back_texture.srv.gpu.ptr == 0)
+                {
+                    std.debug.print("[generic] custom shader resources invalid, falling back to direct render\n", .{});
+                    break :use_custom_shader false;
+                }
+                // Verify post-process pipelines have valid PSOs.
+                for (self.shaders.post_pipelines, 0..) |pipeline, i| {
+                    if (pipeline.pso == null or pipeline.root_signature == null) {
+                        std.debug.print("[generic] post-process pipeline {} has null PSO/root_sig, falling back\n", .{i});
+                        break :use_custom_shader false;
+                    }
+                }
+                break :use_custom_shader true;
+            };
+
             {
                 var pass = frame_ctx.renderPass(&.{.{
-                    .target = if (frame.custom_shader_state) |state|
-                        .{ .texture = state.back_texture }
+                    .target = if (use_custom_shader)
+                        .{ .texture = frame.custom_shader_state.?.back_texture }
                     else
                         .{ .target = frame.target },
                     .clear_color = .{ 0.0, 0.0, 0.0, 0.0 },
@@ -1710,8 +1763,40 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 );
             }
 
-            // If we have custom shaders, then we render them.
-            if (frame.custom_shader_state) |*state| {
+            // If we have custom shaders and all resources are valid, run them.
+            if (use_custom_shader) {
+                const state = &frame.custom_shader_state.?;
+
+                // Diagnostic: verify post-process resources before rendering.
+                std.debug.print("[generic] post-process: back_tex {}x{} srv.idx={} srv.gpu=0x{x} rtv.idx={} rtv.cpu=0x{x} res={}\n", .{
+                    state.back_texture.width,
+                    state.back_texture.height,
+                    state.back_texture.srv.index,
+                    state.back_texture.srv.gpu.ptr,
+                    state.back_texture.rtv.index,
+                    state.back_texture.rtv.cpu.ptr,
+                    state.back_texture.resource != null,
+                });
+                std.debug.print("[generic] post-process: front_tex {}x{} srv.idx={} srv.gpu=0x{x} rtv.idx={} rtv.cpu=0x{x} res={}\n", .{
+                    state.front_texture.width,
+                    state.front_texture.height,
+                    state.front_texture.srv.index,
+                    state.front_texture.srv.gpu.ptr,
+                    state.front_texture.rtv.index,
+                    state.front_texture.rtv.cpu.ptr,
+                    state.front_texture.resource != null,
+                });
+                std.debug.print("[generic] post-process: sampler.gpu=0x{x} uniforms.gpu=0x{x}\n", .{
+                    state.sampler.descriptor.gpu.ptr,
+                    state.uniforms.buffer.gpu_address,
+                });
+                std.debug.print("[generic] post-process: resolution={d}x{d} target={}x{}\n", .{
+                    self.custom_shader_uniforms.resolution[0],
+                    self.custom_shader_uniforms.resolution[1],
+                    frame.target.width,
+                    frame.target.height,
+                });
+
                 // Sync our uniforms.
                 try state.uniforms.sync(&.{self.custom_shader_uniforms});
 

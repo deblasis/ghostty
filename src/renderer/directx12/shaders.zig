@@ -46,11 +46,16 @@ const shader_bytecode = if (builtin.os.tag == .windows) struct {
 /// Returns null on failure. Caller owns returned memory.
 fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point: [*:0]const u16) error{OutOfMemory}!?[]const u8 {
     // Load DXC library
+    std.debug.print("[dx12_shaders] compileHlslToDxil: source len={}\n", .{source.len});
+    // Dump first 800 chars of HLSL to verify b1→b0 remap and cbuffer layout.
+    const dump_len = @min(source.len, 800);
+    std.debug.print("[dx12_shaders] HLSL dump:\n{s}\n[end dump]\n", .{source[0..dump_len]});
     const dxc_lib = d3d12.DxcLibrary.load() orelse {
-        log.warn("DXC library load failed - dxcompiler.dll not found", .{});
+        std.debug.print("[dx12_shaders] DXC library load FAILED - dxcompiler.dll not found\n", .{});
         return null;
     };
     defer dxc_lib.deinit();
+    std.debug.print("[dx12_shaders] DXC library loaded OK\n", .{});
 
     // Create DXC utils
     var utils_raw: ?*anyopaque = null;
@@ -118,7 +123,7 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     );
 
     if (com.FAILED(hr)) {
-        log.warn("DXC compile failed HRESULT=0x{x}", .{hr});
+        std.debug.print("[dx12_shaders] DXC Compile() FAILED HRESULT=0x{x}\n", .{hr});
         return null;
     }
 
@@ -128,16 +133,35 @@ fn compileHlslToDxil(alloc: std.mem.Allocator, source: [:0]const u8, entry_point
     // Check compilation status
     const status = result.GetStatus();
     if (com.FAILED(status)) {
+        std.debug.print("[dx12_shaders] DXC compile status FAILED hr=0x{x}\n", .{status});
         logCompileErrors(result);
         return null;
     }
+    std.debug.print("[dx12_shaders] DXC compile status OK\n", .{});
 
     // Extract DXIL bytecode
     var bytecode_raw: ?*anyopaque = null;
     var output_object: ?*anyopaque = null;
-    if (com.FAILED(result.GetOutput(d3d12.DXC_OUT_KIND.OBJECT, &d3d12.IDxcBlobUtf8.IID, &bytecode_raw, &output_object))) {
-        log.warn("DXC GetOutput(OBJECT) failed", .{});
+    // IDxcBlob IID - DXIL output is IDxcBlob, not IDxcBlobUtf8
+    const IDXC_BLOB_IID = com.GUID{
+        .data1 = 0x8BA5FB08,
+        .data2 = 0x5195,
+        .data3 = 0x40e2,
+        .data4 = .{ 0xAC, 0x58, 0x0D, 0x98, 0x9C, 0x3A, 0x01, 0x02 },
+    };
+    const get_output_hr = result.GetOutput(d3d12.DXC_OUT_KIND.OBJECT, &IDXC_BLOB_IID, &bytecode_raw, &output_object);
+    if (com.FAILED(get_output_hr)) {
+        std.debug.print("[dx12_shaders] DXC GetOutput(OBJECT) FAILED hr=0x{x}\n", .{get_output_hr});
         return null;
+    }
+    std.debug.print("[dx12_shaders] DXC GetOutput OK, bytecode_raw={*}\n", .{bytecode_raw});
+
+    // output_object is a secondary COM reference (IDxcBlobWide with the
+    // output filename) that must be released to avoid leaking on every
+    // successful compilation.
+    if (output_object) |oo| {
+        const wide: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(oo));
+        _ = wide.Release();
     }
 
     const bytecode: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(bytecode_raw));
@@ -157,7 +181,7 @@ fn logCompileErrors(result: *d3d12.IDxcResult) void {
     var error_blob_raw: ?*anyopaque = null;
     var error_output: ?*anyopaque = null;
     if (com.FAILED(result.GetOutput(d3d12.DXC_OUT_KIND.ERRORS, &d3d12.IDxcBlobUtf8.IID, &error_blob_raw, &error_output))) {
-        log.warn("DXC failed to retrieve error blob", .{});
+        std.debug.print("[dx12_shaders] DXC failed to retrieve error blob\n", .{});
         return;
     }
 
@@ -165,8 +189,16 @@ fn logCompileErrors(result: *d3d12.IDxcResult) void {
         const error_blob: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(raw));
         defer _ = error_blob.Release();
 
+        // error_output is a secondary COM reference that must be released.
+        if (error_output) |eo| {
+            const wide: *d3d12.IDxcBlobUtf8 = @ptrCast(@alignCast(eo));
+            _ = wide.Release();
+        }
+
         const error_str = error_blob.GetStringPointer();
-        log.warn("DXC compilation errors: {s}", .{error_str});
+        std.debug.print("[dx12_shaders] DXC errors: {s}\n", .{error_str});
+    } else {
+        std.debug.print("[dx12_shaders] DXC: no error blob available\n", .{});
     }
 }
 
@@ -329,6 +361,10 @@ pub const Shaders = struct {
     /// Shared root signature owned by this struct. Pipelines reference it
     /// for draw-time binding but do not own it -- deinit releases it here.
     root_signature: ?*d3d12.ID3D12RootSignature = null,
+    /// Separate root signature for custom post-process shaders. Has exactly
+    /// the bindings the SPIRV-Cross HLSL output expects (b0, t0, s0) without
+    /// the main root signature's extra SRV slots.
+    post_root_signature: ?*d3d12.ID3D12RootSignature = null,
     pipelines: Pipelines = .{},
     post_pipelines: []const Pipeline = &.{},
     defunct: bool = false,
@@ -408,40 +444,59 @@ pub const Shaders = struct {
         });
 
         // Compile custom post-process shaders
+        std.debug.print("[dx12_shaders] custom_shaders count={}\n", .{custom_shaders.len});
         var post_list = std.ArrayListUnmanaged(Pipeline){};
         errdefer {
             for (post_list.items) |*p| p.deinit();
             post_list.deinit(alloc);
         }
 
-        const entry_point_utf8 = "main0";
+        // Create a dedicated root signature for post-process shaders.
+        // Uses CBV at b0 (remapped from b1 in shader_wrapper), 1 SRV at t0, 1 sampler at s0.
+        const post_root_sig = if (custom_shaders.len > 0)
+            Pipeline.createPostRootSignature(dev) catch null
+        else
+            null;
+        errdefer {
+            if (post_root_sig) |rs| {
+                _ = rs.Release();
+            }
+        }
+
+        const entry_point_utf8 = "main";
         const entry_point_w = std.unicode.utf8ToUtf16LeAllocZ(std.heap.c_allocator, entry_point_utf8) catch |err| {
             log.warn("UTF-16 conversion failed for entry point: {}", .{err});
             return .{ .root_signature = root_sig, .pipelines = pipelines };
         };
         defer std.heap.c_allocator.free(entry_point_w);
 
+        const custom_root_sig = post_root_sig orelse root_sig;
+
         for (custom_shaders) |source| {
+            std.debug.print("[dx12_shaders] compiling custom shader, source len={}\n", .{source.len});
+
             const dxil = compileHlslToDxil(alloc, source, entry_point_w) catch |err| {
-                log.warn("custom shader compilation failed: {}", .{err});
+                std.debug.print("[dx12_shaders] DXC compile error: {}\n", .{err});
                 continue;
             } orelse {
-                log.warn("custom shader compilation failed, skipping", .{});
+                std.debug.print("[dx12_shaders] DXC compile returned null, skipping\n", .{});
                 continue;
             };
+            std.debug.print("[dx12_shaders] DXIL bytecode len={}\n", .{dxil.len});
 
             const pso = Pipeline.init(.{
                 .device = dev,
-                .root_signature = root_sig,
+                .root_signature = custom_root_sig,
                 .vs_bytecode = shader_bytecode.bg_color_vs,
                 .ps_bytecode = dxil,
                 .blend = .none,
             }) catch |err| {
-                log.warn("custom PSO creation failed: {}", .{err});
+                std.debug.print("[dx12_shaders] PSO creation failed: {}\n", .{err});
                 alloc.free(dxil);
                 continue;
             };
 
+            std.debug.print("[dx12_shaders] custom PSO created OK\n", .{});
             try post_list.append(alloc, pso);
         }
 
@@ -449,6 +504,7 @@ pub const Shaders = struct {
 
         return .{
             .root_signature = root_sig,
+            .post_root_signature = post_root_sig,
             .pipelines = pipelines,
             .post_pipelines = post_pipelines,
         };
@@ -470,6 +526,8 @@ pub const Shaders = struct {
 
         if (self.root_signature) |rs| _ = rs.Release();
         self.root_signature = null;
+        if (self.post_root_signature) |rs| _ = rs.Release();
+        self.post_root_signature = null;
 
         self.* = undefined;
     }

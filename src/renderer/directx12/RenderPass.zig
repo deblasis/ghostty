@@ -286,6 +286,10 @@ pub fn step(self: *RenderPass, s: Step) void {
     // Bind buffers[1] as a root SRV descriptor (e.g. cells_bg).
     // buffers[0] is bound as a vertex buffer above. buffers[1] is
     // structured buffer data accessed via SRV in the pixel/vertex shader.
+    // NOTE: root_param_buffer_srv is index 3. Post-process pipelines use a
+    // 3-parameter root signature (indices 0-2 only). This is safe because
+    // post-process steps never pass buffers, but do NOT add buffers to
+    // post-process steps without extending the post root signature.
     if (s.buffers.len > 1) {
         if (s.buffers[1]) |buf| {
             if (buf.gpu_address != 0) {

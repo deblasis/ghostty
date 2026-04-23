@@ -55,6 +55,12 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) error{}!OpenGL {
     };
 }
 
+/// Block until the GPU finishes all submitted work.
+/// OpenGL drivers manage resource lifetime, so this is a no-op.
+pub fn waitGpu(self: *OpenGL) void {
+    _ = self;
+}
+
 pub fn deinit(self: *OpenGL) void {
     self.* = undefined;
 }

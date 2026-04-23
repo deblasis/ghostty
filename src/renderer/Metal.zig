@@ -159,6 +159,12 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     };
 }
 
+/// Block until the GPU finishes all submitted work.
+/// Metal retains resources until the GPU is done, so this is a no-op.
+pub fn waitGpu(self: *Metal) void {
+    _ = self;
+}
+
 pub fn deinit(self: *Metal) void {
     self.queue.release();
     self.device.release();
