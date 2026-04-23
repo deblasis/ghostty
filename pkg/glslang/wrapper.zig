@@ -24,8 +24,7 @@ var fn_get_error: ?WrapperGetErrorFn = null;
 pub fn ensureLoaded() !void {
     if (dll != null) return;
 
-    const dll_name = if (builtin.is_test) "shader_wrapper.dll" else "shader_wrapper.dll";
-    const dll_path_w = std.unicode.utf8ToUtf16LeStringLiteral(dll_name);
+    const dll_path_w = std.unicode.utf8ToUtf16LeStringLiteral("shader_wrapper.dll");
     const handle = windows.LoadLibraryW(dll_path_w) catch return error.DllNotFound;
 
     dll = handle;
@@ -45,28 +44,47 @@ pub fn ensureLoaded() !void {
     log.info("shader_wrapper.dll loaded and initialized", .{});
 }
 
+/// Unload the shader wrapper DLL. Call during renderer shutdown.
+pub fn deinit() void {
+    if (dll) |handle| {
+        windows.FreeLibrary(handle);
+        dll = null;
+        fn_init = null;
+        fn_compile_hlsl = null;
+        fn_get_error = null;
+    }
+}
+
 /// Compile a GLSL shader (shadertoy-style) to HLSL via the MSVC-compiled wrapper DLL.
-/// Returns a null-terminated HLSL string allocated with alloc_gpa.
+/// Returns a null-terminated HLSL string allocated with alloc.
 pub fn compileToHlsl(alloc: std.mem.Allocator, source: [:0]const u8) ![:0]const u8 {
     try ensureLoaded();
 
+    // Use a heap-allocated buffer instead of a large stack allocation.
+    // glslang + SPIRV-Cross already consume significant stack space on the
+    // 8MB thread spawned in shadertoy.zig; a 4MB stack buffer would leave
+    // too little headroom.
+    var buf = std.ArrayList(u8).initCapacity(alloc, 256 * 1024) catch
+        return error.OutOfMemory;
+    defer buf.deinit();
+    try buf.appendNTimes(0, buf.capacity);
+
     var out_len: c_int = 0;
-    var buf: [4 * 1024 * 1024]u8 = undefined;
 
     const rc = fn_compile_hlsl.?(
         source.ptr,
         @intCast(source.len),
-        &buf,
-        @intCast(buf.len),
+        buf.items.ptr,
+        @intCast(buf.items.len),
         &out_len,
     );
 
     if (rc != 0) {
         const err_msg = if (fn_get_error) |f| std.mem.sliceTo(f(), 0) else "(no error fn)";
-        std.debug.print("[shader_wrapper] compile_hlsl failed: rc={}, msg={s}\n", .{ rc, err_msg });
+        log.warn("compile_hlsl failed: rc={}, msg={s}", .{ rc, err_msg });
         return error.GlslangFailed;
     }
 
     const len: usize = @intCast(out_len);
-    return try alloc.dupeZ(u8, buf[0..len]);
+    return try alloc.dupeZ(u8, buf.items[0..len]);
 }

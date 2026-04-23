@@ -250,9 +250,28 @@ build-shader-wrapper:
     if [ $? -ne 0 ]; then echo "ERROR: Compilation failed" >&2; exit 1; fi
 
     echo "Linking shader_wrapper.dll..."
+    # Discover libcpmt.lib via VCToolsInstallDir (set in VS Developer Shell)
+    # or vswhere. Using /DEFAULTLIB:libcpmt would work too but explicit path
+    # avoids ambiguity when multiple MSVC versions are installed.
+    LIBCPMT=""
+    if [ -n "$VCToolsInstallDir" ]; then
+        LIBCPMT="$(cygpath -w "${VCToolsInstallDir}lib\\x64\\libcpmt.lib")"
+    else
+        VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+        if [ -f "$VSWHERE" ]; then
+            VS_PATH=$("$VSWHERE" -latest -property installationPath 2>/dev/null)
+            if [ -n "$VS_PATH" ]; then
+                MSVC_VER=$(ls -1 "${VS_PATH}/VC/Tools/MSVC/" 2>/dev/null | sort -rV | head -1)
+                if [ -n "$MSVC_VER" ]; then
+                    LIBCPMT="$(cygpath -w "${VS_PATH}\\VC\\Tools\\MSVC\\${MSVC_VER}\\lib\\x64\\libcpmt.lib")"
+                fi
+            fi
+        fi
+    fi
+    if [ -z "$LIBCPMT" ]; then echo "ERROR: Could not find MSVC libcpmt.lib" >&2; exit 1; fi
     link.exe /nologo /dll /out:"${win_outdir}\\shader_wrapper.dll" \
       "${win_outdir}\\*.obj" \
-      "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\lib\\x64\\libcpmt.lib"
+      "$LIBCPMT"
     if [ $? -ne 0 ]; then echo "ERROR: Linking failed" >&2; exit 1; fi
 
     echo "Success: ${OUTDIR}/shader_wrapper.dll"

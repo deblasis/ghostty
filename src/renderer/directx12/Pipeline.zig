@@ -186,7 +186,8 @@ pub fn createRootSignature(device: *d3d12.ID3D12Device) !*d3d12.ID3D12RootSignat
 }
 
 /// Root signature for custom post-process shaders.
-/// The shader_wrapper remaps the SPIRV-Cross output so the cbuffer is at b0.
+/// The shader_wrapper remaps binding=1 to binding=0 in the GLSL input
+/// before glslang, so SPIRV-Cross naturally outputs register(b0).
 /// Layout:
 ///   [0] CBV at b0 (uniforms constant buffer)
 ///   [1] Descriptor table: 1 SRV at t0

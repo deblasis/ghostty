@@ -436,7 +436,8 @@ pub const Shaders = struct {
         }
 
         // Create a dedicated root signature for post-process shaders.
-        // Uses CBV at b0 (remapped from b1 in shader_wrapper), 1 SRV at t0, 1 sampler at s0.
+        // Uses CBV at b0 (binding remapped in shader_wrapper before glslang),
+        // 1 SRV at t0, 1 sampler at s0.
         const post_root_sig = if (custom_shaders.len > 0)
             Pipeline.createPostRootSignature(dev) catch null
         else
@@ -447,10 +448,23 @@ pub const Shaders = struct {
             }
         }
 
+        if (custom_shaders.len == 0 or post_root_sig == null) {
+            return .{
+                .root_signature = root_sig,
+                .pipelines = pipelines,
+            };
+        }
+
         const entry_point_utf8 = "main";
         const entry_point_w = std.unicode.utf8ToUtf16LeAllocZ(std.heap.c_allocator, entry_point_utf8) catch |err| {
             log.warn("UTF-16 conversion failed for entry point: {}", .{err});
-            return .{ .root_signature = root_sig, .pipelines = pipelines };
+            // Return with main pipelines intact; post_pipelines remains empty.
+            return .{
+                .root_signature = root_sig,
+                .post_root_signature = post_root_sig,
+                .pipelines = pipelines,
+                .post_pipelines = &.{},
+            };
         };
         defer std.heap.c_allocator.free(entry_point_w);
 

@@ -20,8 +20,8 @@
 
 static int g_initialized = 0;
 
-// Buffer for last error message
-static char g_error_msg[4096] = {};
+// Thread-local buffer for last error message
+static thread_local char g_error_msg[4096] = {};
 
 extern "C" {
 
@@ -50,6 +50,24 @@ int shader_wrapper_compile_hlsl(
 
     *out_len = 0;
 
+    // Step 0: Remap binding=1 -> binding=0 in the GLSL uniform block declaration.
+    // The shadertoy prefix declares Globals at binding=1 because Metal binds
+    // uniforms at buffer index 1 (index 0 is for vertex buffers). DX12's
+    // post-process root signature provides CBV at b0, so we remap here on
+    // the GLSL input so SPIRV-Cross naturally produces register(b0).
+    // This is safe because user GLSL code won't contain the string
+    // "binding = 1" in a uniform block context (it's only in our prefix).
+    std::string source_str(source, source_len);
+    {
+        const std::string from = "binding = 1, std140) uniform Globals";
+        const std::string to   = "binding = 0, std140) uniform Globals";
+        size_t pos = 0;
+        while ((pos = source_str.find(from, pos)) != std::string::npos) {
+            source_str.replace(pos, from.length(), to);
+            pos += to.length();
+        }
+    }
+
     // Step 1: GLSL -> SPIR-V via glslang
     const glslang_resource_t* resource = glslang_default_resource();
     if (!resource) return -3;
@@ -61,7 +79,7 @@ int shader_wrapper_compile_hlsl(
     input.client_version = GLSLANG_TARGET_VULKAN_1_2;
     input.target_language = GLSLANG_TARGET_SPV;
     input.target_language_version = GLSLANG_TARGET_SPV_1_5;
-    input.code = source;
+    input.code = source_str.c_str();
     input.default_version = 100;
     input.default_profile = GLSLANG_NO_PROFILE;
     input.force_default_version_and_profile = 0;
@@ -155,22 +173,7 @@ int shader_wrapper_compile_hlsl(
         return -14;
     }
 
-    // Remap register(b1, -> register(b0, so the cbuffer matches the DX12
-    // root signature which provides CBV at b0. The shadertoy GLSL prefix
-    // declares binding=1 for the Globals uniform block; SPIRV-Cross maps
-    // that to register(b1) in HLSL.
-    std::string hlsl(hlsl_result);
-    {
-        const std::string from = "register(b1,";
-        const std::string to = "register(b0,";
-        size_t pos = 0;
-        while ((pos = hlsl.find(from, pos)) != std::string::npos) {
-            hlsl.replace(pos, from.length(), to);
-            pos += to.length();
-        }
-    }
-
-    size_t hlsl_len = hlsl.length();
+    size_t hlsl_len = strlen(hlsl_result);
     if ((int)(hlsl_len + 1) > out_buf_cap) {
         spvc_context_destroy(spv_ctx);
         glslang_program_delete(program);
@@ -178,7 +181,7 @@ int shader_wrapper_compile_hlsl(
         return -15;
     }
 
-    memcpy(out_buf, hlsl.c_str(), hlsl_len + 1);
+    memcpy(out_buf, hlsl_result, hlsl_len + 1);
     *out_len = (int)hlsl_len;
 
     spvc_context_destroy(spv_ctx);

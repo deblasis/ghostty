@@ -1,10 +1,59 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set MSVC_DIR=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717
-set WINSDK_VER=10.0.26100.0
-set WINSDK_INC=C:\Program Files (x86)\Windows Kits\10\Include\%WINSDK_VER%
-set WINSDK_LIB=C:\Program Files (x86)\Windows Kits\10\Lib\%WINSDK_VER%
+REM Discover MSVC tools directory via vswhere (works for VS 2019+).
+REM Falls back to VCToolsInstallDir if set (inside VS Developer Shell).
+if not defined MSVC_DIR (
+    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+    if exist "!VSWHERE!" (
+        for /f "usebackq delims=" %%d in (`"!VSWHERE!" -latest -property installationPath`) do set "VS_PATH=%%d"
+    )
+    if defined VS_PATH (
+        for /f "usebackq delims=" %%t in (`dir /b /ad "!VS_PATH!\VC\Tools\MSVC" 2^>nul ^| sort /r`) do (
+            set "MSVC_DIR=!VS_PATH!\VC\Tools\MSVC\%%t"
+            goto :found_msvc
+        )
+    )
+    if defined VCToolsInstallDir (
+        set "MSVC_DIR=!VCToolsInstallDir:~0,-1!"
+    )
+)
+:found_msvc
+
+if not defined MSVC_DIR (
+    echo ERROR: Could not find MSVC tools. Run from a VS Developer Shell or install Visual Studio.
+    exit /b 1
+)
+
+if not exist "!MSVC_DIR!\bin\Hostx64\x64\cl.exe" (
+    echo ERROR: cl.exe not found at !MSVC_DIR!\bin\Hostx64\x64\
+    exit /b 1
+)
+
+echo Using MSVC: !MSVC_DIR!
+
+REM Discover Windows SDK version (use latest)
+set WINSDK_VER=
+set WINSDK_ROOT=%ProgramFiles(x86)%\Windows Kits\10
+if exist "%WINSDK_ROOT%\Include" (
+    for /f "delims=" %%v in ('dir /b /ad "%WINSDK_ROOT%\Include" 2^>nul ^| sort /r') do (
+        if exist "%WINSDK_ROOT%\Include\%%v\um" (
+            set WINSDK_VER=%%v
+            goto :found_sdk
+        )
+    )
+)
+:found_sdk
+
+if not defined WINSDK_VER (
+    echo ERROR: Could not find Windows SDK
+    exit /b 1
+)
+
+echo Using Windows SDK: %WINSDK_VER%
+
+set WINSDK_INC=%WINSDK_ROOT%\Include\%WINSDK_VER%
+set WINSDK_LIB=%WINSDK_ROOT%\Lib\%WINSDK_VER%
 
 REM Find glslang source from zig cache
 for /f "delims=" %%i in ('dir /b /ad "%LOCALAPPDATA%\zig\p"') do (
@@ -20,9 +69,9 @@ if not defined GLSLANG_SRC (
 
 echo Using glslang source: %GLSLANG_SRC%
 
-set CL=%MSVC_DIR%\bin\Hostx64\x64\cl.exe
-set LIB=%MSVC_DIR%\lib\x64;%WINSDK_LIB%\um\x64;%WINSDK_LIB%\ucrt\x64
-set INCLUDE=%MSVC_DIR%\include;%WINSDK_INC%\um;%WINSDK_INC%\ucrt;%WINSDK_INC%\shared
+set CL=!MSVC_DIR!\bin\Hostx64\x64\cl.exe
+set LIB=!MSVC_DIR!\lib\x64;%WINSDK_LIB%\um\x64;%WINSDK_LIB%\ucrt\x64
+set INCLUDE=!MSVC_DIR!\include;%WINSDK_INC%\um;%WINSDK_INC%\ucrt;%WINSDK_INC%\shared
 
 set OUTDIR=%~dp0msvc_build
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
@@ -87,7 +136,7 @@ if errorlevel 1 (
 )
 
 echo Creating static library...
-"%MSVC_DIR%\bin\Hostx64\x64\lib.exe" /nologo /out:"%OUTDIR%\glslang.lib" "%OUTDIR%\*.obj"
+"!MSVC_DIR!\bin\Hostx64\x64\lib.exe" /nologo /out:"%OUTDIR%\glslang.lib" "%OUTDIR%\*.obj"
 
 if errorlevel 1 (
     echo ERROR: Library creation failed
