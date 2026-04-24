@@ -62,43 +62,43 @@ internal sealed partial class DiscoveryService
 
     public async Task<IReadOnlyList<DiscoveredProfile>> DiscoverAsync(CancellationToken ct)
     {
-        if (TryLoadFreshCache(out var cached))
-            return cached!;
+        var cached = await TryLoadFreshCacheAsync(ct).ConfigureAwait(false);
+        if (cached is not null)
+            return cached;
 
         var merged = await RunProbesAsync(ct).ConfigureAwait(false);
         await TryWriteCacheAsync(merged, ct).ConfigureAwait(false);
         return merged;
     }
 
-    private bool TryLoadFreshCache(out IReadOnlyList<DiscoveredProfile>? profiles)
+    private async Task<IReadOnlyList<DiscoveredProfile>?> TryLoadFreshCacheAsync(CancellationToken ct)
     {
-        profiles = null;
-        if (_fs is null || _clock is null || _cacheFilePath is null) return false;
-        if (!_fs.FileExists(_cacheFilePath)) return false;
+        if (_fs is null || _clock is null || _cacheFilePath is null) return null;
+        if (!_fs.FileExists(_cacheFilePath)) return null;
 
         byte[] bytes;
         try
         {
-            // Synchronous wait is fine: the in-memory FakeFileSystem is
-            // already completed, and the production path reads a small
-            // JSON file once per process startup before any UI is live.
-            bytes = _fs.ReadAllBytesAsync(_cacheFilePath, CancellationToken.None).GetAwaiter().GetResult();
+            bytes = await _fs.ReadAllBytesAsync(_cacheFilePath, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             LogCacheReadFailed(ex);
-            return false;
+            return null;
         }
 
         var file = DiscoveryCache.Deserialize(bytes);
-        if (file is null) return false;
-        if (!string.Equals(file.WinttyVersion, _winttyVersion, StringComparison.Ordinal)) return false;
+        if (file is null) return null;
+        if (!string.Equals(file.WinttyVersion, _winttyVersion, StringComparison.Ordinal)) return null;
 
         var age = _clock.UtcNow - file.CreatedAt;
-        if (age < TimeSpan.Zero || age > CacheTtl) return false;
+        if (age < TimeSpan.Zero || age > CacheTtl) return null;
 
-        profiles = file.Profiles.Select(ToDiscoveredProfile).ToList();
-        return true;
+        return file.Profiles.Select(ToDiscoveredProfile).ToList();
     }
 
     private async Task<IReadOnlyList<DiscoveredProfile>> RunProbesAsync(CancellationToken ct)
