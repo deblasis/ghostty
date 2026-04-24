@@ -199,4 +199,77 @@ public sealed class ProfileOrderResolverTests
 
         Assert.Empty(resolved);
     }
+
+    [Fact]
+    public void Resolve_DiscoveredAddedLater_DoesNotShiftUserSlots()
+    {
+        var users = new[] { User("pwsh-7"), User("cmd"), User("git-bash") };
+
+        var before = ProfileOrderResolver.Resolve(
+            user: users,
+            discovered: System.Array.Empty<DiscoveredProfile>(),
+            profileOrder: null,
+            defaultProfileId: "pwsh-7",
+            hidden: new HashSet<string>()).ToList();
+
+        var after = ProfileOrderResolver.Resolve(
+            user: users,
+            discovered: new[] { Disc("wsl-ubuntu"), Disc("wsl-debian") },
+            profileOrder: null,
+            defaultProfileId: "pwsh-7",
+            hidden: new HashSet<string>()).ToList();
+
+        Assert.Equal("pwsh-7", before[0].Id);
+        Assert.Equal("pwsh-7", after[0].Id);
+        Assert.Equal("cmd", before[1].Id);
+        Assert.Equal("cmd", after[1].Id);
+        Assert.Equal("git-bash", before[2].Id);
+        Assert.Equal("git-bash", after[2].Id);
+
+        Assert.Equal(new[] { "wsl-debian", "wsl-ubuntu" },
+                     after.Skip(3).Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Resolve_HidingDiscovered_FreesSlotForLowerEntries()
+    {
+        var discovered = new[] { Disc("wsl-debian"), Disc("wsl-kali"), Disc("wsl-ubuntu") };
+
+        var noHide = ProfileOrderResolver.Resolve(
+            user: System.Array.Empty<ProfileDef>(),
+            discovered: discovered,
+            profileOrder: null,
+            defaultProfileId: null,
+            hidden: new HashSet<string>()).ToList();
+
+        var hideKali = ProfileOrderResolver.Resolve(
+            user: System.Array.Empty<ProfileDef>(),
+            discovered: discovered,
+            profileOrder: null,
+            defaultProfileId: null,
+            hidden: new HashSet<string> { "wsl-kali" }).ToList();
+
+        Assert.Equal(new[] { "wsl-debian", "wsl-kali", "wsl-ubuntu" },
+                     noHide.Select(r => r.Id));
+        Assert.Equal(new[] { "wsl-debian", "wsl-ubuntu" },
+                     hideKali.Select(r => r.Id));
+
+        Assert.Equal("wsl-debian", hideKali[0].Id);
+        Assert.Equal("wsl-ubuntu", hideKali[1].Id);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitProfileOrderPinsSlotIndependentOfHide()
+    {
+        var users = new[] { User("a"), User("b"), User("c"), User("d") };
+
+        var pinned = ProfileOrderResolver.Resolve(
+            user: users,
+            discovered: System.Array.Empty<DiscoveredProfile>(),
+            profileOrder: new[] { "c", "a" },
+            defaultProfileId: null,
+            hidden: new HashSet<string> { "b" }).ToList();
+
+        Assert.Equal(new[] { "c", "a", "d" }, pinned.Select(r => r.Id));
+    }
 }
