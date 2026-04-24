@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
+using Windows.System;
 using Windows.UI;
 
 namespace Ghostty.Settings.Pages;
@@ -23,12 +24,18 @@ internal sealed partial class RawEditorPage : Page
     // Find state
     private readonly List<int> _findMatches = new();
     private int _findCurrentIndex = -1;
+    private DispatcherTimer? _findDebounce;
+    private string _findTextSnapshot = string.Empty;
 
     // Track highlighted ranges so we only clear those (never the full document).
     private readonly List<(int start, int end)> _prevRanges = new();
     private (int start, int end) _prevCurrentRange;
 
-    // Reusable colors to avoid allocating on every keystroke.
+    // CharacterFormat.BackgroundColor on many ranges is expensive; cap to keep
+    // per-keystroke latency acceptable (~50 ms for 50 ranges on a 94 KB file).
+    private const int MaxHighlightedMatches = 50;
+
+    // Reusable colors invalidated on theme change.
     private Color _matchColor;
     private Color _currentColor;
     private bool _colorsReady;
@@ -41,6 +48,8 @@ internal sealed partial class RawEditorPage : Page
 
         DiagList.ItemsSource = _diagnostics;
         DiagList.ContainerContentChanging += OnContainerContentChanging;
+        Editor.ActualThemeChanged += (_, _) => _colorsReady = false;
+        Editor.TextChanged += Editor_TextChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
 
@@ -50,8 +59,10 @@ internal sealed partial class RawEditorPage : Page
 
     private string GetEditorText()
     {
+        // RichEditBox appends a trailing \r that wasn't in the original text;
+        // trim it so comparisons and disk writes stay consistent.
         Editor.Document.GetText(TextGetOptions.None, out var text);
-        return text;
+        return text.TrimEnd('\r');
     }
 
     private void SetEditorText(string text)
@@ -263,14 +274,18 @@ internal sealed partial class RawEditorPage : Page
 
     private void F3_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (FindBar.Visibility == Visibility.Visible && _findMatches.Count > 0)
+        if (FindBar.Visibility != Visibility.Visible)
+            ShowFindBar();
+        if (_findMatches.Count > 0)
             FindNextMatch();
         args.Handled = true;
     }
 
     private void ShiftF3_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (FindBar.Visibility == Visibility.Visible && _findMatches.Count > 0)
+        if (FindBar.Visibility != Visibility.Visible)
+            ShowFindBar();
+        if (_findMatches.Count > 0)
             FindPrevMatch();
         args.Handled = true;
     }
@@ -305,15 +320,15 @@ internal sealed partial class RawEditorPage : Page
 
     private void FindInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == Windows.System.VirtualKey.Escape)
+        if (e.Key == VirtualKey.Escape)
         {
             HideFindBar();
             e.Handled = true;
         }
-        else if (e.Key == Windows.System.VirtualKey.Enter)
+        else if (e.Key == VirtualKey.Enter)
         {
             var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
-                Windows.System.VirtualKey.Shift);
+                VirtualKey.Shift);
             if (shift.HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
                 FindPrevMatch();
             else
@@ -333,12 +348,34 @@ internal sealed partial class RawEditorPage : Page
 
     private void Editor_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == Windows.System.VirtualKey.Escape
+        if (e.Key == VirtualKey.Escape
             && FindBar.Visibility == Visibility.Visible)
         {
             HideFindBar();
             e.Handled = true;
         }
+    }
+
+    private void Editor_TextChanged(object sender, RoutedEventArgs e)
+    {
+        if (FindBar.Visibility != Visibility.Visible) return;
+        // CharacterFormat changes fire TextChanged too; skip if the actual
+        // text content hasn't changed since the last find update.
+        var current = GetEditorText();
+        if (current == _findTextSnapshot) return;
+        // Debounce: restart the timer on each change, fire after 300ms of silence.
+        _findDebounce ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _findDebounce.Stop();
+        _findDebounce.Tick -= OnFindDebounce;
+        _findDebounce.Tick += OnFindDebounce;
+        _findDebounce.Start();
+    }
+
+    private void OnFindDebounce(object? sender, object e)
+    {
+        _findDebounce!.Stop();
+        _findDebounce.Tick -= OnFindDebounce;
+        UpdateFindMatches();
     }
 
     // --- Find logic ---
@@ -348,6 +385,7 @@ internal sealed partial class RawEditorPage : Page
         var query = FindInput.Text;
         _findMatches.Clear();
         _findCurrentIndex = -1;
+        _findTextSnapshot = GetEditorText();
 
         if (string.IsNullOrEmpty(query))
         {
@@ -379,7 +417,11 @@ internal sealed partial class RawEditorPage : Page
 
         _findCurrentIndex = 0;
         ApplyHighlights();
-        NavigateToMatch(_findCurrentIndex);
+        // Only scroll to the match when the find input has focus (user is
+        // searching). Skip when focus is in the editor (user is editing)
+        // to avoid jarring auto-scroll.
+        if (FindInput.FocusState != FocusState.Unfocused)
+            NavigateToMatch(_findCurrentIndex);
         UpdateMatchCountDisplay();
     }
 
@@ -417,23 +459,22 @@ internal sealed partial class RawEditorPage : Page
 
         var query = FindInput.Text;
         var queryLen = query.Length;
-        var limit = Math.Min(_findMatches.Count, 50);
+        var limit = Math.Min(_findMatches.Count, MaxHighlightedMatches);
+        var currentStart = _findMatches[_findCurrentIndex];
 
         for (int i = 0; i < limit; i++)
         {
             var s = _findMatches[i];
-            var e = s + queryLen;
-            var range = Editor.Document.GetRange(s, e);
+            if (s == currentStart) continue;
+            var range = Editor.Document.GetRange(s, s + queryLen);
             range.CharacterFormat.BackgroundColor = _matchColor;
-            _prevRanges.Add((s, e));
+            _prevRanges.Add((s, s + queryLen));
         }
 
         // Current match gets brighter highlight.
-        var cs = _findMatches[_findCurrentIndex];
-        var ce = cs + queryLen;
-        var curRange = Editor.Document.GetRange(cs, ce);
+        var curRange = Editor.Document.GetRange(currentStart, currentStart + queryLen);
         curRange.CharacterFormat.BackgroundColor = _currentColor;
-        _prevCurrentRange = (cs, ce);
+        _prevCurrentRange = (currentStart, currentStart + queryLen);
     }
 
     private void UpdateMatchCountDisplay()
