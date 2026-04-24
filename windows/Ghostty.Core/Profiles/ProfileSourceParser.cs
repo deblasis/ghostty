@@ -20,11 +20,12 @@ public sealed record ProfileParseResult(
 /// kebab-case ASCII (<c>[a-z0-9-]+</c>); invalid IDs cause the profile to
 /// be dropped with a warning.
 /// </summary>
-public static class ProfileSourceParser
+public static partial class ProfileSourceParser
 {
-    private static readonly Regex LineRegex = new(
+    [GeneratedRegex(
         @"^profile\.([a-z0-9-]+)\.([a-z0-9-]+)\s*=\s*(.+?)\s*$",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        RegexOptions.IgnoreCase)]
+    private static partial Regex LineRegex();
 
     public static ProfileParseResult Parse(string configText)
     {
@@ -36,7 +37,7 @@ public static class ProfileSourceParser
             var line = rawLine.TrimEnd('\r').Trim();
             if (line.Length == 0 || line[0] == '#') continue;
 
-            var match = LineRegex.Match(line);
+            var match = LineRegex().Match(line);
             if (!match.Success) continue;
 
             var id = match.Groups[1].Value.ToLowerInvariant();
