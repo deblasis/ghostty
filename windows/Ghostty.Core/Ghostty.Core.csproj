@@ -57,6 +57,13 @@
       so WindowsIconResolver can GetManifestResourceStream by key without
       caring about how MSBuild would otherwise mangle folder paths.
     -->
+    <!--
+      Remove from the default <None> glob first. The Microsoft.NET.Sdk
+      None glob picks up arbitrary files, so without this each PNG would
+      sit in both @(None) and @(EmbeddedResource) simultaneously - harmless
+      at build time but noisy in the evaluated item graph.
+    -->
+    <None Remove="Profiles\IconAssets\*.png" />
     <EmbeddedResource Include="Profiles\IconAssets\*.png">
       <LogicalName>Ghostty.Core.Profiles.IconAssets.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
