@@ -420,8 +420,10 @@ public partial class App : Application
 
         // Re-resolve whenever the user edits power-saver-mode (or any
         // other key -- cheap, and keeps this out of the reload path's
-        // critical section).
-        _configService.ConfigChanged += _ => _powerStateMonitor!.OnConfigReloaded();
+        // critical section). Named handler so we can detach symmetrically
+        // at shutdown (the rest of this codebase detaches every event
+        // subscription explicitly; anonymous lambda breaks that pattern).
+        _configService.ConfigChanged += OnConfigChanged_NotifyPowerMonitor;
 
         _powerStateMonitor.Start();
 
@@ -532,6 +534,11 @@ public partial class App : Application
             _logFilters, cfg.LogLevel, cfg.LogFilter);
     }
 
+    private void OnConfigChanged_NotifyPowerMonitor(Ghostty.Core.Config.IConfigService cfg)
+    {
+        _powerStateMonitor?.OnConfigReloaded();
+    }
+
     /// <summary>
     /// Called when ANY top-level <see cref="MainWindow"/> closes. The
     /// per-window <see cref="GhosttyHost"/> is already disposed by
@@ -571,6 +578,10 @@ public partial class App : Application
 
                 // Dispose between host and config service: the monitor subscribes
                 // to ConfigService.ConfigChanged, so tear it down before ConfigService.
+                if (_configService is not null)
+                {
+                    _configService.ConfigChanged -= OnConfigChanged_NotifyPowerMonitor;
+                }
                 _powerStateMonitor?.Dispose();
 
                 // Dispose ConfigService last: it outlives every host
