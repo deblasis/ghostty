@@ -62,6 +62,9 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         {
             return Win32IconExtractor.ExtractAsPng16(exePath);
         }
+        // Mirrors the Try*CacheAsync pattern: cancellation surfaces, everything
+        // else (GDI failures, missing .exe, access-denied) silently falls back.
+        catch (OperationCanceledException) { throw; }
         catch
         {
             return ReadBundledOrDefault(DefaultBundledKey);

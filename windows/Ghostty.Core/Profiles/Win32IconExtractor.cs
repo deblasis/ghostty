@@ -32,7 +32,7 @@ internal static class Win32IconExtractor
         // sizeof transparently.
         var ret = DWritePInvoke.SHGetFileInfo(exePath, 0, ref info, flags);
         if (ret == 0 || info.hIcon.IsNull)
-            throw new InvalidOperationException("SHGetFileInfo returned no icon");
+            throw new InvalidOperationException($"SHGetFileInfo returned no icon for '{exePath}'");
 
         try
         {
@@ -52,6 +52,8 @@ internal static class Win32IconExtractor
     // direct GetIconInfo + WIC encoder path and drop the dependency.
     // TODO: Phase 2 - migrate to direct WIC encoder to drop System.Drawing.Common.
 #pragma warning disable IL2026, IL3050, CA1416
+    // Must be unsafe: HICON.Value is a void* (CsWin32-generated), so the
+    // cast to IntPtr for Icon.FromHandle is a pointer-to-nint conversion.
     private static unsafe byte[] IconHandleToPng16(HICON hIcon)
     {
         using var icon = System.Drawing.Icon.FromHandle((IntPtr)hIcon.Value);
