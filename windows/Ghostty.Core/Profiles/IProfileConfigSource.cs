@@ -47,7 +47,7 @@ public interface IProfileConfigSource
     /// <summary>
     /// Non-fatal warnings from <see cref="ProfileSourceParser.Parse"/>
     /// (missing required keys, malformed visuals, etc.). Surfaced in
-    /// the settings UI in PR 6.
+    /// the settings UI.
     /// </summary>
     IReadOnlyList<string> ProfileWarnings { get; }
 
