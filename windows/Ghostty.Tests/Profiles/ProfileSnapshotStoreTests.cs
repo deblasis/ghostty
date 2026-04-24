@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Ghostty.Core.Profiles;
 using Xunit;
 
@@ -52,7 +51,7 @@ public sealed class ProfileSnapshotStoreTests
     }
 
     [Fact]
-    public void Refresh_ProfileUnchanged_ReturnsSameInstance()
+    public void Refresh_ProfileFound_ReturnsNewSnapshotAtNewVersion()
     {
         var resolved = new[] { Resolved("pwsh") };
         var snap = ProfileSnapshotStore.Resolve("pwsh", resolved, version: 1)!;
