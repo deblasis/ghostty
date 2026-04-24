@@ -385,6 +385,7 @@ public sealed partial class MainWindow : Window
         // paint RootGrid.Background from the resolved state.
         ApplyShellTheme();
         ApplyRootGridBackground();
+        RefreshPowerSaverIcon();
 
         // Parent every existing and future PaneHost into the shared
         // container declared in MainWindow.xaml. This is the single
@@ -1271,7 +1272,22 @@ public sealed partial class MainWindow : Window
             UpdateAcrylicTuning();
             ApplyGradientTint();
             ApplyRootGridBackground();
+            RefreshPowerSaverIcon();
         });
+    }
+
+    private void RefreshPowerSaverIcon()
+    {
+        var monitor = Ghostty.App.PowerStateMonitor;
+        var active = monitor?.IsLowPowerActive ?? false;
+        PowerSaverIcon.Visibility = active
+            ? Microsoft.UI.Xaml.Visibility.Visible
+            : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+        var triggers = monitor?.ActiveTriggers ?? Ghostty.Core.Power.PowerSaverTrigger.None;
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(
+            PowerSaverIcon,
+            Ghostty.Core.Power.PowerSaverTooltipFormatter.Format(triggers));
     }
 
     /// <summary>
