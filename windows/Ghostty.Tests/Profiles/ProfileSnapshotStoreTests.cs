@@ -84,7 +84,7 @@ public sealed class ProfileSnapshotStoreTests
         var resolved = new[] { Resolved("pwsh", name: "PowerShell") };
         var snap = ProfileSnapshotStore.Resolve("pwsh", resolved, version: 1)!;
 
-        var refreshed = ProfileSnapshotStore.Refresh(snap, System.Array.Empty<ResolvedProfile>(), newVersion: 2);
+        var refreshed = ProfileSnapshotStore.Refresh(snap, [], newVersion: 2);
 
         Assert.Same(snap, refreshed);
     }

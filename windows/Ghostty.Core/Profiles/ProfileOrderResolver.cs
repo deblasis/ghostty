@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -20,6 +21,10 @@ public static class ProfileOrderResolver
         string? defaultProfileId,
         IReadOnlySet<string> hidden)
     {
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(discovered);
+        ArgumentNullException.ThrowIfNull(hidden);
+
         var combined = new Dictionary<string, ProfileDef>();
         var userOrder = new List<string>();
         foreach (var u in user)
@@ -61,7 +66,7 @@ public static class ProfileOrderResolver
         foreach (var id in userOrder)
             if (seen.Add(id)) ordered.Add(id);
 
-        foreach (var id in discoveredById.Keys.OrderBy(k => k, System.StringComparer.Ordinal))
+        foreach (var id in discoveredById.Keys.OrderBy(k => k, StringComparer.Ordinal))
             if (seen.Add(id)) ordered.Add(id);
 
         var result = new List<ResolvedProfile>();

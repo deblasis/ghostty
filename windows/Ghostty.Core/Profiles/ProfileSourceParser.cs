@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -29,6 +30,8 @@ public static partial class ProfileSourceParser
 
     public static ProfileParseResult Parse(string configText)
     {
+        ArgumentNullException.ThrowIfNull(configText);
+
         if (configText.Length > 0 && configText[0] == '\uFEFF')
             configText = configText.Substring(1);
 

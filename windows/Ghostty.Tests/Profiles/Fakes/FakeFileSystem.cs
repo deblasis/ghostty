@@ -16,7 +16,7 @@ internal sealed class FakeFileSystem : IFileSystem
     private readonly Dictionary<KnownFolderId, string> _knownFolders = new();
 
     public void AddFile(string path, byte[] content) => _files[path] = content;
-    public void AddFile(string path) => _files[path] = System.Array.Empty<byte>();
+    public void AddFile(string path) => _files[path] = [];
     public void SetKnownFolder(KnownFolderId id, string path) => _knownFolders[id] = path;
 
     public bool FileExists(string path) => _files.ContainsKey(path);

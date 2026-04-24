@@ -54,7 +54,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string>()).ToList();
@@ -69,7 +69,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string> { "a" }).ToList();
@@ -102,7 +102,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: order,
             defaultProfileId: null,
             hidden: new HashSet<string>()).ToList();
@@ -117,7 +117,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: "zulu",
             hidden: new HashSet<string>()).ToList();
@@ -133,7 +133,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: "ghost",
             hidden: new HashSet<string>()).ToList();
@@ -149,7 +149,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string>()).ToList();
@@ -164,7 +164,7 @@ public sealed class ProfileOrderResolverTests
 
         var resolved = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string>()).ToList();
@@ -178,7 +178,7 @@ public sealed class ProfileOrderResolverTests
     public void Resolve_DiscoveredProfile_HasProbeIdSet()
     {
         var resolved = ProfileOrderResolver.Resolve(
-            user: System.Array.Empty<ProfileDef>(),
+            user: [],
             discovered: new[] { Disc("wsl-ubuntu", probe: "wsl") },
             profileOrder: null,
             defaultProfileId: null,
@@ -191,8 +191,8 @@ public sealed class ProfileOrderResolverTests
     public void Resolve_EmptyInputs_ReturnsEmpty()
     {
         var resolved = ProfileOrderResolver.Resolve(
-            user: System.Array.Empty<ProfileDef>(),
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            user: [],
+            discovered: [],
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string>());
@@ -207,7 +207,7 @@ public sealed class ProfileOrderResolverTests
 
         var before = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: null,
             defaultProfileId: "pwsh-7",
             hidden: new HashSet<string>()).ToList();
@@ -236,14 +236,14 @@ public sealed class ProfileOrderResolverTests
         var discovered = new[] { Disc("wsl-debian"), Disc("wsl-kali"), Disc("wsl-ubuntu") };
 
         var noHide = ProfileOrderResolver.Resolve(
-            user: System.Array.Empty<ProfileDef>(),
+            user: [],
             discovered: discovered,
             profileOrder: null,
             defaultProfileId: null,
             hidden: new HashSet<string>()).ToList();
 
         var hideKali = ProfileOrderResolver.Resolve(
-            user: System.Array.Empty<ProfileDef>(),
+            user: [],
             discovered: discovered,
             profileOrder: null,
             defaultProfileId: null,
@@ -265,7 +265,7 @@ public sealed class ProfileOrderResolverTests
 
         var pinned = ProfileOrderResolver.Resolve(
             user: users,
-            discovered: System.Array.Empty<DiscoveredProfile>(),
+            discovered: [],
             profileOrder: new[] { "c", "a" },
             defaultProfileId: null,
             hidden: new HashSet<string> { "b" }).ToList();

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Ghostty.Core.Profiles;
@@ -20,6 +21,9 @@ public static class ProfileSnapshotStore
         IReadOnlyList<ResolvedProfile> resolvedProfiles,
         long version)
     {
+        ArgumentNullException.ThrowIfNull(profileId);
+        ArgumentNullException.ThrowIfNull(resolvedProfiles);
+
         var profile = FindById(resolvedProfiles, profileId);
         if (profile is null) return null;
         return BuildSnapshot(profile, version);
@@ -36,6 +40,9 @@ public static class ProfileSnapshotStore
         IReadOnlyList<ResolvedProfile> resolvedProfiles,
         long newVersion)
     {
+        ArgumentNullException.ThrowIfNull(existing);
+        ArgumentNullException.ThrowIfNull(resolvedProfiles);
+
         var profile = FindById(resolvedProfiles, existing.ProfileId);
         if (profile is null) return existing;
         return BuildSnapshot(profile, newVersion);

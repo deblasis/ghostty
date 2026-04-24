@@ -1,3 +1,5 @@
+using System;
+
 namespace Ghostty.Core.Profiles;
 
 /// <summary>
@@ -12,6 +14,9 @@ public static class ProfileMerger
         EffectiveVisualOverrides baseVisuals,
         EffectiveVisualOverrides profileOverrides)
     {
+        ArgumentNullException.ThrowIfNull(baseVisuals);
+        ArgumentNullException.ThrowIfNull(profileOverrides);
+
         return new EffectiveVisualOverrides(
             Theme: profileOverrides.Theme ?? baseVisuals.Theme,
             BackgroundOpacity: profileOverrides.BackgroundOpacity ?? baseVisuals.BackgroundOpacity,
