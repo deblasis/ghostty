@@ -75,8 +75,21 @@ internal sealed class WindowsProcessRunner : IProcessRunner
             return new ProcessResult(-1, "", "", sw.Elapsed);
         }
 
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
+        // Process exited cleanly; drain the read tasks. If cts was
+        // cancelled in the tiny window between WaitForExit returning and
+        // the awaits completing (e.g. token raced the exit), treat as a
+        // timeout — same shape as the WaitForExit cancellation branch.
+        string stdout;
+        string stderr;
+        try
+        {
+            stdout = await stdoutTask.ConfigureAwait(false);
+            stderr = await stderrTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ProcessResult(-1, "", "", sw.Elapsed);
+        }
         return new ProcessResult(process.ExitCode, stdout, stderr, sw.Elapsed);
     }
 }
