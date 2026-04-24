@@ -29,6 +29,9 @@ public static partial class ProfileSourceParser
 
     public static ProfileParseResult Parse(string configText)
     {
+        if (configText.Length > 0 && configText[0] == '\uFEFF')
+            configText = configText.Substring(1);
+
         var groups = new Dictionary<string, Dictionary<string, string>>();
         var warnings = new List<string>();
 

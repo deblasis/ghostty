@@ -110,4 +110,177 @@ public sealed class ProfileSourceParserTests
 
         Assert.True(p.Hidden);
     }
+
+    [Fact]
+    public void Parse_MissingCommand_DropsProfileAndWarns()
+    {
+        const string config = """
+            profile.pwsh.name = PowerShell
+            """;
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Empty(result.Profiles);
+        Assert.Single(result.Warnings);
+        Assert.Contains("pwsh", result.Warnings[0]);
+        Assert.Contains("command", result.Warnings[0]);
+    }
+
+    [Fact]
+    public void Parse_MissingName_DropsProfileAndWarns()
+    {
+        const string config = """
+            profile.pwsh.command = pwsh.exe
+            """;
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Empty(result.Profiles);
+        Assert.Single(result.Warnings);
+        Assert.Contains("name", result.Warnings[0]);
+    }
+
+    [Fact]
+    public void Parse_DuplicateKeys_LastWins()
+    {
+        const string config = """
+            profile.pwsh.name = PowerShell
+            profile.pwsh.command = pwsh.exe
+            profile.pwsh.command = pwsh-preview.exe
+            """;
+
+        var p = ProfileSourceParser.Parse(config).Profiles["pwsh"];
+        Assert.Equal("pwsh-preview.exe", p.Command);
+    }
+
+    [Theory]
+    [InlineData("PWSH")]
+    [InlineData("pwsh-7")]
+    [InlineData("wsl-debian-2204")]
+    public void Parse_IdNormalization_LowercasedAndKept(string id)
+    {
+        var config = $"profile.{id}.name = X\nprofile.{id}.command = x\n";
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Single(result.Profiles);
+        Assert.True(result.Profiles.ContainsKey(id.ToLowerInvariant()));
+    }
+
+    [Theory]
+    [InlineData("with space")]
+    [InlineData("under_score")]
+    [InlineData("dot.in.id")]
+    public void Parse_InvalidIdFormat_LineIgnored(string id)
+    {
+        var config = $"profile.{id}.name = X\nprofile.{id}.command = x\n";
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Empty(result.Profiles);
+    }
+
+    [Fact]
+    public void Parse_CRLFLineEndings_ParsedSameAsLF()
+    {
+        const string config = "profile.pwsh.name = PowerShell\r\nprofile.pwsh.command = pwsh.exe\r\n";
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Single(result.Profiles);
+        Assert.Equal("PowerShell", result.Profiles["pwsh"].Name);
+    }
+
+    [Fact]
+    public void Parse_BomPrefix_StrippedFromFirstLine()
+    {
+        var config = "\uFEFFprofile.pwsh.name = PowerShell\nprofile.pwsh.command = pwsh.exe\n";
+
+        var result = ProfileSourceParser.Parse(config);
+
+        Assert.Single(result.Profiles);
+    }
+
+    [Fact]
+    public void Parse_CommentLines_Ignored()
+    {
+        const string config = """
+            # this is a comment
+            profile.pwsh.name = PowerShell
+            # another comment between keys
+            profile.pwsh.command = pwsh.exe
+            """;
+
+        var result = ProfileSourceParser.Parse(config);
+        Assert.Single(result.Profiles);
+    }
+
+    [Fact]
+    public void Parse_BlankLines_Ignored()
+    {
+        const string config = """
+
+            profile.pwsh.name = PowerShell
+
+            profile.pwsh.command = pwsh.exe
+
+            """;
+
+        var result = ProfileSourceParser.Parse(config);
+        Assert.Single(result.Profiles);
+    }
+
+    [Fact]
+    public void Parse_WhitespaceAroundEquals_Tolerated()
+    {
+        const string config = """
+            profile.pwsh.name=PowerShell
+            profile.pwsh.command   =   pwsh.exe
+            """;
+
+        var p = ProfileSourceParser.Parse(config).Profiles["pwsh"];
+        Assert.Equal("PowerShell", p.Name);
+        Assert.Equal("pwsh.exe", p.Command);
+    }
+
+    [Fact]
+    public void Parse_UnknownSubKey_DroppedSilently()
+    {
+        const string config = """
+            profile.pwsh.name = PowerShell
+            profile.pwsh.command = pwsh.exe
+            profile.pwsh.invented-key = whatever
+            """;
+
+        var result = ProfileSourceParser.Parse(config);
+        Assert.Single(result.Profiles);
+    }
+
+    [Fact]
+    public void Parse_IconKey_PathVariant()
+    {
+        const string config = """
+            profile.pwsh.name = PowerShell
+            profile.pwsh.command = pwsh.exe
+            profile.pwsh.icon = C:\icons\pwsh.ico
+            """;
+
+        var p = ProfileSourceParser.Parse(config).Profiles["pwsh"];
+        var path = Assert.IsType<IconSpec.Path>(p.Icon);
+        Assert.Equal(@"C:\icons\pwsh.ico", path.FilePath);
+    }
+
+    [Fact]
+    public void Parse_IconKey_Mdl2TokenVariant()
+    {
+        const string config = """
+            profile.pwsh.name = PowerShell
+            profile.pwsh.command = pwsh.exe
+            profile.pwsh.icon = mdl2:E756
+            """;
+
+        var p = ProfileSourceParser.Parse(config).Profiles["pwsh"];
+        var token = Assert.IsType<IconSpec.Mdl2Token>(p.Icon);
+        Assert.Equal(0xE756, token.CodePoint);
+    }
 }
