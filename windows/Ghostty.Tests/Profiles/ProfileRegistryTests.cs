@@ -101,4 +101,42 @@ public class ProfileRegistryTests
         Assert.Single(events);
         Assert.Equal(2, events[0]);
     }
+
+    [Fact]
+    public async Task ProfileConfigChanged_RecomposesWithCachedDiscovered()
+    {
+        var src = new FakeProfileConfigSource
+        {
+            ParsedProfiles = new Dictionary<string, ProfileDef>
+            {
+                ["a"] = UserDef("a"),
+            },
+        };
+
+        var discoveredOnce = new List<DiscoveredProfile>
+        {
+            new(Id: "wsl", Name: "Ubuntu", Command: "wsl.exe",
+                ProbeId: "wsl", WorkingDirectory: null, Icon: null, TabTitle: null),
+        };
+        var firstCallDone = new TaskCompletionSource();
+        Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> discovery =
+            (_, _) => { firstCallDone.TrySetResult(); return Task.FromResult<IReadOnlyList<DiscoveredProfile>>(discoveredOnce); };
+
+        using var registry = new ProfileRegistry(
+            src, discovery, SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+        await firstCallDone.Task;
+        for (int i = 0; i < 20 && registry.Version < 2; i++) await Task.Delay(5);
+
+        // Replace user profiles + raise the event; registry should
+        // recompose with the same discovered list (Version bumps to 3).
+        src.ParsedProfiles = new Dictionary<string, ProfileDef>
+        {
+            ["a"] = UserDef("a"),
+            ["b"] = UserDef("b"),
+        };
+        src.Raise();
+
+        Assert.Equal(3L, registry.Version);
+        Assert.Equal(3, registry.Profiles.Count);  // user a, b + wsl
+    }
 }

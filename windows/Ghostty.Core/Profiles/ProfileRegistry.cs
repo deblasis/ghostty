@@ -67,6 +67,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
         _log = log ?? NullLogger<ProfileRegistry>.Instance;
 
         RecomposeAndFire();
+        _source.ProfileConfigChanged += OnSourceChanged;
         _ = RunInitialDiscoveryAsync();
     }
 
@@ -90,6 +91,8 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
             LogDiscoveryRefreshFailed(ex);
         }
     }
+
+    private void OnSourceChanged() => RecomposeAndFire();
 
     private void RecomposeAndFire()
     {
