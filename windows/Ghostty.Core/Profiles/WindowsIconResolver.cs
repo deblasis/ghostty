@@ -46,7 +46,7 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         // V1: per-distro icon extraction from appx/WSLg is out of scope. Always
         // fall back to bundled "wsl" - keeps the UI consistent and the cache
         // bounded. Phase 2 can introduce a WSLg lookup that keys on DistroName.
-        IconSpec.AutoForWslDistro w => ReadBundledOrDefault("wsl"),
+        IconSpec.AutoForWslDistro => ReadBundledOrDefault("wsl"),
         _ => ReadBundledOrDefault(DefaultBundledKey),
     };
 
