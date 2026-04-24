@@ -11,7 +11,7 @@ namespace Ghostty.Tests.Profiles.Fakes;
 /// probe set when exercising <see cref="ProfileOrderResolver"/> or
 /// later the <c>DiscoveryService</c>.
 /// </summary>
-public sealed class FakeInstalledShellProbe : IInstalledShellProbe
+internal sealed class FakeInstalledShellProbe : IInstalledShellProbe
 {
     private readonly IReadOnlyList<DiscoveredProfile> _results;
 

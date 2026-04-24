@@ -7,7 +7,7 @@ namespace Ghostty.Tests.Profiles.Fakes;
 /// Dictionary-backed registry fake. Tests configure values via
 /// <see cref="SetValue"/>; absent keys/values return null/false.
 /// </summary>
-public sealed class FakeRegistryReader : IRegistryReader
+internal sealed class FakeRegistryReader : IRegistryReader
 {
     private readonly Dictionary<string, string> _values = new();
     private readonly HashSet<string> _keys = new();

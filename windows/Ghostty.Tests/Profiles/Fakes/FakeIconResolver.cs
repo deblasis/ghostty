@@ -10,7 +10,7 @@ namespace Ghostty.Tests.Profiles.Fakes;
 /// Returns canned PNG bytes per IconSpec. If no canned entry, returns
 /// a 4-byte sentinel ("FAKE") so tests can verify the resolver was hit.
 /// </summary>
-public sealed class FakeIconResolver : IIconResolver
+internal sealed class FakeIconResolver : IIconResolver
 {
     private static readonly byte[] Sentinel = "FAKE"u8.ToArray();
     private readonly Dictionary<IconSpec, byte[]> _canned = new();

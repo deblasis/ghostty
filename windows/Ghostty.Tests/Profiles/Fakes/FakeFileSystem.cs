@@ -10,7 +10,7 @@ namespace Ghostty.Tests.Profiles.Fakes;
 /// In-memory filesystem fake. Files are byte-array values keyed by
 /// path. Known folders are configured via <see cref="SetKnownFolder"/>.
 /// </summary>
-public sealed class FakeFileSystem : IFileSystem
+internal sealed class FakeFileSystem : IFileSystem
 {
     private readonly Dictionary<string, byte[]> _files = new();
     private readonly Dictionary<KnownFolderId, string> _knownFolders = new();

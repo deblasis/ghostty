@@ -12,7 +12,7 @@ namespace Ghostty.Tests.Profiles.Fakes;
 /// Unmatched calls return ExitCode=-1 stdout/stderr empty (mirrors the
 /// "process did not start" contract). Records every call for assertion.
 /// </summary>
-public sealed class FakeProcessRunner : IProcessRunner
+internal sealed class FakeProcessRunner : IProcessRunner
 {
     private readonly Dictionary<string, ProcessResult> _canned = new();
     public List<(string File, IReadOnlyList<string> Args)> Calls { get; } = new();
