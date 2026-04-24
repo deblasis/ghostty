@@ -100,11 +100,16 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
 
     public IReadOnlyList<string> WindowsOnlyKeysUsed => _windowsOnlyKeysUsed;
 
-    public IReadOnlyDictionary<string, Ghostty.Core.Profiles.ProfileDef> ParsedProfiles => _parsedProfiles;
-    public IReadOnlyList<string> ProfileOrder => _profileOrder;
-    public string? DefaultProfileId => _defaultProfileId;
-    public IReadOnlySet<string> HiddenProfileIds => _hiddenProfileIds;
-    public IReadOnlyList<string> ProfileWarnings => _profileWarnings;
+    // Profile view is published atomically via a single volatile
+    // ProfileView reference so non-UI consumers see a consistent
+    // five-field set without tearing. IProfileConfigSource is public,
+    // so while today's only consumer (ProfileRegistry) reads via the
+    // UI-dispatched event, future worker-thread consumers are safe.
+    public IReadOnlyDictionary<string, Ghostty.Core.Profiles.ProfileDef> ParsedProfiles => _profileView.ParsedProfiles;
+    public IReadOnlyList<string> ProfileOrder => _profileView.ProfileOrder;
+    public string? DefaultProfileId => _profileView.DefaultProfileId;
+    public IReadOnlySet<string> HiddenProfileIds => _profileView.HiddenProfileIds;
+    public IReadOnlyList<string> ProfileWarnings => _profileView.ProfileWarnings;
 
     public event Action? ProfileConfigChanged;
 
@@ -132,12 +137,14 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
     private readonly HashSet<string> _windowsOnlyKeysSeen =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private IReadOnlyDictionary<string, Ghostty.Core.Profiles.ProfileDef> _parsedProfiles =
-        new Dictionary<string, Ghostty.Core.Profiles.ProfileDef>();
-    private IReadOnlyList<string> _profileOrder = Array.Empty<string>();
-    private string? _defaultProfileId;
-    private IReadOnlySet<string> _hiddenProfileIds = System.Collections.Frozen.FrozenSet<string>.Empty;
-    private IReadOnlyList<string> _profileWarnings = Array.Empty<string>();
+    private static readonly Ghostty.Core.Config.ProfileView EmptyProfileView = new(
+        ParsedProfiles: new Dictionary<string, Ghostty.Core.Profiles.ProfileDef>(),
+        ProfileOrder: Array.Empty<string>(),
+        DefaultProfileId: null,
+        HiddenProfileIds: System.Collections.Frozen.FrozenSet<string>.Empty,
+        ProfileWarnings: Array.Empty<string>());
+
+    private volatile Ghostty.Core.Config.ProfileView _profileView = EmptyProfileView;
 
     /// <summary>
     /// Snapshot of the config file's key/value lines, populated at the
@@ -464,12 +471,16 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
 
         AnsiPalette = GetAllPaletteColors();
 
-        // Profile-view second pass. Reuses the raw file read done at
-        // the top of ReadFlags via _configFileCache; the parser only
-        // needs the raw text for profile.<id>.* regex matching and for
-        // the hidden-ids extraction. The scalar keys (default-profile
+        // Profile-view second pass. The scalar keys (default-profile
         // and profile-order) are read through GetFileValue which hits
-        // the same cache.
+        // the parsed line cache populated at the top of ReadFlags.
+        // The profile.<id>.* regex and hidden-id extraction need the
+        // raw file text though, and _configFileCache stores parsed
+        // pairs rather than the original bytes, so this second read is
+        // deliberate -- the reload is already cold-path and the config
+        // is small. Readers of the five profile-view properties see a
+        // consistent snapshot via the single volatile _profileView
+        // assignment below.
         var rawConfigText = File.Exists(ConfigFilePath)
             ? File.ReadAllText(ConfigFilePath)
             : string.Empty;
@@ -480,11 +491,7 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
                 var v = GetFileValue(key, string.Empty);
                 return v.Length == 0 ? null : v;
             });
-        _parsedProfiles = view.ParsedProfiles;
-        _profileOrder = view.ProfileOrder;
-        _defaultProfileId = view.DefaultProfileId;
-        _hiddenProfileIds = view.HiddenProfileIds;
-        _profileWarnings = view.ProfileWarnings;
+        _profileView = view;
 
         foreach (var warning in view.ProfileWarnings)
             StaticLoggers.ConfigService.LogProfileParseWarning(warning);

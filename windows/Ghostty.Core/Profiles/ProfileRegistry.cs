@@ -39,6 +39,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
     private readonly Lock _sync = new();
 
     private readonly CancellationTokenSource _discoveryCts = new();
+    private int _disposed;
 
     private volatile Snapshot _snapshot = EmptySnapshot;
     private long _version;
@@ -135,6 +136,12 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
 
     public async Task RefreshDiscoveryAsync(CancellationToken ct)
     {
+        // Dispose guard: CreateLinkedTokenSource below would throw
+        // ObjectDisposedException on _discoveryCts after Dispose, so
+        // surface the disposal explicitly instead of as a noisy fault.
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(nameof(ProfileRegistry));
+
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _discoveryCts.Token);
         try
         {
@@ -157,6 +164,10 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
 
     public void Dispose()
     {
+        // Idempotent: second call is a no-op. App.xaml.cs's shutdown
+        // path can run twice on error recovery, and CTS.Cancel throws
+        // ObjectDisposedException after the first Dispose.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _source.ProfileConfigChanged -= OnSourceChanged;
         _discoveryCts.Cancel();
         _discoveryCts.Dispose();
