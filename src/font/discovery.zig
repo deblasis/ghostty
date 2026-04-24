@@ -1510,3 +1510,26 @@ test "directwrite variations" {
     try testing.expectEqual(1, face.dw.?.variations.len);
     try testing.expectEqual(Variation.Id.init("wght"), face.dw.?.variations[0].id);
 }
+
+test "directwrite discover all" {
+    if (options.backend != .directwrite_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var dw = DirectWrite.init();
+    defer dw.deinit();
+
+    // No family filter -- exercises discoverAll(), which enumerates
+    // every font in the system collection.
+    var it = try dw.discover(alloc, .{});
+    defer it.deinit();
+
+    var count: usize = 0;
+    while (try it.next()) |_| {
+        count += 1;
+    }
+
+    // A typical Windows install has hundreds of fonts.
+    try testing.expect(count > 0);
+}
