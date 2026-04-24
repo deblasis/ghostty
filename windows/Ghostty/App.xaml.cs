@@ -607,9 +607,6 @@ public partial class App : Application
                 // DiscoveryService holds no unmanaged resources, so
                 // we just drop the ref and let GC claim it.
                 _profileRegistry?.Dispose();
-                _profileRegistry = null;
-                ProfileRegistry = null;
-                _discoveryService = null;
 
                 // Flush any pending debounced writes before the editor
                 // is gone. Dispose waits for an in-flight timer
@@ -669,6 +666,9 @@ public partial class App : Application
             }
             finally
             {
+                _profileRegistry = null;
+                ProfileRegistry = null;
+                _discoveryService = null;
                 _configWriteScheduler = null;
                 ConfigWriteScheduler = null;
                 _configEditor = null;
