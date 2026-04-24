@@ -21,8 +21,11 @@ internal sealed class FakeInstalledShellProbe : IInstalledShellProbe
 
     public string ProbeId { get; }
 
+    public int CallCount { get; private set; }
+
     public Task<IReadOnlyList<DiscoveredProfile>> DiscoverAsync(CancellationToken ct)
     {
+        CallCount++;
         if (_throw) throw new System.InvalidOperationException("probe intentionally throwing");
         return Task.FromResult(_results);
     }

@@ -80,10 +80,7 @@ public sealed class DiscoveryServiceTests
 
         Assert.Single(result);
         Assert.Equal("cmd", result[0].Id);
-        // probe.DiscoverAsync was NOT called -> no way to directly assert on
-        // FakeInstalledShellProbe today; add a Calls counter in the fake if
-        // needed. For now assert via the cached data round-trip that the
-        // probe did not run (probe returned null).
+        Assert.Equal(0, probe.CallCount);
     }
 
     [Fact]
@@ -112,6 +109,7 @@ public sealed class DiscoveryServiceTests
         // Also assert cache was refreshed: file now has freshly-dated cache.
         var rewritten = DiscoveryCache.Deserialize(await fs.ReadAllBytesAsync(@"C:\cache\v1.json", CancellationToken.None));
         Assert.Equal(clock.UtcNow, rewritten!.CreatedAt);
+        Assert.Equal(1, probe.CallCount);
     }
 
     [Fact]
@@ -137,6 +135,9 @@ public sealed class DiscoveryServiceTests
 
         var result = await svc.DiscoverAsync(CancellationToken.None);
         Assert.Single(result);
+        Assert.Equal(1, probe.CallCount);
+        var rewritten = DiscoveryCache.Deserialize(await fs.ReadAllBytesAsync(@"C:\cache\v1.json", CancellationToken.None));
+        Assert.Equal("1.2.4", rewritten!.WinttyVersion);
     }
 
     internal sealed class FakeClock : IClock
