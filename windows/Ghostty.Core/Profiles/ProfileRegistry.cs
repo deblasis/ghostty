@@ -97,6 +97,13 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
 
     private void RecomposeAndFire()
     {
+        // Disposed-guard: a probe that ignores its cancellation token
+        // can still return normally after Dispose cancels _discoveryCts.
+        // If that happens, the continuation reaches here -- skip the
+        // snapshot publish and event dispatch so subscribers don't
+        // see updates against a torn-down registry.
+        if (Volatile.Read(ref _disposed) != 0) return;
+
         IReadOnlyList<ResolvedProfile> next;
         FrozenDictionary<string, ResolvedProfile> nextById;
         string? nextDefault;
@@ -158,7 +165,12 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
         }
         catch (Exception ex)
         {
+            // User-initiated refresh: log and rethrow so the caller
+            // (settings-UI button, command palette) can show a failure
+            // toast. The bootstrap path in RunInitialDiscoveryAsync
+            // swallows by design because no caller is waiting on it.
             LogDiscoveryRefreshFailed(ex);
+            throw;
         }
     }
 
