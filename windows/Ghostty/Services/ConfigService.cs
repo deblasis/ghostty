@@ -272,12 +272,23 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
 
             // Filter "unknown field" diagnostics for keys we know are
             // Windows-only; surface them via WindowsOnlyKeysUsed instead.
-            if (WindowsOnlyKeys.TryExtractUnknownFieldKey(message, out var key)
-                && WindowsOnlyKeys.Contains(key))
+            if (WindowsOnlyKeys.TryExtractUnknownFieldKey(message, out var key))
             {
-                if (_windowsOnlyKeysSeen.Add(key))
-                    _windowsOnlyKeysUsed.Add(key);
-                continue;
+                if (WindowsOnlyKeys.IsProfileSubkey(key))
+                {
+                    // profile.<id>.<subkey> keys are handled by
+                    // ProfileRegistry; suppress the diagnostic entirely
+                    // without surfacing a per-subkey entry in
+                    // WindowsOnlyKeysUsed (would flood the settings UI
+                    // notice list for a many-profile config).
+                    continue;
+                }
+                if (WindowsOnlyKeys.Contains(key))
+                {
+                    if (_windowsOnlyKeysSeen.Add(key))
+                        _windowsOnlyKeysUsed.Add(key);
+                    continue;
+                }
             }
 
             _diagnosticMessages.Add(message);
