@@ -139,4 +139,71 @@ public class ProfileRegistryTests
         Assert.Equal(3L, registry.Version);
         Assert.Equal(3, registry.Profiles.Count);  // user a, b + wsl
     }
+
+    [Fact]
+    public void Resolve_ReturnsProfile_WhenIdKnown()
+    {
+        var src = new FakeProfileConfigSource
+        {
+            ParsedProfiles = new Dictionary<string, ProfileDef>
+            {
+                ["target"] = UserDef("target", "Target"),
+            },
+        };
+
+        using var registry = new ProfileRegistry(
+            src, EmptyDiscovery(), SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        var result = registry.Resolve("target");
+        Assert.NotNull(result);
+        Assert.Equal("target", result!.Id);
+    }
+
+    [Fact]
+    public void Resolve_ReturnsNull_WhenIdUnknown()
+    {
+        var src = new FakeProfileConfigSource();
+        using var registry = new ProfileRegistry(
+            src, EmptyDiscovery(), SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        Assert.Null(registry.Resolve("nope"));
+    }
+
+    [Fact]
+    public void Version_IsMonotonic_AcrossRecompose()
+    {
+        var src = new FakeProfileConfigSource();
+        using var registry = new ProfileRegistry(
+            src, EmptyDiscovery(), SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        var v1 = registry.Version;
+        src.Raise();
+        var v2 = registry.Version;
+        src.Raise();
+        var v3 = registry.Version;
+
+        Assert.True(v2 > v1);
+        Assert.True(v3 > v2);
+        Assert.Equal(v1 + 1, v2);
+        Assert.Equal(v2 + 1, v3);
+    }
+
+    [Fact]
+    public void DefaultProfileId_TracksIsDefaultEntry()
+    {
+        var src = new FakeProfileConfigSource
+        {
+            ParsedProfiles = new Dictionary<string, ProfileDef>
+            {
+                ["a"] = UserDef("a"),
+                ["b"] = UserDef("b"),
+            },
+            DefaultProfileId = "b",
+        };
+
+        using var registry = new ProfileRegistry(
+            src, EmptyDiscovery(), SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        Assert.Equal("b", registry.DefaultProfileId);
+    }
 }
