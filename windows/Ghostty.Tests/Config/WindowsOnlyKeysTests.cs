@@ -95,4 +95,35 @@ public class WindowsOnlyKeysTests
         Assert.False(WindowsOnlyKeys.TryExtractUnknownFieldKey(null!, out var key));
         Assert.Equal(string.Empty, key);
     }
+
+    [Fact]
+    public void All_Contains_DefaultProfile()
+    {
+        Assert.Contains(Ghostty.Core.Config.WindowsOnlyKeys.All,
+                        e => e.Key == "default-profile");
+    }
+
+    [Fact]
+    public void All_Contains_ProfileOrder()
+    {
+        Assert.Contains(Ghostty.Core.Config.WindowsOnlyKeys.All,
+                        e => e.Key == "profile-order");
+    }
+
+    [Theory]
+    [InlineData("profile.foo.name", true)]
+    [InlineData("profile.foo.command", true)]
+    [InlineData("profile.foo.hidden", true)]
+    [InlineData("profile.a.b", true)]                   // minimal valid
+    [InlineData("PROFILE.FOO.NAME", true)]              // case-insensitive prefix
+    [InlineData("profile.foo", false)]                  // missing subkey
+    [InlineData("profile.", false)]                     // missing id + subkey
+    [InlineData("profile", false)]                      // exact scalar
+    [InlineData("profile..bar", false)]                 // empty id
+    [InlineData("profileorder", false)]                 // no dot
+    [InlineData("default-profile", false)]              // exact scalar, not subkey
+    public void IsProfileSubkey_Expected(string key, bool expected)
+    {
+        Assert.Equal(expected, Ghostty.Core.Config.WindowsOnlyKeys.IsProfileSubkey(key));
+    }
 }
