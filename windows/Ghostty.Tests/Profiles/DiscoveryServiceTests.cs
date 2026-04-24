@@ -162,6 +162,12 @@ public sealed class DiscoveryServiceTests
         // Second call with bypassCache: true must run probes again.
         var _ = await warmSvc.DiscoverAsync(bypassCache: true, CancellationToken.None);
         Assert.Equal(2, probe.CallCount);
+
+        // Also assert cache was refreshed: file now has freshly-dated cache.
+        var rewritten = DiscoveryCache.Deserialize(await fs.ReadAllBytesAsync(cachePath, CancellationToken.None));
+        Assert.Equal(clock.UtcNow, rewritten!.CreatedAt);
+        Assert.Single(rewritten.Profiles);
+        Assert.Equal("a", rewritten.Profiles[0].Id);
     }
 
     internal sealed class FakeClock : IClock
