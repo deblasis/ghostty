@@ -263,4 +263,32 @@ public class ProfileRegistryTests
         Assert.Single(registry.Profiles);                      // user still there
         Assert.Equal(0, eventsFiredAfterSubscribe);            // no event after failure
     }
+
+    [Fact]
+    public async Task Dispose_CancelsPendingDiscovery_AndUnsubscribesSource()
+    {
+        var src = new FakeProfileConfigSource();
+        var tcs = new TaskCompletionSource<IReadOnlyList<DiscoveredProfile>>();
+        Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> discovery =
+            (_, ct) =>
+            {
+                ct.Register(() => tcs.TrySetCanceled(ct));
+                return tcs.Task;
+            };
+
+        var registry = new ProfileRegistry(
+            src, discovery, SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        var eventsAfterDispose = 0;
+        registry.ProfilesChanged += _ => eventsAfterDispose++;
+
+        registry.Dispose();
+
+        // Post-dispose: raising ProfileConfigChanged must not fire events.
+        src.Raise();
+
+        // Pending discovery is cancelled.
+        await Assert.ThrowsAsync<TaskCanceledException>(() => tcs.Task);
+        Assert.Equal(0, eventsAfterDispose);
+    }
 }

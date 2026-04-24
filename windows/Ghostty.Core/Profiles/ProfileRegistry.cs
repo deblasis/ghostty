@@ -157,9 +157,9 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
 
     public void Dispose()
     {
-        // Resources added in later tasks (CancellationTokenSource for
-        // background discovery, config-changed subscription). Nothing
-        // to release for the ctor-only compose path.
+        _source.ProfileConfigChanged -= OnSourceChanged;
+        _discoveryCts.Cancel();
+        _discoveryCts.Dispose();
     }
 
     [LoggerMessage(EventId = LogEvents.Profiles.RegistryRecomposed,
