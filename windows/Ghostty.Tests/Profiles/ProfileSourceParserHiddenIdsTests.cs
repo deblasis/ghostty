@@ -1,10 +1,9 @@
-using System.Linq;
 using Ghostty.Core.Profiles;
 using Xunit;
 
 namespace Ghostty.Tests.Profiles;
 
-public class ProfileSourceParserHiddenIdsTests
+public sealed class ProfileSourceParserHiddenIdsTests
 {
     [Fact]
     public void ExtractHiddenIds_EmptyText_ReturnsEmpty()
