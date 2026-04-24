@@ -18,7 +18,10 @@ internal sealed class AzureCloudShellProbe(IProcessRunner runner) : IInstalledSh
 
     public async Task<IReadOnlyList<DiscoveredProfile>> DiscoverAsync(CancellationToken ct)
     {
-        var result = await runner.RunAsync("az", new[] { "--version" },
+        // Azure CLI ships as az.cmd on Windows; CreateProcessW cannot
+        // execute .cmd files directly. Invoke through cmd.exe /c so PATH
+        // resolution and the .cmd interpreter both kick in.
+        var result = await runner.RunAsync("cmd.exe", new[] { "/c", "az", "--version" },
             VersionTimeout, ct).ConfigureAwait(false);
         if (result.ExitCode != 0) return System.Array.Empty<DiscoveredProfile>();
 

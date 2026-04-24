@@ -13,7 +13,7 @@ public sealed class AzureCloudShellProbeTests
     public async System.Threading.Tasks.Task Discover_AzPresent_ReturnsProfile()
     {
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult("az", new[] { "--version" },
+        runner.EnqueueResult("cmd.exe", new[] { "/c", "az", "--version" },
             new ProcessResult(0, "azure-cli 2.55.0\n", "", TimeSpan.Zero));
 
         var probe = new AzureCloudShellProbe(runner);
@@ -35,7 +35,7 @@ public sealed class AzureCloudShellProbeTests
     public async System.Threading.Tasks.Task Discover_AzNonZeroExit_ReturnsEmpty()
     {
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult("az", new[] { "--version" },
+        runner.EnqueueResult("cmd.exe", new[] { "/c", "az", "--version" },
             new ProcessResult(1, "", "some error", TimeSpan.Zero));
         var probe = new AzureCloudShellProbe(runner);
         var result = await probe.DiscoverAsync(CancellationToken.None);
