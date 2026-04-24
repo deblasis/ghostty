@@ -58,12 +58,12 @@ internal sealed partial class SettingsWindow : Window
         InitializeComponent();
 
         // Branded window title and custom title bar. Title is used by the
-        // taskbar / alt-tab; AppTitleBarText renders the same text inside
+        // taskbar / alt-tab; AppTitleBar.Title renders the same text inside
         // the window next to the gear FontIcon. Both read from
         // AppIdentity.ProductName so a rebrand touches one constant.
         var titleText = $"{AppIdentity.ProductName} Settings";
         Title = titleText;
-        AppTitleBarText.Text = titleText;
+        AppTitleBar.Title = titleText;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
 
@@ -155,27 +155,35 @@ internal sealed partial class SettingsWindow : Window
     // light Mica backdrop when the window is focused. AppWindow.TitleBar
     // exposes per-state color slots; pick ones that follow the window
     // theme rather than the Application's (pinned-Dark) theme.
+    //
+    // Inactive foreground is theme-neutral mid-grey (#999) — reads on
+    // both Mica tints. Hover/pressed use the foreground tone layered
+    // at CaptionButtonHoverAlpha / CaptionButtonPressedAlpha so the
+    // feedback tint comes from the current theme rather than a hard
+    // colour.
+    private const byte CaptionButtonHoverAlpha = 0x33;
+    private const byte CaptionButtonPressedAlpha = 0x66;
+    private static readonly Windows.UI.Color CaptionButtonInactiveFg =
+        Windows.UI.Color.FromArgb(0xFF, 0x99, 0x99, 0x99);
+
     private void ApplyCaptionButtonColors()
     {
         var hwnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
         var titleBar = AppWindow.GetFromWindowId(windowId).TitleBar;
         var dark = _themeManager.ElementTheme == ElementTheme.Dark;
+        var fg = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
 
         titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
-        titleBar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
-        titleBar.ButtonInactiveForegroundColor = dark
-            ? Windows.UI.Color.FromArgb(0xFF, 0x99, 0x99, 0x99)
-            : Windows.UI.Color.FromArgb(0xFF, 0x99, 0x99, 0x99);
-        titleBar.ButtonHoverBackgroundColor = dark
-            ? Windows.UI.Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)
-            : Windows.UI.Color.FromArgb(0x33, 0x00, 0x00, 0x00);
-        titleBar.ButtonHoverForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
-        titleBar.ButtonPressedBackgroundColor = dark
-            ? Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)
-            : Windows.UI.Color.FromArgb(0x66, 0x00, 0x00, 0x00);
-        titleBar.ButtonPressedForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        titleBar.ButtonForegroundColor = fg;
+        titleBar.ButtonInactiveForegroundColor = CaptionButtonInactiveFg;
+        titleBar.ButtonHoverBackgroundColor =
+            Windows.UI.Color.FromArgb(CaptionButtonHoverAlpha, fg.R, fg.G, fg.B);
+        titleBar.ButtonHoverForegroundColor = fg;
+        titleBar.ButtonPressedBackgroundColor =
+            Windows.UI.Color.FromArgb(CaptionButtonPressedAlpha, fg.R, fg.G, fg.B);
+        titleBar.ButtonPressedForegroundColor = fg;
     }
 
     private void NavView_SelectionChanged(

@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.System;
 using Windows.UI;
 
@@ -286,12 +287,44 @@ internal sealed partial class RawEditorPage : Page
             ? Color.FromArgb(180, 255, 200, 60)
             : Color.FromArgb(220, 255, 190, 50);
         // Opaque editor-background color so a "cleared" highlight renders
-        // indistinguishable from un-highlighted text. Values approximate the
-        // RichEditBox defaults in dark (#202020) and light (#FFFFFF) modes.
-        _clearBgColor = isDark
-            ? Color.FromArgb(255, 32, 32, 32)
-            : Color.FromArgb(255, 255, 255, 255);
+        // indistinguishable from un-highlighted text. Read it from the
+        // active theme dictionary via TextControlBackground (the brush
+        // RichEditBox fills its surface with) so the clear colour tracks
+        // the editor regardless of future Fluent/brand tweaks. Fall back
+        // to ApplicationPageBackgroundThemeBrush, then to the pre-fix
+        // hand-picked values as a last resort.
+        _clearBgColor = TryReadSolidThemeColor("TextControlBackground", isDark, out var c)
+            || TryReadSolidThemeColor("ApplicationPageBackgroundThemeBrush", isDark, out c)
+            ? c
+            : (isDark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 255, 255, 255));
         _colorsReady = true;
+    }
+
+    // Look up a resource by key from Application.Current.Resources'
+    // theme dictionaries, picking the Light/Default variant from this
+    // Page's theme rather than Application.RequestedTheme. Handles
+    // either a SolidColorBrush or a raw Color value under that key —
+    // TextControlBackground is a Color on WinAppSDK, not a Brush, so
+    // callers can't assume either shape.
+    private static bool TryReadSolidThemeColor(string key, bool isDark, out Color color)
+    {
+        var themeKey = isDark ? "Default" : "Light";
+        if (Application.Current.Resources.ThemeDictionaries.TryGetValue(themeKey, out var dictObj)
+            && dictObj is Microsoft.UI.Xaml.ResourceDictionary themeDict
+            && themeDict.TryGetValue(key, out var v))
+        {
+            switch (v)
+            {
+                case SolidColorBrush b:
+                    color = b.Color;
+                    return true;
+                case Color raw:
+                    color = raw;
+                    return true;
+            }
+        }
+        color = default;
+        return false;
     }
 
     private void ClearPreviousHighlights()

@@ -5,46 +5,32 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-      Title + AppTitleBarText are set in code-behind from
+      Title + AppTitleBar.Title are set in code-behind from
       AppIdentity.ProductName so a future rebrand touches one constant
       instead of XAML strings. Window.Title is still set so the taskbar,
       alt-tab switcher, and Win+Tab overlay show the branded name.
+
+      The WinAppSDK 1.8 Microsoft.UI.Xaml.Controls.TitleBar primitive
+      replaces the earlier hand-rolled drag-region Grid: it inherits
+      RequestedTheme from its parent, owns the IconSource / Title /
+      Subtitle slots, and participates in the standard drag-region +
+      caption-button layout that SetTitleBar plumbs in code-behind.
     -->
     <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height="40" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!--
-          Custom title bar paired with ExtendsContentIntoTitleBar=true in
-          code-behind. The FontIcon glyph (E713 = Settings gear) gives
-          this window a visual identity distinct from MainWindow, so users
-          can tell the two apart in the taskbar/alt-tab and on screen.
-          SetTitleBar(AppTitleBar) marks the row as drag region; the
-          caption buttons (min/max/close) are laid out by the system on
-          the right and automatically excluded from hit-testing.
-        -->
-        <Grid
+        <TitleBar
             x:Name="AppTitleBar"
-            Grid.Row="0"
-            Background="Transparent">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <FontIcon
-                Grid.Column="0"
-                Glyph="&#xE713;"
-                FontSize="16"
-                Margin="14,0,10,0"
-                VerticalAlignment="Center" />
-            <TextBlock
-                x:Name="AppTitleBarText"
-                Grid.Column="1"
-                VerticalAlignment="Center"
-                Style="{ThemeResource CaptionTextBlockStyle}" />
-        </Grid>
+            Grid.Row="0">
+            <TitleBar.IconSource>
+                <!-- E713 = Settings gear, distinguishing this window from
+                     MainWindow in the taskbar / alt-tab overlay. -->
+                <FontIconSource Glyph="&#xE713;" />
+            </TitleBar.IconSource>
+        </TitleBar>
 
         <NavigationView
             x:Name="NavView"

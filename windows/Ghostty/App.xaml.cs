@@ -213,12 +213,20 @@ public partial class App : Application
                 ? ApplicationTheme.Dark
                 : ApplicationTheme.Light;
         }
-        catch
+        catch (Exception ex) when (ex is COMException or InvalidOperationException or UnauthorizedAccessException)
         {
             // UISettings can throw in certain packaged / sandboxed
             // startup edges. Fall back to the pre-existing default so
             // the app still launches; users on a system whose theme
             // doesn't match will see the old one-frame flash.
+            //
+            // Unhandled-exception handlers aren't wired up yet (done
+            // below), so Debug.WriteLine is the most signal we can
+            // surface to a devenv-attached run without taking the app
+            // down. A packaged Release launch will lose this — that's
+            // acceptable for a one-frame cosmetic flash.
+            System.Diagnostics.Debug.WriteLine(
+                $"[Ghostty] OsTheme.IsDark() threw during App ctor; falling back to Dark. {ex.GetType().Name}: {ex.Message}");
             RequestedTheme = ApplicationTheme.Dark;
         }
 

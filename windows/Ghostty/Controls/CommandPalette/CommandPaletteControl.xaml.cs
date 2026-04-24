@@ -186,36 +186,11 @@ internal sealed partial class CommandPaletteControl : UserControl
     // wrong-tone acrylic in the command palette.
     private Brush ResolveAppBrushForElementTheme(string key)
     {
-        var themeKey = ActualTheme == ElementTheme.Light ? "Light" : "Default";
-        if (TryFindInThemeDictionaries(Application.Current.Resources, key, themeKey, out var brush))
+        if (ThemedResources.TryFindBrush(Application.Current.Resources, key, ActualTheme, out var brush))
             return brush;
         // Fallback preserves pre-fix behavior if the theme dictionary
         // can't be walked (custom app resources, HighContrast, etc.).
         return (Brush)Application.Current.Resources[key];
-    }
-
-    private static bool TryFindInThemeDictionaries(
-        ResourceDictionary rd, string key, string themeKey, out Brush brush)
-    {
-        if (rd.ThemeDictionaries.TryGetValue(themeKey, out var dictObj) &&
-            dictObj is ResourceDictionary themeDict)
-        {
-            if (themeDict.TryGetValue(key, out var v) && v is Brush b)
-            {
-                brush = b;
-                return true;
-            }
-            foreach (var m in themeDict.MergedDictionaries)
-            {
-                if (TryFindInThemeDictionaries(m, key, themeKey, out brush)) return true;
-            }
-        }
-        foreach (var m in rd.MergedDictionaries)
-        {
-            if (TryFindInThemeDictionaries(m, key, themeKey, out brush)) return true;
-        }
-        brush = default!;
-        return false;
     }
 
     // ── ViewModel → UI ────────────────────────────────────────────────────────

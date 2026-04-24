@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Ghostty.Core.Settings;
+using Ghostty.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
@@ -81,12 +82,13 @@ internal sealed partial class SearchResultsPage : Page
     // ActualTheme. Direct `this.Resources[key]` calls bottom out in
     // Application.Current.Resources when the key is inside a theme
     // dictionary, which re-introduces the original bug (app theme wins).
-    // Reading the theme-keyed sub-dict ourselves is deterministic.
+    // Delegates to ThemedResources so the walk stays consistent with the
+    // command-palette lookup path.
     private Brush GetThemedBrush(string key)
     {
-        var themeKey = ActualTheme == ElementTheme.Light ? "Light" : "Default";
-        var dict = (ResourceDictionary)Resources.ThemeDictionaries[themeKey];
-        return (Brush)dict[key];
+        if (ThemedResources.TryFindBrush(Resources, key, ActualTheme, out var brush))
+            return brush;
+        return (Brush)Resources[key];
     }
 
     private void BuildGroupedResults(IReadOnlyList<SearchHit> hits)

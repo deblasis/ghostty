@@ -47,14 +47,13 @@
                     <SolidColorBrush x:Key="SearchCardBgBrush" Color="#B3FFFFFF" />
                     <SolidColorBrush x:Key="SearchCardStrokeBrush" Color="#0F000000" />
                 </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                    <SolidColorBrush x:Key="SearchHighlightBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="SearchDescBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                    <SolidColorBrush x:Key="SearchSectionBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                    <SolidColorBrush x:Key="SearchBreadcrumbBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
-                    <SolidColorBrush x:Key="SearchCardBgBrush" Color="{ThemeResource SystemColorWindowColor}" />
-                    <SolidColorBrush x:Key="SearchCardStrokeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                </ResourceDictionary>
+                <!--
+                  HighContrast deliberately omitted: ActualTheme only
+                  exposes Light/Dark/Default, so GetThemedBrush would
+                  never route here without an AccessibilitySettings
+                  bridge. If HC parity matters later, add that plumbing
+                  then reintroduce the dict.
+                -->
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Page.Resources>
