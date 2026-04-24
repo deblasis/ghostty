@@ -579,6 +579,15 @@ public sealed partial class MainWindow : Window
             ApplyRootGridBackground();
         };
 
+        // Re-evaluate the gradient and other power-gated effects whenever
+        // low-power mode toggles. MainWindow runs on the UI thread so we
+        // marshal back explicitly; the monitor fires on the thread-pool
+        // after its 150ms debounce.
+        if (Ghostty.App.PowerStateMonitor is { } powerMonitor)
+        {
+            powerMonitor.LowPowerChanged += OnLowPowerChanged;
+        }
+
         _tabManager.LastTabClosed += (_, _) => Close();
 
         // Settings page raises this the moment the user flips the
@@ -795,6 +804,10 @@ public sealed partial class MainWindow : Window
         Ghostty.Settings.Pages.GeneralPage.VerticalTabsToggled
             -= OnVerticalTabsToggledFromSettings;
         _configService.ConfigChanged -= OnConfigReloaded;
+        if (Ghostty.App.PowerStateMonitor is { } powerMonitor)
+        {
+            powerMonitor.LowPowerChanged -= OnLowPowerChanged;
+        }
 
         // Persist window placement for next launch. Skip when
         // fullscreen -- restore to the normal size instead.
@@ -1238,6 +1251,14 @@ public sealed partial class MainWindow : Window
         return (tint, t.TintOpacity, t.LuminosityOpacity);
     }
 
+    private void OnLowPowerChanged(object? sender, EventArgs args)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ApplyGradientTint();
+        });
+    }
+
     /// <summary>
     /// Create, update, or remove the gradient tint visual based on
     /// the current config. Called on startup and config reload.
@@ -1253,7 +1274,12 @@ public sealed partial class MainWindow : Window
     {
         var points = _configService.GradientPoints;
 
-        if (points.Count == 0)
+        // Low-power mode flattens the backdrop: no animated gradient,
+        // no composition work beyond the system backdrop. Treat as if
+        // no points were configured so the existing teardown runs.
+        var lowPowerActive = Ghostty.App.PowerStateMonitor?.IsLowPowerActive ?? false;
+
+        if (points.Count == 0 || lowPowerActive)
         {
             _gradientVisual?.Dispose();
             _gradientVisual = null;
