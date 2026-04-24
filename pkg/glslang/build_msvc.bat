@@ -71,10 +71,21 @@ echo Using glslang source: %GLSLANG_SRC%
 
 set CL=!MSVC_DIR!\bin\Hostx64\x64\cl.exe
 set LIB=!MSVC_DIR!\lib\x64;%WINSDK_LIB%\um\x64;%WINSDK_LIB%\ucrt\x64
-set INCLUDE=!MSVC_DIR!\include;%WINSDK_INC%\um;%WINSDK_INC%\ucrt;%WINSDK_INC%\shared
+REM Include paths must mirror what build.zig wires up for the zig-driven build:
+REM   - MSVC + Windows SDK for libc/libc++
+REM   - %GLSLANG_SRC% root so `#include <glslang/...>` resolves to the vendor src
+REM   - %~dp0override so `#include <glslang/build_info.h>` resolves to our static
+REM     override (the vendor project ships build_info.h.in as a CMake template).
+set INCLUDE=!MSVC_DIR!\include;%WINSDK_INC%\um;%WINSDK_INC%\ucrt;%WINSDK_INC%\shared;%GLSLANG_SRC%;%~dp0override
 
 set OUTDIR=%~dp0msvc_build
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
+
+REM build.zig anchors the static lib on msvc_build/dummy.c. Write it here so a
+REM fresh clone plus one .bat invocation produces everything build.zig needs;
+REM no separate dummy.c to maintain or forget.
+echo // Dummy compilation unit for the static library. > "%OUTDIR%\dummy.c"
+echo int _glslang_dummy; >> "%OUTDIR%\dummy.c"
 
 set CFLAGS=/nologo /c /std:c++17 /DNDEBUG /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /EHsc /MT /O2 /W0 /Fo"%OUTDIR%\\"
 
@@ -128,7 +139,11 @@ for %%f in (
 )
 
 echo Compiling with MSVC...
-%CL% %CFLAGS% %FILES%
+REM Quote %CL%: the expanded path contains "Program Files" (with a space) on
+REM stock Windows, so an unquoted invocation has cmd parse 'C:\Program' as the
+REM command and the rest as args. Breaks on windows-latest runners and any
+REM default VS install.
+"%CL%" %CFLAGS% %FILES%
 
 if errorlevel 1 (
     echo ERROR: Compilation failed
