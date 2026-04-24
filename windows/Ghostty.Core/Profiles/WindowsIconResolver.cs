@@ -34,6 +34,23 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         return bytes;
     }
 
+    // Mtime-sensitive icon sources: upgrading the exe or swapping the
+    // user's custom .ico must invalidate the cached PNG. Bundled assets,
+    // MDL2 codepoints, and the WSL fallback are stable for the life of
+    // the build; no mtime needed.
+    private string? MtimeTokenFor(IconSpec spec)
+    {
+        var path = spec switch
+        {
+            IconSpec.Path p => p.FilePath,
+            IconSpec.AutoForExe a => a.ExePath,
+            _ => null,
+        };
+        if (path is null) return null;
+        var utc = fs.GetLastWriteTimeUtc(path);
+        return utc is null ? null : utc.Value.Ticks.ToString("x", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private async Task<byte[]> ResolveUncachedAsync(IconSpec spec, CancellationToken ct) => spec switch
     {
         IconSpec.Path p => await fs.ReadAllBytesAsync(p.FilePath, ct).ConfigureAwait(false),
@@ -91,7 +108,7 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         return ms.ToArray();
     }
 
-    private static string SpecToCacheKey(IconSpec spec)
+    private string SpecToCacheKey(IconSpec spec)
     {
         // Casing note: Windows paths are case-insensitive, so tokens
         // like "exe:C:\\Foo.exe" and "exe:c:\\foo.exe" currently hash
@@ -99,7 +116,7 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         // the same underlying file. Acceptable for Path (user-supplied,
         // round-trips verbatim); Task 16's AutoForExe should normalize
         // before hitting this token when it lands.
-        var token = spec switch
+        var baseToken = spec switch
         {
             IconSpec.Path p => "path:" + p.FilePath,
             IconSpec.Mdl2Token m => "mdl2:" + m.CodePoint.ToString("x"),
@@ -108,6 +125,8 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
             IconSpec.AutoForWslDistro w => "wsl-distro:" + w.DistroName,
             _ => "unknown",
         };
+        var mtime = MtimeTokenFor(spec);
+        var token = mtime is null ? baseToken : baseToken + "|mtime:" + mtime;
         Span<byte> hash = stackalloc byte[32];
         SHA256.HashData(Encoding.UTF8.GetBytes(token), hash);
         return Convert.ToHexStringLower(hash);

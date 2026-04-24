@@ -18,6 +18,20 @@ internal sealed class WindowsFileSystem : IFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);
 
+    public DateTime? GetLastWriteTimeUtc(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null;
+        }
+        // Mirrors the rest of this wrapper's best-effort contract: stat
+        // failures (ACL, symlink loops, transient I/O) must not fail a
+        // cache lookup - the caller treats null as "unknown mtime" and
+        // falls back to the un-mtimed cache key.
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
     public async Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct)
         => await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
 

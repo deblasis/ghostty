@@ -87,4 +87,29 @@ public sealed class WindowsIconResolverBundledKeyTests
 
         Assert.Equal(sentinel, bytes);
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Resolve_PathSpec_MtimeChangeInvalidatesCachedPng()
+    {
+        // A user upgrading their custom .ico (same path, newer mtime) must
+        // see the new bytes. Cache key folds the mtime in so the two
+        // resolves land on different SHAs.
+        var fs = new FakeFileSystem();
+        fs.SetKnownFolder(KnownFolderId.LocalAppData, @"C:\cache");
+        var iconV1 = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x01 };
+        fs.AddFile(@"C:\myicon.png", iconV1);
+        fs.SetLastWriteTimeUtc(@"C:\myicon.png", new System.DateTime(2026, 1, 1, 0, 0, 0, System.DateTimeKind.Utc));
+
+        var resolver = new WindowsIconResolver(fs);
+        var first = await resolver.ResolveAsync(new IconSpec.Path(@"C:\myicon.png"), CancellationToken.None);
+        Assert.Equal(iconV1, first);
+
+        // User overwrites the .ico with new bytes and the filesystem bumps mtime.
+        var iconV2 = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x02 };
+        fs.AddFile(@"C:\myicon.png", iconV2);
+        fs.SetLastWriteTimeUtc(@"C:\myicon.png", new System.DateTime(2026, 2, 1, 0, 0, 0, System.DateTimeKind.Utc));
+
+        var second = await resolver.ResolveAsync(new IconSpec.Path(@"C:\myicon.png"), CancellationToken.None);
+        Assert.Equal(iconV2, second);
+    }
 }
