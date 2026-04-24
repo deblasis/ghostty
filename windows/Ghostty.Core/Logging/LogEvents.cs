@@ -23,4 +23,10 @@ internal static class LogEvents
         public const int LoadFailed  = 1101;
         public const int SaveFailed  = 1102;
     }
+
+    // 1200-1299: Profiles / discovery
+    internal static class Profiles
+    {
+        public const int ProbeFailed = 1200;
+    }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Ghostty.Core.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -14,7 +15,7 @@ namespace Ghostty.Core.Profiles;
 /// that throws is logged and skipped; other probes' results are still
 /// returned. Caching is layered on top in Task 12.
 /// </summary>
-internal sealed class DiscoveryService
+internal sealed partial class DiscoveryService
 {
     private readonly IReadOnlyList<IInstalledShellProbe> _probes;
     private readonly ILogger<DiscoveryService> _log;
@@ -36,14 +37,16 @@ internal sealed class DiscoveryService
                 {
                     return (probe.ProbeId, await probe.DiscoverAsync(ct).ConfigureAwait(false));
                 }
+                // Cancellation is not a probe "failure"; surface it to the caller
+                // instead of being swallowed by the generic handler below.
                 catch (OperationCanceledException)
                 {
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    _log.LogWarning(ex, "probe '{ProbeId}' failed", probe.ProbeId);
-                    return (probe.ProbeId, (IReadOnlyList<DiscoveredProfile>)System.Array.Empty<DiscoveredProfile>());
+                    LogProbeFailed(ex, probe.ProbeId);
+                    return (probe.ProbeId, (IReadOnlyList<DiscoveredProfile>)Array.Empty<DiscoveredProfile>());
                 }
             })
             .ToList();
@@ -54,4 +57,9 @@ internal sealed class DiscoveryService
             merged.AddRange(items);
         return merged;
     }
+
+    [LoggerMessage(EventId = Ghostty.Core.Logging.LogEvents.Profiles.ProbeFailed,
+                   Level = LogLevel.Warning,
+                   Message = "probe '{ProbeId}' failed")]
+    private partial void LogProbeFailed(System.Exception ex, string probeId);
 }
