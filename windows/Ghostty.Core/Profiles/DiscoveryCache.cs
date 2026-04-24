@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace Ghostty.Core.Profiles;
 
 /// <summary>
-/// Persisted discovery cache file shape. Keep the property names kebab-cased
+/// Persisted discovery cache file shape. Keep the property names camelCased
 /// via the naming policy below so the on-disk file is human-readable.
 /// </summary>
 public sealed record DiscoveryCacheFile(
@@ -39,11 +39,13 @@ public static class DiscoveryCache
 
     public static DiscoveryCacheFile? Deserialize(byte[] bytes)
     {
+        if (bytes is null or { Length: 0 }) return null;
         try
         {
             var file = JsonSerializer.Deserialize(bytes, DiscoveryCacheContext.Default.DiscoveryCacheFile);
             if (file is null) return null;
             if (file.SchemaVersion != CurrentSchemaVersion) return null;
+            if (file.Profiles is null) return null;
             return file;
         }
         catch (JsonException) { return null; }

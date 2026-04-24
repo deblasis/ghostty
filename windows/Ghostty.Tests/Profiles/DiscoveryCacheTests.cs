@@ -44,4 +44,26 @@ public sealed class DiscoveryCacheTests
         var result = DiscoveryCache.Deserialize(new byte[] { 0xFF, 0xFE, 0x01, 0x02 });
         Assert.Null(result);
     }
+
+    [Fact]
+    public void Deserialize_NullBytes_ReturnsNull()
+    {
+        var result = DiscoveryCache.Deserialize(null!);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Deserialize_EmptyBytes_ReturnsNull()
+    {
+        var result = DiscoveryCache.Deserialize(System.Array.Empty<byte>());
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Deserialize_NullProfilesField_ReturnsNull()
+    {
+        var json = $$"""{"schemaVersion":{{DiscoveryCache.CurrentSchemaVersion}},"winttyVersion":"x","createdAt":"2026-04-24T00:00:00+00:00","profiles":null}""";
+        var result = DiscoveryCache.Deserialize(System.Text.Encoding.UTF8.GetBytes(json));
+        Assert.Null(result);
+    }
 }
