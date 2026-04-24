@@ -61,14 +61,28 @@ public static class ConfigServiceProfileParser
         IReadOnlySet<string> hidden)
     {
         if (warnings.Count == 0) return warnings;
+
+        // Precompute the "profile '<id>':" prefixes once per hidden id
+        // rather than per (warning x id) pair; the old string interpolation
+        // inside the inner loop allocated a new format string on every
+        // iteration. Skip ids that also have a full parsed definition --
+        // those warnings are for genuinely broken blocks, not hide-only
+        // overrides.
+        List<string>? prefixes = null;
+        foreach (var id in hidden)
+        {
+            if (profiles.ContainsKey(id)) continue;
+            (prefixes ??= new List<string>(hidden.Count)).Add($"profile '{id}':");
+        }
+        if (prefixes is null) return warnings;
+
         var result = new List<string>(warnings.Count);
         foreach (var w in warnings)
         {
             var suppressed = false;
-            foreach (var id in hidden)
+            foreach (var prefix in prefixes)
             {
-                if (profiles.ContainsKey(id)) continue;
-                if (w.StartsWith($"profile '{id}':", StringComparison.OrdinalIgnoreCase))
+                if (w.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
                     suppressed = true;
                     break;
@@ -82,13 +96,11 @@ public static class ConfigServiceProfileParser
     private static IReadOnlyList<string> ParseCsv(string input)
     {
         if (input.Length == 0) return Array.Empty<string>();
-        var list = new List<string>();
-        foreach (var segment in input.Split(','))
-        {
-            var trimmed = segment.Trim();
-            if (trimmed.Length > 0) list.Add(trimmed);
-        }
-        return list;
+        // TrimEntries + RemoveEmptyEntries collapses the pre-existing
+        // trim-then-skip-empties loop into the BCL split options.
+        return input.Split(
+            ',',
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     }
 }
 
