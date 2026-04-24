@@ -8,7 +8,9 @@ using System.Runtime.InteropServices;
 using Ghostty.Controls;
 using Ghostty.Core.Config;
 using Ghostty.Core.Hosting;
+using Ghostty.Core.Power;
 using Ghostty.Hosting;
+using Ghostty.Power;
 using Ghostty.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
@@ -50,6 +52,7 @@ public partial class App : Application
     private ConfigService? _configService;
     private ConfigFileEditor? _configEditor;
     private ConfigWriteScheduler? _configWriteScheduler;
+    private WindowsPowerStateMonitor? _powerStateMonitor;
     private GhosttyHost? _bootstrapHost;
     private HostLifetimeSupervisor? _lifetimeSupervisor;
     private Microsoft.Extensions.Logging.ILoggerFactory? _loggerFactory;
@@ -83,6 +86,12 @@ public partial class App : Application
 
     internal static GhosttyHost? BootstrapHost { get; private set; }
     internal static ConfigService? ConfigService { get; private set; }
+
+    /// <summary>
+    /// Process-wide power-saving-mode monitor. Null before OnLaunched
+    /// runs; null after OnAnyWindowClosedInternal tears services down.
+    /// </summary>
+    internal static IPowerStateMonitor? PowerStateMonitor { get; private set; }
 
     /// <summary>
     /// Process-wide logger factory built at startup from Ghostty config.
@@ -391,6 +400,31 @@ public partial class App : Application
         // sites inside static scopes.
         Ghostty.Logging.StaticLoggers.Initialize(factory);
 
+        // Power-saving monitor. Reads power-saver-mode from config every
+        // time it resolves (Func thunk decouples it from ConfigService
+        // lifetime). Must be constructed on the UI thread so its
+        // UISettings field gets a live DispatcherQueue for change events.
+        _powerStateMonitor = new WindowsPowerStateMonitor(
+            readMode: () =>
+            {
+                var raw = _configService?.GetRawFileValue("power-saver-mode") ?? "auto";
+                return raw.Trim().ToLowerInvariant() switch
+                {
+                    "always" => PowerSaverMode.Always,
+                    "never"  => PowerSaverMode.Never,
+                    _        => PowerSaverMode.Auto,
+                };
+            },
+            logger: factory.CreateLogger<WindowsPowerStateMonitor>());
+        PowerStateMonitor = _powerStateMonitor;
+
+        // Re-resolve whenever the user edits power-saver-mode (or any
+        // other key -- cheap, and keeps this out of the reload path's
+        // critical section).
+        _configService.ConfigChanged += _ => _powerStateMonitor!.OnConfigReloaded();
+
+        _powerStateMonitor.Start();
+
         // One editor + one scheduler per process. Keeping them here
         // (instead of per-settings-window) means rapid edits coalesce
         // across window lifetimes and the file watcher sees a single
@@ -535,6 +569,10 @@ public partial class App : Application
                 // and calls AppFree.
                 _bootstrapHost?.Dispose();
 
+                // Dispose between host and config service: the monitor subscribes
+                // to ConfigService.ConfigChanged, so tear it down before ConfigService.
+                _powerStateMonitor?.Dispose();
+
                 // Dispose ConfigService last: it outlives every host
                 // (by design, so reload round-trips work across
                 // detached windows) but does own a FileSystemWatcher
@@ -583,6 +621,8 @@ public partial class App : Application
                 LifetimeSupervisor = null;
                 _configService = null;
                 ConfigService = null;
+                _powerStateMonitor = null;
+                PowerStateMonitor = null;
 
                 _zigLogBridge = null;
                 _fileLogSink = null;

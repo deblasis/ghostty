@@ -25,6 +25,14 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
     // long enough to coalesce them without being user-perceptible.
     private const int DebounceMs = 150;
 
+    // RDP session transitions don't raise a WinRT event, and wiring a
+    // WM_WTSSESSION_CHANGE hook into MainWindow would couple this
+    // service to the UI layer. Polling SM_REMOTESESSION every 5 s is
+    // the spec-approved fallback: session changes are rare and a
+    // 5 s latency is imperceptible in the transparency/gradient
+    // gating path.
+    private const int RdpPollMs = 5000;
+
     private readonly Func<PowerSaverMode> _readMode;
     private readonly ILogger<WindowsPowerStateMonitor> _logger;
     private readonly Lock _gate = new();
@@ -35,6 +43,7 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
     private readonly UISettings _uiSettings = new();
 
     private Timer? _debounceTimer;
+    private System.Threading.Timer? _rdpPollTimer;
     private bool _started;
     private bool _disposed;
 
@@ -85,6 +94,17 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
         PowerManager.PowerSupplyStatusChanged += OnPowerSignalChanged;
         _uiSettings.AdvancedEffectsEnabledChanged += OnUiSettingsChanged;
 
+        // RDP change notifications would normally come from a
+        // WM_WTSSESSION_CHANGE hook on the main window. We avoid that
+        // coupling by polling instead; session transitions are rare and
+        // the 5-second latency is acceptable for the transparency /
+        // gradient gating path.
+        _rdpPollTimer = new Timer(
+            _ => OnSessionChanged(),
+            state: null,
+            dueTime: RdpPollMs,
+            period:  RdpPollMs);
+
         // Publish the seeded state. Consumers subscribed before Start()
         // will get a LowPowerChanged if the initial resolution is
         // active (previous IsLowPowerActive is false by default).
@@ -105,6 +125,8 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
 
             _debounceTimer?.Dispose();
             _debounceTimer = null;
+            _rdpPollTimer?.Dispose();
+            _rdpPollTimer = null;
         }
     }
 
