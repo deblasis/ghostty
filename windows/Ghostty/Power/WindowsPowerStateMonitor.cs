@@ -28,6 +28,10 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
     private readonly Func<PowerSaverMode> _readMode;
     private readonly ILogger<WindowsPowerStateMonitor> _logger;
     private readonly Lock _gate = new();
+
+    // UISettings raises change events on the DispatcherQueue of the
+    // thread that constructed it. DI resolves this singleton on the UI
+    // thread, which has one.
     private readonly UISettings _uiSettings = new();
 
     private Timer? _debounceTimer;
@@ -61,17 +65,20 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
         {
             if (_started || _disposed) return;
             _started = true;
-        }
 
-        // Seed state outside the lock: these accessors hit WinRT and
-        // can block briefly on the first call. No other thread can
-        // observe the fields yet because no event handler is wired up.
-        _batterySaverOn = PowerManager.EnergySaverStatus == EnergySaverStatus.On;
-        _onBattery =
-            PowerManager.PowerSupplyStatus == PowerSupplyStatus.NotPresent &&
-            PowerManager.BatteryStatus != BatteryStatus.NotPresent;
-        _transparencyEffectsOff = !_uiSettings.AdvancedEffectsEnabled;
-        _remoteSession = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_REMOTESESSION) != 0;
+            // Seed initial state under the lock so the first
+            // ResolveAndMaybeEmit sees a consistent snapshot even if a
+            // subscribed event fires immediately after we register
+            // below. Taking the lock also gives the seed writes a
+            // release fence paired with the reader's acquire; on ARM64
+            // this is required, on x64 it's free.
+            _batterySaverOn = PowerManager.EnergySaverStatus == EnergySaverStatus.On;
+            _onBattery =
+                PowerManager.PowerSupplyStatus == PowerSupplyStatus.NotPresent &&
+                PowerManager.BatteryStatus != BatteryStatus.NotPresent;
+            _transparencyEffectsOff = !_uiSettings.AdvancedEffectsEnabled;
+            _remoteSession = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_REMOTESESSION) != 0;
+        }
 
         PowerManager.EnergySaverStatusChanged += OnPowerSignalChanged;
         PowerManager.BatteryStatusChanged += OnPowerSignalChanged;
@@ -108,7 +115,10 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
     /// </summary>
     public void OnSessionChanged()
     {
-        _remoteSession = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_REMOTESESSION) != 0;
+        lock (_gate)
+        {
+            _remoteSession = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_REMOTESESSION) != 0;
+        }
         ScheduleResolve();
     }
 
@@ -134,10 +144,13 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
     // this shape, so one method handles all of them.
     private void OnPowerSignalChanged(object? sender, object e)
     {
-        _batterySaverOn = PowerManager.EnergySaverStatus == EnergySaverStatus.On;
-        _onBattery =
-            PowerManager.PowerSupplyStatus == PowerSupplyStatus.NotPresent &&
-            PowerManager.BatteryStatus != BatteryStatus.NotPresent;
+        lock (_gate)
+        {
+            _batterySaverOn = PowerManager.EnergySaverStatus == EnergySaverStatus.On;
+            _onBattery =
+                PowerManager.PowerSupplyStatus == PowerSupplyStatus.NotPresent &&
+                PowerManager.BatteryStatus != BatteryStatus.NotPresent;
+        }
         ScheduleResolve();
     }
 
@@ -145,7 +158,10 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
         UISettings sender,
         object args)
     {
-        _transparencyEffectsOff = !sender.AdvancedEffectsEnabled;
+        lock (_gate)
+        {
+            _transparencyEffectsOff = !sender.AdvancedEffectsEnabled;
+        }
         ScheduleResolve();
     }
 
@@ -171,6 +187,8 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
 
         lock (_gate)
         {
+            if (!_started) return; // Queued timer callback after Stop(); drop it.
+
             previousActive = IsLowPowerActive;
             (nextActive, nextTriggers) = PowerStateResolver.Resolve(
                 mode:                   _readMode(),
