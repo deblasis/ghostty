@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.Versioning;
 using System.Security;
 using Microsoft.Win32;
@@ -15,7 +16,14 @@ internal sealed class WindowsRegistryReader : IRegistryReader
     public string? ReadString(RegistryHive hive, string keyPath, string valueName)
     {
         using var key = TryOpen(hive, keyPath);
-        return key?.GetValue(valueName) as string;
+        if (key is null) return null;
+        try
+        {
+            return key.GetValue(valueName) as string;
+        }
+        catch (UnauthorizedAccessException) { return null; }
+        catch (SecurityException) { return null; }
+        catch (IOException) { return null; }
     }
 
     public bool KeyExists(RegistryHive hive, string keyPath)
@@ -24,8 +32,9 @@ internal sealed class WindowsRegistryReader : IRegistryReader
         return key is not null;
     }
 
-    // Returns null on missing key OR on access-denied. Probes run speculatively
-    // across candidate keys; a restricted HKLM subtree must not abort discovery.
+    // Returns null on missing key OR on access-denied OR on I/O failure.
+    // Probes run speculatively across candidate keys; a restricted HKLM
+    // subtree or a transient hive I/O error must not abort discovery.
     private static RegistryKey? TryOpen(RegistryHive hive, string keyPath)
     {
         try
@@ -35,6 +44,7 @@ internal sealed class WindowsRegistryReader : IRegistryReader
         }
         catch (UnauthorizedAccessException) { return null; }
         catch (SecurityException) { return null; }
+        catch (IOException) { return null; }
     }
 
     private static RegistryKey OpenRoot(RegistryHive hive) => hive switch
