@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!--
-      Plain net9.0. No Windows App SDK targets, no PRI/MRT, no WinUI.
+      Plain net10.0. No Windows App SDK targets, no PRI/MRT, no WinUI.
       This assembly holds pure-logic types that both the WinUI shell
       (Ghostty.csproj) and the test project (Ghostty.Tests.csproj)
       reference normally via ProjectReference.
@@ -11,6 +11,17 @@
       Compile Include trick is replaced by this assembly.
     -->
     <TargetFramework>net10.0</TargetFramework>
+    <!--
+      CsWin32 resolves its Windows SDK metadata per-architecture: the
+      SHGetFileInfoW / SHFILEINFOW entry points are available in the
+      x86/x64/arm64 metadata packs only and error with "not declared for
+      this platform" under AnyCPU. Declare Platforms and default unset
+      to x64 so the sln / dotnet build picks an architecture-specific
+      evaluation. This mirrors what Ghostty.csproj does for the same
+      reason (CsWin32 + DWrite surfaces).
+    -->
+    <Platforms>x86;x64;ARM64</Platforms>
+    <Platform Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == ''">x64</Platform>
     <RootNamespace>Ghostty.Core</RootNamespace>
     <AssemblyName>Ghostty.Core</AssemblyName>
     <Nullable>enable</Nullable>
