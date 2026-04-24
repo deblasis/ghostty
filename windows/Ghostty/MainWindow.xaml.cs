@@ -1160,15 +1160,22 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void ApplyBackdropStyle()
     {
-        var opacity = _configService.BackgroundOpacity;
+        var lowPowerActive = Ghostty.App.PowerStateMonitor?.IsLowPowerActive ?? false;
+
+        var configOpacity = _configService.BackgroundOpacity;
+        var opacity = lowPowerActive ? 1.0 : configOpacity;
         var configStyle = _configService.BackgroundStyle;
 
         // If the user's configured style is acrylic-based, keep the
         // acrylic backdrop alive even at opacity=1.0 so Ctrl+Shift+Scroll
         // doesn't flash between Mica and acrylic at the boundary.
-        var style = (opacity >= 1.0 && configStyle != BackdropStyles.Frosted)
+        // Low-power mode overrides this: flatten unconditionally to Solid
+        // (Mica) to drop the composition cost of acrylic/crystal.
+        var style = lowPowerActive
             ? BackdropStyles.Solid
-            : configStyle;
+            : ((opacity >= 1.0 && configStyle != BackdropStyles.Frosted)
+                ? BackdropStyles.Solid
+                : configStyle);
 
         // Skip if the effective style hasn't changed.
         if (style == _currentBackdropStyle && SystemBackdrop is not null)
@@ -1230,6 +1237,11 @@ public sealed partial class MainWindow : Window
     private (Windows.UI.Color tintColor, float tintOpacity, float luminosityOpacity)
         ResolveAcrylicTuning()
     {
+        // Low-power flattens opacity to 1.0 so the tuning resolver picks
+        // the opaque fallback consistent with ApplyBackdropStyle.
+        var lowPowerActive = Ghostty.App.PowerStateMonitor?.IsLowPowerActive ?? false;
+        var effectiveOpacity = lowPowerActive ? 1.0 : _configService.BackgroundOpacity;
+
         uint? overrideArgb = _configService.BackgroundTintColor is { } c
             ? ((uint)c.A << 24) | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B
             : null;
@@ -1240,7 +1252,7 @@ public sealed partial class MainWindow : Window
             tintOpacityOverride: _configService.BackgroundTintOpacity,
             luminosityOpacityOverride: _configService.BackgroundLuminosityOpacity,
             blurFollowsOpacity: _configService.BackgroundBlurFollowsOpacity,
-            backgroundOpacity: _configService.BackgroundOpacity);
+            backgroundOpacity: effectiveOpacity);
 
         var tint = Windows.UI.Color.FromArgb(
             (byte)(t.TintArgb >> 24),
@@ -1255,7 +1267,10 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            ApplyBackdropStyle();
+            UpdateAcrylicTuning();
             ApplyGradientTint();
+            ApplyRootGridBackground();
         });
     }
 
