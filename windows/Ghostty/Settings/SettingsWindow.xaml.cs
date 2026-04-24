@@ -120,6 +120,12 @@ internal sealed partial class SettingsWindow : Window
         ctrlF.Invoked += (_, args) => { args.Handled = true; SearchBox.Focus(FocusState.Keyboard); };
         NavView.KeyboardAccelerators.Add(ctrlF);
 
+        // Suppress the auto-generated "Ctrl+F" tooltip that WinUI attaches
+        // to every NavigationView menu item when an accelerator lives on
+        // NavView. The shortcut is advertised by the SearchBox placeholder,
+        // not by hovering unrelated nav items. Matches MainWindow's policy.
+        NavView.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+
         Closed += OnClosed;
         NavView.SelectedItem = NavView.MenuItems[0];
     }
