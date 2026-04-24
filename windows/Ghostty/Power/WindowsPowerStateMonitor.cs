@@ -143,7 +143,7 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
 
     private void OnUiSettingsChanged(
         UISettings sender,
-        UISettingsAdvancedEffectsEnabledChangedEventArgs args)
+        object args)
     {
         _transparencyEffectsOff = !sender.AdvancedEffectsEnabled;
         ScheduleResolve();
