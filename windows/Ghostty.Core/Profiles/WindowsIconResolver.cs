@@ -38,11 +38,35 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
     {
         IconSpec.Path p => await fs.ReadAllBytesAsync(p.FilePath, ct).ConfigureAwait(false),
         IconSpec.BundledKey b => ReadBundledOrDefault(b.Key),
-        IconSpec.Mdl2Token => throw new NotImplementedException("Mdl2Token lands in Task 16"),
-        IconSpec.AutoForExe => throw new NotImplementedException("AutoForExe lands in Task 16"),
+        // Phase 2: DirectWrite rasterization of the Segoe Fluent Icons /
+        // Segoe MDL2 Assets glyph. For V1 scope we return the default
+        // bundled asset so the UI still gets a usable 16x16 PNG.
+        IconSpec.Mdl2Token => ReadBundledOrDefault(DefaultBundledKey),
+        IconSpec.AutoForExe a => ExtractExeIconAsPng(a.ExePath),
         IconSpec.AutoForWslDistro => throw new NotImplementedException("AutoForWslDistro lands in Task 17"),
         _ => ReadBundledOrDefault(DefaultBundledKey),
     };
+
+    // Win32 icon extraction lives behind OperatingSystem.IsWindows() so
+    // the non-Windows build graph still compiles WindowsIconResolver.
+    // Any SHGetFileInfoW / GDI failure silently falls back to the default
+    // bundled icon rather than surfacing the exception - icon resolution
+    // is best-effort and must never fail a profile resolve.
+    private static byte[] ExtractExeIconAsPng(string exePath)
+    {
+        // IsWindowsVersionAtLeast (not bare IsWindows) satisfies CA1416's
+        // narrowing for Win32IconExtractor's [SupportedOSPlatform("windows6.0.6000")].
+        if (!OperatingSystem.IsWindowsVersionAtLeast(6, 0, 6000))
+            return ReadBundledOrDefault(DefaultBundledKey);
+        try
+        {
+            return Win32IconExtractor.ExtractAsPng16(exePath);
+        }
+        catch
+        {
+            return ReadBundledOrDefault(DefaultBundledKey);
+        }
+    }
 
     private static byte[] ReadBundledOrDefault(string key)
     {
