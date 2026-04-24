@@ -37,8 +37,8 @@
       "stderr": ""
     },
     {
-      "fileName": "az",
-      "args": ["--version"],
+      "fileName": "cmd.exe",
+      "args": ["/c", "az", "--version"],
       "exitCode": 0,
       "stdout": "azure-cli 2.55.0\n",
       "stderr": ""
