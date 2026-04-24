@@ -6,13 +6,13 @@ namespace Ghostty.Tests.Shell;
 /// <summary>
 /// Unit tests for <see cref="AcrylicTintResolver"/>. The key contract
 /// is the theme-background fallback when <c>background-tint-color</c>
-/// is unset (issue # 324) — before that fix the resolver returned
+/// is unset (issue # 324); before that fix the resolver returned
 /// transparent black and washed the frosted acrylic out.
 /// </summary>
 public sealed class AcrylicTintResolverTests
 {
     private const uint ThemeBg = 0x001E1E2Eu;          // Catppuccin-ish dark
-    private const uint ThemeBgOpaque = 0xFF1E1E2Eu;
+    private const uint ThemeBgOpaque = AcrylicTintResolver.OpaqueAlphaMask | ThemeBg;
     private const uint UserTint = 0xFFAABBCCu;
 
     [Fact]
@@ -73,8 +73,12 @@ public sealed class AcrylicTintResolverTests
         Assert.Equal(AcrylicTintResolver.DefaultLuminosityOpacity, t.LuminosityOpacity);
     }
 
-    [Fact]
-    public void Blur_follows_opacity_slaves_both_opacities_to_background_opacity()
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.25)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void Blur_follows_opacity_slaves_both_opacities_to_background_opacity(double bg)
     {
         var t = AcrylicTintResolver.Resolve(
             tintOverrideArgb: null,
@@ -83,10 +87,10 @@ public sealed class AcrylicTintResolverTests
             tintOpacityOverride: 0.9f,
             luminosityOpacityOverride: 0.9f,
             blurFollowsOpacity: true,
-            backgroundOpacity: 0.25);
+            backgroundOpacity: bg);
 
-        Assert.Equal(0.25f, t.TintOpacity);
-        Assert.Equal(0.25f, t.LuminosityOpacity);
+        Assert.Equal((float)bg, t.TintOpacity);
+        Assert.Equal((float)bg, t.LuminosityOpacity);
     }
 
     [Fact]

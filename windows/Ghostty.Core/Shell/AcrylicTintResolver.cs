@@ -18,6 +18,13 @@ public static class AcrylicTintResolver
     /// <summary>Default luminosity opacity when the user hasn't set one.</summary>
     public const float DefaultLuminosityOpacity = 0.3f;
 
+    /// <summary>Alpha bits OR'd into the theme background to produce an opaque tint.</summary>
+    public const uint OpaqueAlphaMask = 0xFF000000u;
+
+    /// <summary>Resolved tuning the caller hands to the acrylic controller.</summary>
+    /// <param name="TintArgb">Tint color, packed as 0xAARRGGBB.</param>
+    /// <param name="TintOpacity">Tint opacity in [0.0, 1.0].</param>
+    /// <param name="LuminosityOpacity">Luminosity opacity in [0.0, 1.0].</param>
     public readonly record struct Tuning(
         uint TintArgb,
         float TintOpacity,
@@ -28,13 +35,20 @@ public static class AcrylicTintResolver
     /// is not set in the config file.
     /// </param>
     /// <param name="themeBackgroundRgb">
-    /// 24-bit theme background (0x00RRGGBB); the resolver applies an
-    /// opaque alpha before handing it to the compositor.
+    /// Theme background color; only the low 24 bits (RGB) are used, so
+    /// either a packed ARGB or a 0x00RRGGBB value is accepted. The
+    /// resolver applies an opaque alpha before handing it to the
+    /// compositor.
     /// </param>
     /// <param name="tintOpacityOverride">User <c>background-tint-opacity</c>, or null.</param>
     /// <param name="luminosityOpacityOverride">User <c>background-luminosity-opacity</c>, or null.</param>
     /// <param name="blurFollowsOpacity"><c>background-blur-follows-opacity</c> flag.</param>
-    /// <param name="backgroundOpacity"><c>background-opacity</c> in [0.0, 1.0].</param>
+    /// <param name="backgroundOpacity">
+    /// <c>background-opacity</c>; the caller is expected to clamp to [0.0, 1.0]
+    /// (ConfigService does this upstream). Out-of-range or NaN values are
+    /// passed through unchanged so an upstream regression surfaces in
+    /// tests rather than being silently masked here.
+    /// </param>
     public static Tuning Resolve(
         uint? tintOverrideArgb,
         uint themeBackgroundRgb,
@@ -45,7 +59,7 @@ public static class AcrylicTintResolver
     {
         // Tint color: user override wins; otherwise the theme background
         // rendered opaque so the acrylic layer picks up its RGB.
-        var tintArgb = tintOverrideArgb ?? (0xFF000000u | (themeBackgroundRgb & 0x00FFFFFFu));
+        var tintArgb = tintOverrideArgb ?? (OpaqueAlphaMask | (themeBackgroundRgb & 0x00FFFFFFu));
 
         float tintOpacity;
         float luminosityOpacity;
