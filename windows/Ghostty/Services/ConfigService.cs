@@ -485,6 +485,9 @@ internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IPro
         _defaultProfileId = view.DefaultProfileId;
         _hiddenProfileIds = view.HiddenProfileIds;
         _profileWarnings = view.ProfileWarnings;
+
+        foreach (var warning in view.ProfileWarnings)
+            StaticLoggers.ConfigService.LogProfileParseWarning(warning);
     }
 
     /// <summary>
@@ -923,4 +926,16 @@ internal static partial class ConfigServiceLogExtensions
                    Message = "[ConfigService] Reload failed to create new config")]
     internal static partial void LogReloadFailed(
         this ILogger<ConfigService> logger, System.Exception ex);
+
+    // Surfaces each warning string returned by
+    // ConfigServiceProfileParser.ParseAll so admin-visible parse
+    // issues (malformed profile blocks, unknown ids, etc.) land in
+    // the log stream rather than only in the _profileWarnings
+    // field. Warning level because the reload still succeeds --
+    // the offending block is just skipped.
+    [LoggerMessage(EventId = Ghostty.Core.Logging.LogEvents.Profiles.ProfileParseWarning,
+                   Level = LogLevel.Warning,
+                   Message = "[ConfigService] profile parse: {Warning}")]
+    internal static partial void LogProfileParseWarning(
+        this ILogger<ConfigService> logger, string warning);
 }
