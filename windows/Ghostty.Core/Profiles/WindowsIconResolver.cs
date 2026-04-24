@@ -43,7 +43,10 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         // bundled asset so the UI still gets a usable 16x16 PNG.
         IconSpec.Mdl2Token => ReadBundledOrDefault(DefaultBundledKey),
         IconSpec.AutoForExe a => ExtractExeIconAsPng(a.ExePath),
-        IconSpec.AutoForWslDistro => throw new NotImplementedException("AutoForWslDistro lands in Task 17"),
+        // V1: per-distro icon extraction from appx/WSLg is out of scope. Always
+        // fall back to bundled "wsl" - keeps the UI consistent and the cache
+        // bounded. Phase 2 can introduce a WSLg lookup that keys on DistroName.
+        IconSpec.AutoForWslDistro w => ReadBundledOrDefault("wsl"),
         _ => ReadBundledOrDefault(DefaultBundledKey),
     };
 
