@@ -44,6 +44,9 @@ internal static class ScenarioLoader
         {
             // Format: "Hive::KeyPath".
             var parts = k.Split("::", 2);
+            if (parts.Length != 2)
+                throw new InvalidOperationException(
+                    $"Registry key '{k}' must be in 'Hive::KeyPath' format.");
             reg.SetKey(Enum.Parse<RegistryHive>(parts[0]), parts[1]);
         }
         foreach (var v in dto.Registry.Values)
