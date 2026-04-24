@@ -47,4 +47,44 @@ public sealed class WindowsIconResolverBundledKeyTests
 
         Assert.Equal(iconBytes, bytes);
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Resolve_BundledKey_WritesThroughToCache()
+    {
+        var fs = new FakeFileSystem();
+        fs.SetKnownFolder(KnownFolderId.LocalAppData, @"C:\cache");
+        var resolver = new WindowsIconResolver(fs);
+
+        var bytes = await resolver.ResolveAsync(new IconSpec.BundledKey("cmd"), CancellationToken.None);
+
+        // After a successful uncached resolve, the bytes must be parked
+        // under IconCache\<sha>.png so subsequent resolves can short-circuit.
+        var cacheFile = System.Linq.Enumerable.Single(
+            fs.EnumerateKeys(),
+            k => k.StartsWith(@"C:\cache\Wintty\IconCache\", System.StringComparison.Ordinal));
+        Assert.Equal(bytes, fs.ReadAllBytesSync(cacheFile));
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Resolve_PrepopulatedCache_ShortCircuitsToCachedBytes()
+    {
+        // Prove the cache-read path: pre-populate the exact SHA'd cache
+        // file for BundledKey("cmd") with sentinel bytes; the resolver
+        // must return those verbatim instead of reading the manifest PNG.
+        var fs = new FakeFileSystem();
+        fs.SetKnownFolder(KnownFolderId.LocalAppData, @"C:\cache");
+        var first = new WindowsIconResolver(fs);
+        _ = await first.ResolveAsync(new IconSpec.BundledKey("cmd"), CancellationToken.None);
+        var cachePath = System.Linq.Enumerable.Single(
+            fs.EnumerateKeys(),
+            k => k.StartsWith(@"C:\cache\Wintty\IconCache\", System.StringComparison.Ordinal));
+
+        var sentinel = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0xAA, 0xBB, 0xCC, 0xDD };
+        fs.AddFile(cachePath, sentinel);
+
+        var second = new WindowsIconResolver(fs);
+        var bytes = await second.ResolveAsync(new IconSpec.BundledKey("cmd"), CancellationToken.None);
+
+        Assert.Equal(sentinel, bytes);
+    }
 }

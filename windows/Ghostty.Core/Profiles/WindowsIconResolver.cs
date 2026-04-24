@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -62,6 +63,12 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
 
     private static string SpecToCacheKey(IconSpec spec)
     {
+        // Casing note: Windows paths are case-insensitive, so tokens
+        // like "exe:C:\\Foo.exe" and "exe:c:\\foo.exe" currently hash
+        // to different SHAs and produce duplicate cache entries for
+        // the same underlying file. Acceptable for Path (user-supplied,
+        // round-trips verbatim); Task 16's AutoForExe should normalize
+        // before hitting this token when it lands.
         var token = spec switch
         {
             IconSpec.Path p => "path:" + p.FilePath,
@@ -72,8 +79,8 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
             _ => "unknown",
         };
         Span<byte> hash = stackalloc byte[32];
-        SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token), hash);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        SHA256.HashData(Encoding.UTF8.GetBytes(token), hash);
+        return Convert.ToHexStringLower(hash);
     }
 
     private async Task<byte[]?> TryReadCacheAsync(string sha, CancellationToken ct)
@@ -81,6 +88,9 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         var path = CachePathFor(sha);
         if (path is null || !fs.FileExists(path)) return null;
         try { return await fs.ReadAllBytesAsync(path, ct).ConfigureAwait(false); }
+        // Cancellation must surface so the caller sees the token was honored;
+        // a blanket catch would silently fall through to uncached resolution.
+        catch (OperationCanceledException) { throw; }
         catch { return null; }
     }
 
@@ -89,9 +99,13 @@ internal sealed class WindowsIconResolver(IFileSystem fs) : IIconResolver
         var path = CachePathFor(sha);
         if (path is null) return;
         try { await fs.WriteAllBytesAsync(path, bytes, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { throw; }
         catch { /* best-effort */ }
     }
 
+    // The ".png" suffix here is nominal - it's a cache identifier, not a
+    // content-type claim. For IconSpec.Path entries pointing at .ico/.jpg
+    // sources, the cached bytes mirror the source file verbatim.
     private string? CachePathFor(string sha)
     {
         var local = fs.GetKnownFolder(KnownFolderId.LocalAppData);

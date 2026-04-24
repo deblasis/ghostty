@@ -19,6 +19,12 @@ internal sealed class FakeFileSystem : IFileSystem
     public void AddFile(string path) => _files[path] = [];
     public void SetKnownFolder(KnownFolderId id, string path) => _knownFolders[id] = path;
 
+    // Test-only introspection helpers. Real IFileSystem consumers do not
+    // need enumeration or sync reads; these exist so tests can assert on
+    // what the system-under-test actually wrote into the in-memory store.
+    public IEnumerable<string> EnumerateKeys() => _files.Keys;
+    public byte[] ReadAllBytesSync(string path) => _files[path];
+
     public bool FileExists(string path) => _files.ContainsKey(path);
 
     public string? GetKnownFolder(KnownFolderId id)
