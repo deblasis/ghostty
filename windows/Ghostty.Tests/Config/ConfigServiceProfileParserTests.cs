@@ -113,4 +113,20 @@ public class ConfigServiceProfileParserTests
 
         Assert.Null(result.DefaultProfileId);
     }
+
+    [Fact]
+    public void ParseAll_HiddenIdIsSubstringOfMalformedId_DoesNotSuppressWarning()
+    {
+        const string text = """
+            profile.bro.hidden = true
+            profile.broken.name = NoCommand
+            """;
+        var values = new Dictionary<string, string?>();
+
+        var result = ConfigServiceProfileParser.ParseAll(text, key => FileValue(values, key));
+
+        Assert.Contains("bro", result.HiddenProfileIds);
+        Assert.Single(result.ProfileWarnings);
+        Assert.Contains("broken", result.ProfileWarnings[0]);
+    }
 }

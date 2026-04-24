@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using Ghostty.Core.Profiles;
 
@@ -51,9 +50,11 @@ public static class ConfigServiceProfileParser
             ProfileWarnings: warnings);
     }
 
-    // Warnings that mention an id which is in the hidden set and absent
-    // from parsed profiles are suppressed -- those entries are pure
-    // hide-overrides, not broken definitions.
+    // Warnings for an id which is in the hidden set and absent from parsed
+    // profiles are suppressed -- those entries are pure hide-overrides,
+    // not broken definitions. Anchor on the exact "profile '<id>':" prefix
+    // emitted by ProfileSourceParser so a hidden id that happens to be a
+    // substring of another id's warning does not accidentally suppress it.
     private static IReadOnlyList<string> FilterHiddenOnlyWarnings(
         IReadOnlyList<string> warnings,
         IReadOnlyDictionary<string, ProfileDef> profiles,
@@ -66,7 +67,8 @@ public static class ConfigServiceProfileParser
             var suppressed = false;
             foreach (var id in hidden)
             {
-                if (!profiles.ContainsKey(id) && w.Contains(id, StringComparison.OrdinalIgnoreCase))
+                if (profiles.ContainsKey(id)) continue;
+                if (w.StartsWith($"profile '{id}':", StringComparison.OrdinalIgnoreCase))
                 {
                     suppressed = true;
                     break;
