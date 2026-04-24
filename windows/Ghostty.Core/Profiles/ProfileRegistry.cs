@@ -133,8 +133,27 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
         return _snapshot.ById.TryGetValue(profileId, out var p) ? p : null;
     }
 
-    public Task RefreshDiscoveryAsync(CancellationToken ct)
-        => throw new NotImplementedException();
+    public async Task RefreshDiscoveryAsync(CancellationToken ct)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _discoveryCts.Token);
+        try
+        {
+            var discovered = await _discover(true, linked.Token).ConfigureAwait(false);
+            lock (_sync)
+            {
+                _discovered = discovered;
+            }
+            RecomposeAndFire();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LogDiscoveryRefreshFailed(ex);
+        }
+    }
 
     public void Dispose()
     {

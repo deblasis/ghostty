@@ -206,4 +206,31 @@ public class ProfileRegistryTests
 
         Assert.Equal("b", registry.DefaultProfileId);
     }
+
+    [Fact]
+    public async Task RefreshDiscoveryAsync_BypassesCache_AndFiresEvent()
+    {
+        var src = new FakeProfileConfigSource();
+        var callsWithBypass = 0;
+        var callsWithoutBypass = 0;
+        Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> discovery =
+            (bypass, _) =>
+            {
+                if (bypass) callsWithBypass++; else callsWithoutBypass++;
+                return Task.FromResult<IReadOnlyList<DiscoveredProfile>>(Array.Empty<DiscoveredProfile>());
+            };
+
+        using var registry = new ProfileRegistry(
+            src, discovery, SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+        for (int i = 0; i < 20 && registry.Version < 2; i++) await Task.Delay(5);
+
+        var eventsBefore = 0;
+        registry.ProfilesChanged += _ => eventsBefore++;
+
+        await registry.RefreshDiscoveryAsync(CancellationToken.None);
+
+        Assert.Equal(1, callsWithoutBypass);  // initial bootstrap
+        Assert.Equal(1, callsWithBypass);     // explicit refresh
+        Assert.Equal(1, eventsBefore);        // one recompose event after refresh
+    }
 }
