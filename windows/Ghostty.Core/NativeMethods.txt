@@ -16,9 +16,3 @@ IDWriteLocalizedStrings
 // shell32 for profiles discovery
 SHGetKnownFolderPath
 KNOWN_FOLDER_FLAG
-
-// shell32 for profile icon resolution (also used by WindowsIconResolver in Task 16)
-SHGetFileInfoW
-SHFILEINFOW
-SHGFI_FLAGS
-DestroyIcon

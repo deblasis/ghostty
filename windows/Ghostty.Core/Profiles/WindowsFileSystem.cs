@@ -31,24 +31,27 @@ internal sealed class WindowsFileSystem : IFileSystem
     public unsafe string? GetKnownFolder(KnownFolderId id)
     {
         var guid = ToWin32Guid(id);
-        // The CsWin32 friendly overload takes `in Guid` and `out PWSTR`
-        // rather than raw pointers. Cast 0 to the typed flag enum.
-        // The generated class is DWritePInvoke (named from the first entry
-        // in NativeMethods.txt); the Windows.Win32 using brings it into scope.
+        // The generated class name is pinned to DWritePInvoke in
+        // NativeMethods.json ("className") to avoid colliding with the
+        // Windows.Win32.PInvoke class used by the shell assembly.
+        // The CsWin32 friendly overload takes `in Guid` and `out PWSTR`.
         var hr = DWritePInvoke.SHGetKnownFolderPath(
             guid,
             (KNOWN_FOLDER_FLAG)0,
             default,
             out var pwstr);
-        if (hr.Failed) return null;
+        // MSDN doesn't guarantee pwstr is null on failure; free defensively.
+        if (hr.Failed)
+        {
+            if (pwstr.Value is not null) Marshal.FreeCoTaskMem((IntPtr)pwstr.Value);
+            return null;
+        }
         try
         {
             return pwstr.ToString();
         }
         finally
         {
-            // SHGetKnownFolderPath allocates via CoTaskMemAlloc. We only reach
-            // this finally on the success path; the failure path returns null above.
             Marshal.FreeCoTaskMem((IntPtr)pwstr.Value);
         }
     }
