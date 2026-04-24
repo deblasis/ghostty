@@ -233,4 +233,34 @@ public class ProfileRegistryTests
         Assert.Equal(1, callsWithBypass);     // explicit refresh
         Assert.Equal(1, eventsBefore);        // one recompose event after refresh
     }
+
+    [Fact]
+    public async Task DiscoveryThrows_KeepsPriorState_DoesNotFireEvent()
+    {
+        var src = new FakeProfileConfigSource
+        {
+            ParsedProfiles = new Dictionary<string, ProfileDef>
+            {
+                ["user"] = UserDef("user"),
+            },
+        };
+        var throwOnBootstrap = new TaskCompletionSource<IReadOnlyList<DiscoveredProfile>>();
+        Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> discovery =
+            (_, _) => throwOnBootstrap.Task;
+
+        using var registry = new ProfileRegistry(
+            src, discovery, SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+
+        var versionBefore = registry.Version;
+        var eventsFiredAfterSubscribe = 0;
+        registry.ProfilesChanged += _ => eventsFiredAfterSubscribe++;
+
+        throwOnBootstrap.SetException(new InvalidOperationException("boom"));
+        // Give the continuation time to run.
+        for (int i = 0; i < 20; i++) await Task.Delay(5);
+
+        Assert.Equal(versionBefore, registry.Version);        // unchanged
+        Assert.Single(registry.Profiles);                      // user still there
+        Assert.Equal(0, eventsFiredAfterSubscribe);            // no event after failure
+    }
 }
