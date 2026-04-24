@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Ghostty.Core;
 using Ghostty.Core.Config;
 using Ghostty.Core.Settings;
 using Ghostty.Services;
@@ -55,6 +56,16 @@ internal sealed partial class SettingsWindow : Window
         _keybindings = keybindings;
         _theme = theme;
         InitializeComponent();
+
+        // Branded window title and custom title bar. Title is used by the
+        // taskbar / alt-tab; AppTitleBarText renders the same text inside
+        // the window next to the gear FontIcon. Both read from
+        // AppIdentity.ProductName so a rebrand touches one constant.
+        var titleText = $"{AppIdentity.ProductName} Settings";
+        Title = titleText;
+        AppTitleBarText.Text = titleText;
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
 
         // Mica backdrop so the window isn't a black flash while XAML
         // measures its first layout pass.
@@ -129,8 +140,42 @@ internal sealed partial class SettingsWindow : Window
 
     private void ApplyTheme()
     {
-        NavView.RequestedTheme = _themeManager.ElementTheme;
+        // RequestedTheme on the root Grid cascades to the custom title
+        // bar AND the NavView subtree, so the gear FontIcon + title text
+        // track the window theme. Without this the Grid falls back to
+        // Application.RequestedTheme (Dark), leaving white title-bar
+        // text on a light Mica backdrop.
+        RootGrid.RequestedTheme = _themeManager.ElementTheme;
         _themeManager.ApplyToWindow(this);
+        ApplyCaptionButtonColors();
+    }
+
+    // With ExtendsContentIntoTitleBar=true, the system-rendered caption
+    // buttons (min/max/close) default to white glyphs — invisible on a
+    // light Mica backdrop when the window is focused. AppWindow.TitleBar
+    // exposes per-state color slots; pick ones that follow the window
+    // theme rather than the Application's (pinned-Dark) theme.
+    private void ApplyCaptionButtonColors()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var titleBar = AppWindow.GetFromWindowId(windowId).TitleBar;
+        var dark = _themeManager.ElementTheme == ElementTheme.Dark;
+
+        titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        titleBar.ButtonInactiveForegroundColor = dark
+            ? Windows.UI.Color.FromArgb(0xFF, 0x99, 0x99, 0x99)
+            : Windows.UI.Color.FromArgb(0xFF, 0x99, 0x99, 0x99);
+        titleBar.ButtonHoverBackgroundColor = dark
+            ? Windows.UI.Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x33, 0x00, 0x00, 0x00);
+        titleBar.ButtonHoverForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        titleBar.ButtonPressedBackgroundColor = dark
+            ? Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x66, 0x00, 0x00, 0x00);
+        titleBar.ButtonPressedForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
     }
 
     private void NavView_SelectionChanged(
