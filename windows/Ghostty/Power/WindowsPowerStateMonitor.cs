@@ -64,6 +64,8 @@ internal sealed class WindowsPowerStateMonitor : IPowerStateMonitor, IDisposable
         Func<PowerSaverMode> readMode,
         ILogger<WindowsPowerStateMonitor> logger)
     {
+        ArgumentNullException.ThrowIfNull(readMode);
+        ArgumentNullException.ThrowIfNull(logger);
         _readMode = readMode;
         _logger = logger;
     }

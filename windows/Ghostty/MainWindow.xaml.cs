@@ -1268,11 +1268,22 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ApplyBackdropStyle();
-            UpdateAcrylicTuning();
-            ApplyGradientTint();
-            ApplyRootGridBackground();
-            RefreshPowerSaverIcon();
+            try
+            {
+                ApplyBackdropStyle();
+                UpdateAcrylicTuning();
+                ApplyGradientTint();
+                ApplyRootGridBackground();
+                RefreshPowerSaverIcon();
+            }
+            catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException
+                                    or InvalidOperationException
+                                    or NullReferenceException)
+            {
+                // Window tore down between monitor thread-pool event and UI dispatch.
+                // OnClosedAsync unsubscribes, but there's a narrow window before the
+                // queued lambda runs where XAML objects may already be disposed.
+            }
         });
     }
 
