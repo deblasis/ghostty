@@ -24,7 +24,7 @@ internal readonly record struct GradientPoint(
 /// Fires <see cref="ConfigChanged"/> on the UI thread after every
 /// successful reload so consumers can re-read values they depend on.
 /// </summary>
-internal sealed class ConfigService : IConfigService
+internal sealed class ConfigService : IConfigService, Ghostty.Core.Profiles.IProfileConfigSource
 {
     private GhosttyConfig _config;
     private GhosttyApp _app;
@@ -100,6 +100,14 @@ internal sealed class ConfigService : IConfigService
 
     public IReadOnlyList<string> WindowsOnlyKeysUsed => _windowsOnlyKeysUsed;
 
+    public IReadOnlyDictionary<string, Ghostty.Core.Profiles.ProfileDef> ParsedProfiles => _parsedProfiles;
+    public IReadOnlyList<string> ProfileOrder => _profileOrder;
+    public string? DefaultProfileId => _defaultProfileId;
+    public IReadOnlySet<string> HiddenProfileIds => _hiddenProfileIds;
+    public IReadOnlyList<string> ProfileWarnings => _profileWarnings;
+
+    public event Action? ProfileConfigChanged;
+
     /// <summary>
     /// Filtered diagnostic messages from the last load/reload.
     /// "Unknown field" errors for <see cref="WindowsOnlyKeys"/> are
@@ -123,6 +131,13 @@ internal sealed class ConfigService : IConfigService
     /// </summary>
     private readonly HashSet<string> _windowsOnlyKeysSeen =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private IReadOnlyDictionary<string, Ghostty.Core.Profiles.ProfileDef> _parsedProfiles =
+        new Dictionary<string, Ghostty.Core.Profiles.ProfileDef>();
+    private IReadOnlyList<string> _profileOrder = Array.Empty<string>();
+    private string? _defaultProfileId;
+    private IReadOnlySet<string> _hiddenProfileIds = System.Collections.Frozen.FrozenSet<string>.Empty;
+    private IReadOnlyList<string> _profileWarnings = Array.Empty<string>();
 
     /// <summary>
     /// Snapshot of the config file's key/value lines, populated at the
@@ -220,7 +235,11 @@ internal sealed class ConfigService : IConfigService
 
         _suppressWatcher = wasSuppressed;
 
-        _dispatcher.TryEnqueue(() => ConfigChanged?.Invoke(this));
+        _dispatcher.TryEnqueue(() =>
+        {
+            ConfigChanged?.Invoke(this);
+            ProfileConfigChanged?.Invoke();
+        });
         return true;
     }
 
@@ -433,6 +452,28 @@ internal sealed class ConfigService : IConfigService
         }
 
         AnsiPalette = GetAllPaletteColors();
+
+        // Profile-view second pass. Reuses the raw file read done at
+        // the top of ReadFlags via _configFileCache; the parser only
+        // needs the raw text for profile.<id>.* regex matching and for
+        // the hidden-ids extraction. The scalar keys (default-profile
+        // and profile-order) are read through GetFileValue which hits
+        // the same cache.
+        var rawConfigText = File.Exists(ConfigFilePath)
+            ? File.ReadAllText(ConfigFilePath)
+            : string.Empty;
+        var view = Ghostty.Core.Config.ConfigServiceProfileParser.ParseAll(
+            rawConfigText,
+            key =>
+            {
+                var v = GetFileValue(key, string.Empty);
+                return v.Length == 0 ? null : v;
+            });
+        _parsedProfiles = view.ParsedProfiles;
+        _profileOrder = view.ProfileOrder;
+        _defaultProfileId = view.DefaultProfileId;
+        _hiddenProfileIds = view.HiddenProfileIds;
+        _profileWarnings = view.ProfileWarnings;
     }
 
     /// <summary>
