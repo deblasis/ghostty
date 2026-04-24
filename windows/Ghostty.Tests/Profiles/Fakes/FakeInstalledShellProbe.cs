@@ -5,24 +5,25 @@ using Ghostty.Core.Profiles;
 
 namespace Ghostty.Tests.Profiles.Fakes;
 
-/// <summary>
-/// Returns a fixed list of <see cref="DiscoveredProfile"/>. Tests
-/// compose multiple instances of this fake to stand in for the full
-/// probe set when exercising <see cref="ProfileOrderResolver"/> or
-/// later the <c>DiscoveryService</c>.
-/// </summary>
 internal sealed class FakeInstalledShellProbe : IInstalledShellProbe
 {
     private readonly IReadOnlyList<DiscoveredProfile> _results;
+    private readonly bool _throw;
 
-    public FakeInstalledShellProbe(string probeId, IReadOnlyList<DiscoveredProfile> results)
+    public FakeInstalledShellProbe(string probeId,
+        IReadOnlyList<DiscoveredProfile>? results,
+        bool throwOnDiscover = false)
     {
         ProbeId = probeId;
-        _results = results;
+        _results = results ?? System.Array.Empty<DiscoveredProfile>();
+        _throw = throwOnDiscover;
     }
 
     public string ProbeId { get; }
 
     public Task<IReadOnlyList<DiscoveredProfile>> DiscoverAsync(CancellationToken ct)
-        => Task.FromResult(_results);
+    {
+        if (_throw) throw new System.InvalidOperationException("probe intentionally throwing");
+        return Task.FromResult(_results);
+    }
 }
