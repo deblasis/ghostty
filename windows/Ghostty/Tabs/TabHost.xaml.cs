@@ -411,6 +411,9 @@ internal sealed partial class TabHost : UserControl, ITabHost
         foreach (var tb in _headerTextByModel.Values)
             tb.ClearValue(TextBlock.ForegroundProperty);
 
+        // Toggle theme to force WinUI to re-read the default
+        // background resources now that the overrides are gone.
+        // Foregrounds don't need this — ClearValue above is immediate.
         TabViewControl.RequestedTheme = ElementTheme.Light;
         TabViewControl.RequestedTheme = _cachedTheme;
     }
