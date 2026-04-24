@@ -14,7 +14,7 @@ public sealed class WslProbeTests
     public async System.Threading.Tasks.Task Discover_ThreeDistros_ReturnsThreeProfiles()
     {
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult("wsl.exe", new[] { "--list", "--verbose", "--quiet" },
+        runner.EnqueueResult("wsl.exe", new[] { "--list", "--quiet" },
             new ProcessResult(0, "Ubuntu-22.04\nDebian\nkali-linux\n", "", TimeSpan.Zero));
 
         var probe = new WslProbe(runner);
@@ -40,7 +40,7 @@ public sealed class WslProbeTests
     public async System.Threading.Tasks.Task Discover_EmptyList_ReturnsEmpty()
     {
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult("wsl.exe", new[] { "--list", "--verbose", "--quiet" },
+        runner.EnqueueResult("wsl.exe", new[] { "--list", "--quiet" },
             new ProcessResult(0, "", "", TimeSpan.Zero));
         var probe = new WslProbe(runner);
         var result = await probe.DiscoverAsync(CancellationToken.None);
@@ -52,7 +52,7 @@ public sealed class WslProbeTests
     {
         var runner = new FakeProcessRunner();
         // Lines that are all-NUL or non-printable should be dropped.
-        runner.EnqueueResult("wsl.exe", new[] { "--list", "--verbose", "--quiet" },
+        runner.EnqueueResult("wsl.exe", new[] { "--list", "--quiet" },
             new ProcessResult(0, "Ubuntu\n\0\0\0\n  \n", "", TimeSpan.Zero));
         var probe = new WslProbe(runner);
         var result = await probe.DiscoverAsync(CancellationToken.None);
@@ -65,7 +65,7 @@ public sealed class WslProbeTests
     public async System.Threading.Tasks.Task Discover_CommandIsWslDashD()
     {
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult("wsl.exe", new[] { "--list", "--verbose", "--quiet" },
+        runner.EnqueueResult("wsl.exe", new[] { "--list", "--quiet" },
             new ProcessResult(0, "Ubuntu-22.04\n", "", TimeSpan.Zero));
         var probe = new WslProbe(runner);
         var result = await probe.DiscoverAsync(CancellationToken.None);

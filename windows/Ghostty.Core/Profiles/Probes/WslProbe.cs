@@ -7,10 +7,9 @@ using System.Threading.Tasks;
 namespace Ghostty.Core.Profiles.Probes;
 
 /// <summary>
-/// Probes WSL distros via 'wsl --list --verbose --quiet'. Each line is
-/// a distro name. Lines consisting of NULs, whitespace, or non-printable
-/// characters are skipped (defensive against UTF-16 decoding residue
-/// from the production wrapper).
+/// Probes WSL distros via 'wsl --list --quiet'. Each line is a distro
+/// name. WindowsProcessRunner sets WSL_UTF8=1 so output is UTF-8; the
+/// leading BOM (if any) and stray NUL bytes are stripped defensively.
 /// </summary>
 internal sealed class WslProbe(IProcessRunner runner) : IInstalledShellProbe
 {
@@ -21,15 +20,14 @@ internal sealed class WslProbe(IProcessRunner runner) : IInstalledShellProbe
     public async Task<IReadOnlyList<DiscoveredProfile>> DiscoverAsync(CancellationToken ct)
     {
         var result = await runner.RunAsync("wsl.exe",
-            new[] { "--list", "--verbose", "--quiet" }, ListTimeout, ct).ConfigureAwait(false);
+            new[] { "--list", "--quiet" }, ListTimeout, ct).ConfigureAwait(false);
         if (result.ExitCode != 0) return System.Array.Empty<DiscoveredProfile>();
 
         var profiles = new List<DiscoveredProfile>();
         foreach (var rawLine in result.Stdout.Split('\n'))
         {
-            var name = rawLine.Trim().Trim('\0');
+            var name = rawLine.Trim('\uFEFF', '\0', ' ', '\t', '\r');
             if (name.Length == 0) continue;
-            if (!HasPrintable(name)) continue;
 
             var id = "wsl-" + Slugify(name);
             profiles.Add(new DiscoveredProfile(
@@ -40,13 +38,6 @@ internal sealed class WslProbe(IProcessRunner runner) : IInstalledShellProbe
                 Icon: new IconSpec.AutoForWslDistro(name)));
         }
         return profiles;
-    }
-
-    private static bool HasPrintable(string s)
-    {
-        foreach (var c in s)
-            if (c >= 0x20 && c < 0x7F) return true;
-        return false;
     }
 
     private static string Slugify(string name)

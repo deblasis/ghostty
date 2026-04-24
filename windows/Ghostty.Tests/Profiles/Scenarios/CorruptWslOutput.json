@@ -9,7 +9,7 @@
   "processes": [
     {
       "fileName": "wsl.exe",
-      "args": ["--list", "--verbose", "--quiet"],
+      "args": ["--list", "--quiet"],
       "exitCode": 0,
       "stdout": "\u0000\u0000Ubuntu\u0000\u0000\n  \u0000\n",
       "stderr": ""

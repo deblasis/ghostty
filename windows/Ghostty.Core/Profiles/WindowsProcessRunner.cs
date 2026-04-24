@@ -11,9 +11,9 @@ namespace Ghostty.Core.Profiles;
 /// Production IProcessRunner. Wraps System.Diagnostics.Process with a
 /// hard timeout and cancellation. Never shells out via cmd; fileName
 /// and args are passed verbatim to ProcessStartInfo. Stdout/stderr are
-/// captured as UTF-8 strings; probes that need UTF-16 (wsl --list) read
-/// RawStdoutBytes from a dedicated overload via a probe-local path
-/// (WslProbe handles its own UTF-16 decoding; see Task 6).
+/// captured as UTF-8 strings. WSL_UTF8=1 is set on every spawn so that
+/// wsl.exe emits its --list output as UTF-8 rather than UTF-16LE; the
+/// variable is ignored by every other exe probes spawn.
 /// </summary>
 internal sealed class WindowsProcessRunner : IProcessRunner
 {
@@ -33,6 +33,8 @@ internal sealed class WindowsProcessRunner : IProcessRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        // Force wsl.exe into UTF-8 output. Safe no-op for all other exes.
+        psi.EnvironmentVariables["WSL_UTF8"] = "1";
         foreach (var a in args) psi.ArgumentList.Add(a);
 
         using var process = new Process { StartInfo = psi };

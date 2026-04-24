@@ -19,7 +19,7 @@
     },
     {
       "fileName": "wsl.exe",
-      "args": ["--list", "--verbose", "--quiet"],
+      "args": ["--list", "--quiet"],
       "exitCode": 0,
       "stdout": "Ubuntu\nDebian\n",
       "stderr": ""

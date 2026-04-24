@@ -31,7 +31,7 @@
     },
     {
       "fileName": "wsl.exe",
-      "args": ["--list", "--verbose", "--quiet"],
+      "args": ["--list", "--quiet"],
       "exitCode": 0,
       "stdout": "Ubuntu-22.04\nDebian\nkali-linux\n",
       "stderr": ""
