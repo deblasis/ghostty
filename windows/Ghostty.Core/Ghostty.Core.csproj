@@ -49,4 +49,16 @@
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.269" PrivateAssets="all" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Bundled 16x16 PNG icons for profile discovery. LogicalName forces
+      a flat "Ghostty.Core.Profiles.IconAssets.<file>.png" manifest name
+      so WindowsIconResolver can GetManifestResourceStream by key without
+      caring about how MSBuild would otherwise mangle folder paths.
+    -->
+    <EmbeddedResource Include="Profiles\IconAssets\*.png">
+      <LogicalName>Ghostty.Core.Profiles.IconAssets.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 </Project>
