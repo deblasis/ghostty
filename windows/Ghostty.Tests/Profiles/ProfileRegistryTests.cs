@@ -59,4 +59,46 @@ public class ProfileRegistryTests
         Assert.Equal(2, registry.Profiles.Count);
         Assert.Equal("a", registry.DefaultProfileId);
     }
+
+    [Fact]
+    public async Task DiscoveryCompletes_FiresSecondEvent_WithDiscovered()
+    {
+        var src = new FakeProfileConfigSource
+        {
+            ParsedProfiles = new Dictionary<string, ProfileDef>
+            {
+                ["user-a"] = UserDef("user-a", "User A"),
+            },
+            DefaultProfileId = "user-a",
+        };
+
+        var tcs = new TaskCompletionSource<IReadOnlyList<DiscoveredProfile>>();
+        Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> deferred =
+            (_, _) => tcs.Task;
+
+        var events = new List<int>();
+        using var registry = new ProfileRegistry(
+            src, deferred, SynchronousDispatcher, NullLogger<ProfileRegistry>.Instance);
+        registry.ProfilesChanged += r => events.Add(r.Profiles.Count);
+
+        // Version is 1, Profiles has only the user entry.
+        Assert.Equal(1L, registry.Version);
+        Assert.Single(registry.Profiles);
+
+        // Complete discovery with one discovered profile.
+        tcs.SetResult(new List<DiscoveredProfile>
+        {
+            new(Id: "wsl-ubuntu", Name: "Ubuntu", Command: "wsl.exe",
+                ProbeId: "wsl", WorkingDirectory: null, Icon: null, TabTitle: null),
+        });
+
+        // Give the continuation a chance to run.
+        await Task.Yield();
+        for (int i = 0; i < 20 && registry.Version < 2; i++) await Task.Delay(5);
+
+        Assert.Equal(2L, registry.Version);
+        Assert.Equal(2, registry.Profiles.Count);
+        Assert.Single(events);
+        Assert.Equal(2, events[0]);
+    }
 }

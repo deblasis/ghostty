@@ -38,6 +38,8 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
     private readonly ILogger<ProfileRegistry> _log;
     private readonly Lock _sync = new();
 
+    private readonly CancellationTokenSource _discoveryCts = new();
+
     private volatile Snapshot _snapshot = EmptySnapshot;
     private long _version;
 
@@ -65,6 +67,28 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
         _log = log ?? NullLogger<ProfileRegistry>.Instance;
 
         RecomposeAndFire();
+        _ = RunInitialDiscoveryAsync();
+    }
+
+    private async Task RunInitialDiscoveryAsync()
+    {
+        try
+        {
+            var discovered = await _discover(false, _discoveryCts.Token).ConfigureAwait(false);
+            lock (_sync)
+            {
+                _discovered = discovered;
+            }
+            RecomposeAndFire();
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposal-initiated cancellation is expected; do not log.
+        }
+        catch (Exception ex)
+        {
+            LogDiscoveryRefreshFailed(ex);
+        }
     }
 
     private void RecomposeAndFire()
@@ -120,4 +144,9 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
                    Level = LogLevel.Debug,
                    Message = "registry recomposed: version={Version} count={Count}")]
     private partial void LogRecomposed(long version, int count);
+
+    [LoggerMessage(EventId = LogEvents.Profiles.DiscoveryRefreshFailed,
+                   Level = LogLevel.Warning,
+                   Message = "discovery refresh failed")]
+    private partial void LogDiscoveryRefreshFailed(Exception ex);
 }
