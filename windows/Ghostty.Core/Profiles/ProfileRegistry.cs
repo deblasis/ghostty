@@ -19,23 +19,34 @@ namespace Ghostty.Core.Profiles;
 /// </summary>
 internal sealed partial class ProfileRegistry : IProfileRegistry
 {
+    // All three fields (Profiles, ById, DefaultProfileId) are published
+    // together via a single volatile reference so readers always see a
+    // consistent set -- no torn snapshot between the list and the dict.
+    private sealed record Snapshot(
+        IReadOnlyList<ResolvedProfile> Profiles,
+        FrozenDictionary<string, ResolvedProfile> ById,
+        string? DefaultProfileId);
+
+    private static readonly Snapshot EmptySnapshot = new(
+        Array.Empty<ResolvedProfile>(),
+        FrozenDictionary<string, ResolvedProfile>.Empty,
+        DefaultProfileId: null);
+
     private readonly IProfileConfigSource _source;
     private readonly Func<bool, CancellationToken, Task<IReadOnlyList<DiscoveredProfile>>> _discover;
     private readonly Action<Action> _dispatcher;
     private readonly ILogger<ProfileRegistry> _log;
     private readonly Lock _sync = new();
 
-    private volatile IReadOnlyList<ResolvedProfile> _profiles = Array.Empty<ResolvedProfile>();
-    private volatile FrozenDictionary<string, ResolvedProfile> _byId =
-        FrozenDictionary<string, ResolvedProfile>.Empty;
+    private volatile Snapshot _snapshot = EmptySnapshot;
     private long _version;
 
     private IReadOnlyList<DiscoveredProfile> _discovered = Array.Empty<DiscoveredProfile>();
 
     public event Action<IProfileRegistry>? ProfilesChanged;
 
-    public IReadOnlyList<ResolvedProfile> Profiles => _profiles;
-    public string? DefaultProfileId { get; private set; }
+    public IReadOnlyList<ResolvedProfile> Profiles => _snapshot.Profiles;
+    public string? DefaultProfileId => _snapshot.DefaultProfileId;
     public long Version => Interlocked.Read(ref _version);
 
     public ProfileRegistry(
@@ -82,9 +93,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
             nextById = dict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
         }
 
-        _profiles = next;
-        _byId = nextById;
-        DefaultProfileId = nextDefault;
+        _snapshot = new Snapshot(next, nextById, nextDefault);
         var newVersion = Interlocked.Increment(ref _version);
         LogRecomposed(newVersion, next.Count);
 
@@ -94,7 +103,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
     public ResolvedProfile? Resolve(string profileId)
     {
         ArgumentNullException.ThrowIfNull(profileId);
-        return _byId.TryGetValue(profileId, out var p) ? p : null;
+        return _snapshot.ById.TryGetValue(profileId, out var p) ? p : null;
     }
 
     public Task RefreshDiscoveryAsync(CancellationToken ct)
