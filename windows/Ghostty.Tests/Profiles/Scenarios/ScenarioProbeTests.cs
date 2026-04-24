@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Threading;
+using Ghostty.Core.Profiles;
 using Ghostty.Core.Profiles.Probes;
 using Ghostty.Tests.Profiles.Scenarios;
 using Xunit;
@@ -57,5 +58,36 @@ public sealed class ScenarioProbeTests
         var s = ScenarioLoader.Load("RegistryMissing");
         var git = await new GitBashProbe(s.Registry, s.FileSystem).DiscoverAsync(CancellationToken.None);
         Assert.Empty(git);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task HeavyDevMachine_ViaDiscoveryService_ReturnsEightProfiles()
+    {
+        var s = ScenarioLoader.Load("HeavyDevMachine");
+
+        var probes = new IInstalledShellProbe[]
+        {
+            new CmdProbe(s.FileSystem),
+            new PowerShellProbe(s.FileSystem, s.ProcessRunner),
+            new WslProbe(s.ProcessRunner),
+            new GitBashProbe(s.Registry, s.FileSystem),
+            new AzureCloudShellProbe(s.ProcessRunner),
+        };
+
+        var svc = new DiscoveryService(probes);
+        var result = await svc.DiscoverAsync(System.Threading.CancellationToken.None);
+
+        // cmd + pwsh-7 + pwsh-windows + wsl-ubuntu-2204 + wsl-debian + wsl-kali-linux + git-bash + azure-cloud-shell = 8
+        Assert.Equal(8, result.Count);
+
+        var ids = result.Select(p => p.Id).ToHashSet();
+        Assert.Contains("cmd", ids);
+        Assert.Contains("pwsh-7", ids);
+        Assert.Contains("pwsh-windows", ids);
+        Assert.Contains("wsl-ubuntu-2204", ids);
+        Assert.Contains("wsl-debian", ids);
+        Assert.Contains("wsl-kali-linux", ids);
+        Assert.Contains("git-bash", ids);
+        Assert.Contains("azure-cloud-shell", ids);
     }
 }
