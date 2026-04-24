@@ -53,6 +53,8 @@ internal sealed class WindowsProcessRunner : IProcessRunner
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
 
+        // Start reads before WaitForExitAsync; reversing the order can
+        // deadlock when the process fills the output pipe before exiting.
         var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
         var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
 
@@ -63,6 +65,11 @@ internal sealed class WindowsProcessRunner : IProcessRunner
         catch (OperationCanceledException)
         {
             try { process.Kill(entireProcessTree: true); } catch { }
+            // Drain the stream tasks so they don't run as unobserved continuations
+            // against the disposed Process. Kill closes the pipes so these return
+            // immediately.
+            try { await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false); }
+            catch { }
             return new ProcessResult(-1, "", "", sw.Elapsed);
         }
 
