@@ -29,7 +29,7 @@ namespace Ghostty.Core.Tabs;
 /// </summary>
 internal sealed class TabManager
 {
-    private readonly Func<IPaneHost> _paneHostFactory;
+    private readonly Func<ProfileSnapshot?, IPaneHost> _paneHostFactory;
     private readonly ObservableCollection<TabModel> _tabs = new();
     private TabModel _activeTab = null!;
 
@@ -62,7 +62,7 @@ internal sealed class TabManager
     /// </summary>
     public event EventHandler<TabModel>? TabDetaching;
 
-    public TabManager(Func<IPaneHost> paneHostFactory)
+    public TabManager(Func<ProfileSnapshot?, IPaneHost> paneHostFactory)
         : this(paneHostFactory, seed: null) { }
 
     /// <summary>
@@ -83,12 +83,12 @@ internal sealed class TabManager
     /// assigns <see cref="ActiveTab"/> directly without events because
     /// no listener is wired at ctor time.
     /// </summary>
-    public TabManager(Func<IPaneHost> paneHostFactory, TabModel? seed)
+    public TabManager(Func<ProfileSnapshot?, IPaneHost> paneHostFactory, TabModel? seed)
     {
         _paneHostFactory = paneHostFactory;
         if (seed is null)
         {
-            var first = CreateTab();
+            var first = CreateTab(snapshot: null);
             _tabs.Add(first);
             _activeTab = first;
         }
@@ -119,7 +119,7 @@ internal sealed class TabManager
     /// </summary>
     public TabModel NewTab(ProfileSnapshot? snapshot)
     {
-        var tab = CreateTab();
+        var tab = CreateTab(snapshot);
         if (snapshot is not null)
             tab.AttachProfileSnapshot(snapshot);
         _tabs.Add(tab);
@@ -222,9 +222,9 @@ internal sealed class TabManager
         TabMoved?.Invoke(this, (tab, from, to));
     }
 
-    private TabModel CreateTab()
+    private TabModel CreateTab(ProfileSnapshot? snapshot)
     {
-        var host = _paneHostFactory();
+        var host = _paneHostFactory(snapshot);
         var tab = new TabModel(host);
         host.LeafFocused += OnLeafFocused;
         // Forward the active-leaf's progress onto the tab model. The

@@ -350,7 +350,7 @@ public sealed partial class MainWindow : Window
 
         _factory = new PaneHostFactory(_host);
         _tabManager = new TabManager(
-            () => _factory.Create(),
+            snapshot => _factory.Create(snapshot),
             seed: seedTab);
         _router = new PaneActionRouter(_tabManager);
         _windowState = WindowState.Load();

@@ -6,7 +6,7 @@ namespace Ghostty.Tests.Tabs;
 
 public class TabManagerProfileSnapshotTests
 {
-    private static TabManager NewManager() => new(() => new FakePaneHost());
+    private static TabManager NewManager() => new((_) => new FakePaneHost());
 
     private static ProfileSnapshot SampleSnapshot() =>
         ProfileSnapshotStore.From(
@@ -53,5 +53,29 @@ public class TabManagerProfileSnapshotTests
         var mgr = NewManager();
         var tab = mgr.NewTab();   // existing no-arg surface, unchanged
         Assert.Null(tab.ProfileSnapshot);
+    }
+
+    [Fact]
+    public void NewTab_WithSnapshot_PassesSnapshotToFactory()
+    {
+        ProfileSnapshot? capturedSnapshot = null;
+        var factoryCallCount = 0;
+        var mgr = new TabManager(snap =>
+        {
+            factoryCallCount++;
+            capturedSnapshot = snap;
+            return new FakePaneHost();
+        });
+
+        // The ctor calls the factory once for the initial tab (null snapshot).
+        // Reset so only the NewTab call is measured.
+        factoryCallCount = 0;
+        capturedSnapshot = null;
+
+        var snapshot = SampleSnapshot();
+        mgr.NewTab(snapshot);
+
+        Assert.Equal(1, factoryCallCount);
+        Assert.Same(snapshot, capturedSnapshot);
     }
 }
