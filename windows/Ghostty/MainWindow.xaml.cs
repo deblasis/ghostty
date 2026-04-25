@@ -357,6 +357,7 @@ public sealed partial class MainWindow : Window
         RestoreWindowPlacement();
 
         _horizontalTabHost = new TabHost(_tabManager, _router, _dialogs);
+        _horizontalTabHost.AttachOwner(this);
         _verticalTabHost = new VerticalTabHost(_tabManager, _router, _dialogs, _host);
 
         // Place both tab hosts in their RootGrid slots. The
