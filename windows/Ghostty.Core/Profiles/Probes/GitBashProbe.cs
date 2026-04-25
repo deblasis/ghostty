@@ -28,7 +28,7 @@ internal sealed class GitBashProbe(IRegistryReader reg, IFileSystem fs) : IInsta
         var profile = new DiscoveredProfile(
             Id: "git-bash",
             Name: "Git Bash",
-            Command: $"{bash} --login -i",
+            Command: $"{ProbeUtil.QuoteIfNeeded(bash)} --login -i",
             ProbeId: ProbeId,
             Icon: new IconSpec.BundledKey("git-bash"));
 
