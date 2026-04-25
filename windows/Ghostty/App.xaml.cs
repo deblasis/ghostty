@@ -480,7 +480,7 @@ public partial class App : Application
         // file again.
         var discoveryCachePath = System.IO.Path.Combine(
             System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-            "Wintty", "DiscoveryCache", "v1.json");
+            "Wintty", "DiscoveryCache", "v2.json");
         var winttyVersion = typeof(App).Assembly.GetName().Version?.ToString() ?? "dev";
 
         var processRunner = new Ghostty.Core.Profiles.WindowsProcessRunner();
