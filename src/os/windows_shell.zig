@@ -98,20 +98,28 @@ pub const Preamble = enum {
     }
 
     const cmd_suffix = [_][:0]const u8{ "/K", "chcp 65001 >nul" };
-    const pwsh_suffix = [_][:0]const u8{
-        "-NoExit",
-        "-Command",
-        // `chcp 65001 > $null` sets the conhost output codepage so
-        // the bytes [Console]::OutputEncoding writes get rendered as
-        // UTF-8 by the host (otherwise Nerd Font glyphs from Oh-My-
-        // Posh/Starship come out as `?` even when pwsh's .NET
-        // encoding is UTF-8 - the conhost interpreter is still on
-        // the system codepage). Then set both output *and* input
-        // encodings: the output side fixes what the pane renders;
-        // the input side fixes what redirection (`>`, `|`) produces
-        // when the user pipes pwsh into another tool.
-        "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::InputEncoding = [Console]::OutputEncoding",
-    };
+    // PowerShell preamble: empty.
+    //
+    // The previous shape was `["-NoExit", "-Command", "<encoding setup>"]`
+    // which sets `[Console]::OutputEncoding`/`InputEncoding` before the
+    // first prompt. The `-Command` flag breaks PSReadLine + prompt-theme
+    // init order in real-world configs (Oh-My-Posh, Starship): the Nerd
+    // Font glyphs render as U+FFFD even though pwsh's .NET encoding is
+    // UTF-8 by then. Plain `pwsh.exe` (which is what `cmd -> pwsh` does)
+    // renders correctly.
+    //
+    // PowerShell 7+ defaults `[Console]::OutputEncoding` to UTF-8 (.NET 6+
+    // changed the default), so the prompt path no longer needs the setup.
+    // Windows PowerShell 5.1 + non-ASCII *output* may regress in pipeline
+    // scenarios (`pwsh.exe | other.exe` with > U+007F bytes); users on
+    // 5.1 hitting that should set `[Console]::OutputEncoding` in their
+    // `$PROFILE` (see https://github.com/PowerShell/PowerShell/issues/...
+    // for the 5.1 rationale).
+    //
+    // The prefix() path (used when the user supplied their own
+    // `-Command` script, so the PSReadLine interaction does not apply)
+    // keeps `chcp 65001 > $null; [Console]::OutputEncoding = ...`.
+    const pwsh_suffix = [_][:0]const u8{};
 };
 
 /// Fine-grained shell identity used to select a UTF-8 preamble under
@@ -327,18 +335,16 @@ test "utf8Preamble: suffix argv matches ConPTY setup contract" {
     try testing.expectEqualStrings("/K", cmd_suffix[0]);
     try testing.expectEqualStrings("chcp 65001 >nul", cmd_suffix[1]);
 
-    // pwsh: -NoExit mirrors the cmd /K behavior; -Command runs the
-    // setup before dropping the user into the prompt.
+    // pwsh suffix is intentionally empty: the previous `-NoExit
+    // -Command "<encoding setup>"` injection broke PSReadLine /
+    // prompt-theme init order (Oh-My-Posh and Starship Nerd Font
+    // glyphs rendered as U+FFFD). PowerShell 7+ defaults
+    // [Console]::OutputEncoding to UTF-8 already, so the prompt
+    // path no longer needs the setup. The prefix() path still
+    // prepends chcp + encoding for users who supplied their own
+    // -Command (covered by the prefix test below).
     const pwsh_suffix = Preamble.pwsh.suffix();
-    try testing.expectEqual(@as(usize, 3), pwsh_suffix.len);
-    try testing.expectEqualStrings("-NoExit", pwsh_suffix[0]);
-    try testing.expectEqualStrings("-Command", pwsh_suffix[1]);
-    try testing.expect(std.mem.indexOf(u8, pwsh_suffix[2], "[Console]::OutputEncoding") != null);
-    try testing.expect(std.mem.indexOf(u8, pwsh_suffix[2], "[Console]::InputEncoding") != null);
-    // Setting [Console]::OutputEncoding alone leaves conhost on the
-    // system codepage so Nerd Font glyphs render as `?`. The script
-    // must run `chcp 65001 > $null` first.
-    try testing.expect(std.mem.indexOf(u8, pwsh_suffix[2], "chcp 65001") != null);
+    try testing.expectEqual(@as(usize, 0), pwsh_suffix.len);
 
     // none: empty.
     try testing.expectEqual(@as(usize, 0), Preamble.none.suffix().len);
