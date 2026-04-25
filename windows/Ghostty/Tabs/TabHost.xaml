@@ -54,26 +54,6 @@
             ContextRequested="OnTabViewContextRequested"
             SelectionChanged="OnSelectionChanged"
             TabDragCompleted="OnTabDragCompleted">
-            <controls:TabView.Resources>
-                <!--
-                    Inactive tabs default to near-transparent in WinUI 3,
-                    making them indistinguishable from the Mica/theme
-                    background. LayerFillColorDefaultBrush is the WinUI 3
-                    design token for "subtle layer over a Mica/acrylic
-                    surface" and resolves per-theme (Light, Dark, custom
-                    Wintty themes) automatically. The selected-tab brush
-                    continues to be overridden in code-behind
-                    (ApplyShellTheme) with the user's accent color; that
-                    path only touches TabViewItemHeaderBackgroundSelected
-                    and does not conflict with these unselected overrides.
-                -->
-                <StaticResource x:Key="TabViewItemHeaderBackground"
-                                ResourceKey="LayerFillColorDefaultBrush"/>
-                <StaticResource x:Key="TabViewItemHeaderBackgroundPointerOver"
-                                ResourceKey="LayerOnAcrylicFillColorDefaultBrush"/>
-                <StaticResource x:Key="TabViewItemHeaderBackgroundPressed"
-                                ResourceKey="LayerOnAcrylicFillColorDefaultBrush"/>
-            </controls:TabView.Resources>
             <controls:TabView.TabStripHeader>
                 <branding:AppIconBadge />
             </controls:TabView.TabStripHeader>
