@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Ghostty.Core.Panes;
+using Ghostty.Core.Profiles;
 using Ghostty.Controls;
 using Ghostty.Hosting;
 using Microsoft.UI.Xaml;
@@ -230,9 +231,19 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
 
     /// <summary>
     /// Split the active leaf with the given orientation. The new leaf
-    /// becomes the active leaf.
+    /// becomes the active leaf. Legacy keyboard-Split path; no profile
+    /// snapshot is attached to the new leaf.
     /// </summary>
     public void Split(PaneOrientation orientation)
+        => Split(orientation, snapshot: null);
+
+    /// <summary>
+    /// Split the active leaf with the given orientation. The new leaf
+    /// becomes the active leaf. <paramref name="snapshot"/> (when
+    /// non-null) is stored on the new <see cref="LeafPane"/> for
+    /// future hot-apply by PR 6.
+    /// </summary>
+    public void Split(PaneOrientation orientation, ProfileSnapshot? snapshot)
     {
         // Unzoom before splitting so the new sub-Grid is inserted into
         // the full tree, not into the zoomed single-leaf visual.
@@ -246,6 +257,7 @@ internal sealed partial class PaneHost : UserControl, IPaneHost
         var wasRoot = ReferenceEquals(_root, oldActive);
         var newTerminal = CreateTerminal();
         var newLeaf = new LeafPane { Tag = newTerminal };
+        newLeaf.Snapshot = snapshot;
         _root = PaneTree.Split(_root, oldActive, newLeaf, orientation);
         _activeLeaf = newLeaf;
 
