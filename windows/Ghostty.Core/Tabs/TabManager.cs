@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Ghostty.Core.Panes;
+using Ghostty.Core.Profiles;
 
 namespace Ghostty.Core.Tabs;
 
@@ -99,9 +100,28 @@ internal sealed class TabManager
         }
     }
 
-    public TabModel NewTab()
+    /// <summary>
+    /// Open a new tab with no profile snapshot attached. Identical to
+    /// <see cref="NewTab(ProfileSnapshot?)"/> with a null argument;
+    /// preserved as the no-arg call shape for the legacy no-profile
+    /// path (vertical tab strip's + glyph in PR 4) and the
+    /// no-profiles-configured cold-start fallback in
+    /// <c>MainWindow.OpenProfile</c>.
+    /// </summary>
+    public TabModel NewTab() => NewTab(snapshot: null);
+
+    /// <summary>
+    /// Open a new tab. When <paramref name="snapshot"/> is non-null it
+    /// is attached to the new <see cref="TabModel"/> via
+    /// <see cref="TabModel.AttachProfileSnapshot"/> before
+    /// <see cref="TabAdded"/> fires; subscribers can read
+    /// <see cref="TabModel.ProfileSnapshot"/> synchronously.
+    /// </summary>
+    public TabModel NewTab(ProfileSnapshot? snapshot)
     {
         var tab = CreateTab();
+        if (snapshot is not null)
+            tab.AttachProfileSnapshot(snapshot);
         _tabs.Add(tab);
         TabAdded?.Invoke(this, tab);
         Activate(tab);
