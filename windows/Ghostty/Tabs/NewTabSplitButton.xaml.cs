@@ -34,11 +34,21 @@ internal sealed partial class NewTabSplitButton : UserControl
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         var registry = App.ProfileRegistry;
-        var iconResolver = App.IconResolver;
-        if (registry is null || iconResolver is null) return;
+        if (registry is null) return;
 
-        _vm = new NewTabSplitButtonViewModel(
-            registry, iconResolver, DispatcherQueue);
+        // WinUI 3 raises Loaded/Unloaded on every reparent. SwapChainPanel
+        // rehost paths in this codebase have been observed to fire Loaded
+        // a second time without an intervening Unloaded; defensively
+        // dispose the prior VM and drop its registry subscription before
+        // allocating a new one so the second Loaded does not leak.
+        if (_vm is not null)
+        {
+            registry.ProfilesChanged -= OnProfilesChanged;
+            _vm.Dispose();
+            _vm = null;
+        }
+
+        _vm = new NewTabSplitButtonViewModel(registry);
         registry.ProfilesChanged += OnProfilesChanged;
         RebuildFlyout();
     }
