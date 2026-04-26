@@ -110,17 +110,17 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
 
         lock (_sync)
         {
-            var resolved = ProfileOrderResolver.Resolve(
+            var resolvedSet = ProfileOrderResolver.Resolve(
                 user: [.. _source.ParsedProfiles.Values],
                 discovered: _discovered,
                 profileOrder: _source.ProfileOrder,
                 defaultProfileId: _source.DefaultProfileId,
-                hidden: _source.HiddenProfileIds);
+                hiddenIds: _source.HiddenProfileIds);
 
-            next = resolved;
-            var dict = new Dictionary<string, ResolvedProfile>(resolved.Count, StringComparer.OrdinalIgnoreCase);
+            next = resolvedSet.Visible;
+            var dict = new Dictionary<string, ResolvedProfile>(resolvedSet.Visible.Count, StringComparer.OrdinalIgnoreCase);
             nextDefault = null;
-            foreach (var p in resolved)
+            foreach (var p in resolvedSet.Visible)
             {
                 dict[p.Id] = p;
                 if (p.IsDefault) nextDefault = p.Id;
