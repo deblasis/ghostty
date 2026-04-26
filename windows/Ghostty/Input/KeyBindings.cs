@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Ghostty.Core.Input;
 using Windows.System;
 
 namespace Ghostty.Input;

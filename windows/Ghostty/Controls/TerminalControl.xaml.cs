@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using Ghostty.Core.Input;
 using Ghostty.Hosting;
 using Ghostty.Input;
 using Ghostty.Interop;

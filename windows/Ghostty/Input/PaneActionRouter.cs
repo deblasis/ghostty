@@ -1,4 +1,5 @@
 using System;
+using Ghostty.Core.Input;
 using Ghostty.Core.Panes;
 using Ghostty.Core.Tabs;
 using Ghostty.Panes;

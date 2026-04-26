@@ -8,6 +8,7 @@ using Ghostty.Commands;
 using Ghostty.Controls;
 using Ghostty.Core.Config;
 using Ghostty.Core.Hosting;
+using Ghostty.Core.Input;
 using Ghostty.Core.Profiles;
 using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;

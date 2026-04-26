@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Ghostty.Core.Input;
 using Ghostty.Input;
 
 namespace Ghostty.Commands;

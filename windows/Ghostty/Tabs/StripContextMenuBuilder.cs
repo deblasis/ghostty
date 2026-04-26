@@ -1,3 +1,4 @@
+using Ghostty.Core.Input;
 using Ghostty.Core.Tabs;
 using Ghostty.Input;
 using Microsoft.UI.Xaml.Controls;
