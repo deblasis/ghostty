@@ -15,7 +15,7 @@
 
             <ctrl:SettingsGroup x:Name="ProfilesGroup"
                                 Header="Profiles"
-                                Description="Read-only view of profiles parsed from your config and discovered on this system." />
+                                Description="Hidden profiles stay listed here but don't appear in the new-tab menu, command palette, or Ctrl+Shift+1..9 chords." />
         </StackPanel>
     </ScrollViewer>
 </Page>

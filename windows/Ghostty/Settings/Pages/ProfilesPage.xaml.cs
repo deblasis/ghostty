@@ -62,9 +62,18 @@ internal sealed partial class ProfilesPage : Page
         // sidesteps the DataTemplate x:Bind-vs-ContainerContentChanging
         // wrinkle the rest of this codebase has worked around.
         ProfilesGroup.Cards.Clear();
+        // Visible first, then hidden -- both sets share one flat list so
+        // the user can flip a profile's hidden state without losing it
+        // off-screen. Hidden profiles still get filtered out of the
+        // new-tab menu / palette / chords because those consumers read
+        // _registry.Profiles, which excludes the hidden half.
         foreach (var profile in _registry.Profiles)
         {
             ProfilesGroup.Cards.Add(BuildRow(profile, isHidden: false));
+        }
+        foreach (var profile in _registry.HiddenProfiles)
+        {
+            ProfilesGroup.Cards.Add(BuildRow(profile, isHidden: true));
         }
     }
 
