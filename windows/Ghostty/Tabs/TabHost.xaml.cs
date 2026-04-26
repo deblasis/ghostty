@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Ghostty.Core.Input;
 using Ghostty.Core.Tabs;
 using Ghostty.Dialogs;
 using Ghostty.Input;

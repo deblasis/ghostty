@@ -19,4 +19,15 @@ public class PaneActionTests
     {
         Assert.Equal(expected, (int)action);
     }
+
+    [Fact]
+    public void OpenProfile1_IsImmediatelyAfterToggleCommandPalette()
+    {
+        // Defense in depth alongside the [Theory] above: catches a future
+        // commit that inserts a new member between ToggleCommandPalette
+        // and OpenProfile1 (e.g. a hypothetical "ToggleSearch = 28") even
+        // if the inserter mechanically bumps OpenProfile1..9 to keep
+        // their hardcoded values intact.
+        Assert.Equal((int)PaneAction.ToggleCommandPalette + 1, (int)PaneAction.OpenProfile1);
+    }
 }
