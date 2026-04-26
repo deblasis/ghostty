@@ -226,7 +226,9 @@ internal sealed partial class SettingsWindow : Window
                 "appearance" => new Pages.AppearancePage(_configService, _editor),
                 "profiles" => new Pages.ProfilesPage(
                     App.ProfileRegistry
-                        ?? throw new InvalidOperationException("ProfileRegistry not initialized")),
+                        ?? throw new InvalidOperationException("ProfileRegistry not initialized"),
+                    _configService,
+                    _editor),
                 "colors" => new Pages.ColorsPage(_configService, _editor, _theme),
                 "terminal" => new Pages.TerminalPage(_configService, _editor),
                 "keybindings" => new Pages.KeybindingsPage(_keybindings),
