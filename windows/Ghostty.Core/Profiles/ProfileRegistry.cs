@@ -19,15 +19,18 @@ namespace Ghostty.Core.Profiles;
 /// </summary>
 internal sealed partial class ProfileRegistry : IProfileRegistry
 {
-    // All three fields (Profiles, ById, DefaultProfileId) are published
-    // together via a single volatile reference so readers always see a
-    // consistent set -- no torn snapshot between the list and the dict.
+    // All four fields (Profiles, HiddenProfiles, ById, DefaultProfileId)
+    // are published together via a single volatile reference so readers
+    // always see a consistent set -- no torn snapshot between the visible
+    // list, hidden list, and the lookup dict.
     private sealed record Snapshot(
         IReadOnlyList<ResolvedProfile> Profiles,
+        IReadOnlyList<ResolvedProfile> HiddenProfiles,
         FrozenDictionary<string, ResolvedProfile> ById,
         string? DefaultProfileId);
 
     private static readonly Snapshot EmptySnapshot = new(
+        Array.Empty<ResolvedProfile>(),
         Array.Empty<ResolvedProfile>(),
         FrozenDictionary<string, ResolvedProfile>.Empty,
         DefaultProfileId: null);
@@ -49,6 +52,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
     public event Action<IProfileRegistry>? ProfilesChanged;
 
     public IReadOnlyList<ResolvedProfile> Profiles => _snapshot.Profiles;
+    public IReadOnlyList<ResolvedProfile> HiddenProfiles => _snapshot.HiddenProfiles;
     public string? DefaultProfileId => _snapshot.DefaultProfileId;
     public long Version => Interlocked.Read(ref _version);
 
@@ -105,6 +109,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
         if (Volatile.Read(ref _disposed) != 0) return;
 
         IReadOnlyList<ResolvedProfile> next;
+        IReadOnlyList<ResolvedProfile> nextHidden;
         FrozenDictionary<string, ResolvedProfile> nextById;
         string? nextDefault;
 
@@ -118,6 +123,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
                 hiddenIds: _source.HiddenProfileIds);
 
             next = resolvedSet.Visible;
+            nextHidden = resolvedSet.Hidden;
             var dict = new Dictionary<string, ResolvedProfile>(resolvedSet.Visible.Count, StringComparer.OrdinalIgnoreCase);
             nextDefault = null;
             foreach (var p in resolvedSet.Visible)
@@ -128,7 +134,7 @@ internal sealed partial class ProfileRegistry : IProfileRegistry
             nextById = dict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
         }
 
-        _snapshot = new Snapshot(next, nextById, nextDefault);
+        _snapshot = new Snapshot(next, nextHidden, nextById, nextDefault);
         var newVersion = Interlocked.Increment(ref _version);
         LogRecomposed(newVersion, next.Count);
 
