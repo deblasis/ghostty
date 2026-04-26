@@ -81,6 +81,11 @@ public sealed partial class MainWindow : Window
     private readonly PaneHostFactory _factory;
     private readonly TabManager _tabManager;
     private readonly PaneActionRouter _router;
+
+    // Static cache so the router's getProfiles lambda does not allocate a
+    // fresh empty array on every Ctrl+Shift+N chord when ProfileRegistry is
+    // not yet wired (cold-start path) or returns an unset snapshot.
+    private static readonly IReadOnlyList<Ghostty.Core.Profiles.ResolvedProfile> EmptyProfiles = [];
     private readonly DialogTracker _dialogs = new();
     private readonly WindowState _windowState;
     // Kept as a field so the ColorValuesChanged subscription is not GC'd.
@@ -355,7 +360,7 @@ public sealed partial class MainWindow : Window
             seed: seedTab);
         _router = new PaneActionRouter(
             _tabManager,
-            getProfiles: () => App.ProfileRegistry?.Profiles ?? [],
+            getProfiles: () => App.ProfileRegistry?.Profiles ?? EmptyProfiles,
             openProfile: OpenProfile);
         _windowState = WindowState.Load();
         RestoreWindowPlacement();

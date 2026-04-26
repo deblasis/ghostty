@@ -139,12 +139,6 @@ internal sealed class BuiltInCommandSource : ICommandSource
         });
     }
 
-    private static KeyBinding? FindShortcut(PaneAction action)
-    {
-        foreach (var b in KeyBindings.Default.All)
-        {
-            if (b.Action == action) return b;
-        }
-        return null;
-    }
+    private static KeyBinding? FindShortcut(PaneAction action) =>
+        KeyBindings.Default.Find(action);
 }

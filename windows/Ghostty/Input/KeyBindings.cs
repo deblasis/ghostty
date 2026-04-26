@@ -87,6 +87,24 @@ internal sealed class KeyBindings
     }
 
     /// <summary>
+    /// Return the first <see cref="KeyBinding"/> bound to
+    /// <paramref name="action"/>, or null if no chord points to it.
+    /// Linear scan; same complexity as <see cref="Match"/> and
+    /// <see cref="Label"/>. Single source for the
+    /// "what chord opens this action?" lookup so command-palette sources
+    /// (BuiltInCommandSource, ProfileCommandSource, ...) do not each
+    /// reimplement the loop.
+    /// </summary>
+    public KeyBinding? Find(PaneAction action)
+    {
+        foreach (var b in _bindings)
+        {
+            if (b.Action == action) return b;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Hardcoded default bindings for PR 2. Mirrors Windows Terminal
     /// muscle memory: Ctrl+Shift+D / E for splits, Ctrl+Shift+W to
     /// close, Alt+Arrows for directional focus.

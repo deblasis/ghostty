@@ -65,6 +65,7 @@ internal sealed class ProfileCommandSource : ICommandSource
                 Description = $"Open {profile.Name} as a new tab (Alt: new pane, Shift: new window)",
                 ActionKey = $"open_profile:{profile.Id}",
                 Category = CommandCategory.Tab,
+                // TODO: PR 6 - per-profile icon (use IIconResolver + Profile.Icon).
                 LeadingIcon = "",
                 Shortcut = LookupShortcut(SlotAction(i)),
                 Execute = _ =>
@@ -92,11 +93,6 @@ internal sealed class ProfileCommandSource : ICommandSource
         _ => null,
     };
 
-    private static KeyBinding? LookupShortcut(PaneAction? action)
-    {
-        if (action is null) return null;
-        foreach (var b in KeyBindings.Default.All)
-            if (b.Action == action) return b;
-        return null;
-    }
+    private static KeyBinding? LookupShortcut(PaneAction? action) =>
+        action is null ? null : KeyBindings.Default.Find(action.Value);
 }
