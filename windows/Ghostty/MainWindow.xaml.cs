@@ -353,7 +353,10 @@ public sealed partial class MainWindow : Window
         _tabManager = new TabManager(
             snapshot => _factory.Create(snapshot),
             seed: seedTab);
-        _router = new PaneActionRouter(_tabManager);
+        _router = new PaneActionRouter(
+            _tabManager,
+            getProfiles: () => App.ProfileRegistry?.Profiles ?? [],
+            openProfile: OpenProfile);
         _windowState = WindowState.Load();
         RestoreWindowPlacement();
 
@@ -1681,6 +1684,18 @@ public sealed partial class MainWindow : Window
         var config = new ConfigCommandSource();
 
         var sources = new List<ICommandSource> { builtIn, jump, config };
+
+        // PR 5: profile rows. Null-check App services as a defensive belt
+        // (cold-start where App.ProfileRegistry isn't wired yet would skip
+        // the source entirely; ProfileCommandSource itself returns an empty
+        // list when its registry has no profiles).
+        if (App.ProfileRegistry is not null && App.ModifierKeyState is not null)
+        {
+            sources.Add(new ProfileCommandSource(
+                App.ProfileRegistry,
+                App.ModifierKeyState,
+                OpenProfile));
+        }
 
         // Build the action autocompleter with a minimal set of action schemas.
         var schemas = new Dictionary<string, ActionSchema>
