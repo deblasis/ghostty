@@ -82,36 +82,28 @@ public static class ProfileOrderResolver
             var def = combined[id];
             var isHidden = def.Hidden || hiddenIds.Contains(id);
             if (isHidden)
-            {
-                hidden.Add(new ResolvedProfile(
-                    Id: def.Id,
-                    Name: def.Name,
-                    Command: def.Command,
-                    WorkingDirectory: def.WorkingDirectory,
-                    Icon: def.Icon ?? new IconSpec.BundledKey("default"),
-                    TabTitle: def.TabTitle ?? def.Name,
-                    Visuals: def.Visuals,
-                    ProbeId: def.ProbeId,
-                    OrderIndex: hiddenIndex++,
-                    IsDefault: false));
-            }
+                hidden.Add(MakeProfile(def, hiddenIndex++, isDefault: false));
             else
-            {
-                visible.Add(new ResolvedProfile(
-                    Id: def.Id,
-                    Name: def.Name,
-                    Command: def.Command,
-                    WorkingDirectory: def.WorkingDirectory,
-                    Icon: def.Icon ?? new IconSpec.BundledKey("default"),
-                    TabTitle: def.TabTitle ?? def.Name,
-                    Visuals: def.Visuals,
-                    ProbeId: def.ProbeId,
-                    OrderIndex: visibleIndex++,
-                    IsDefault: def.Id == defaultResolved));
-            }
+                visible.Add(MakeProfile(def, visibleIndex++, isDefault: def.Id == defaultResolved));
         }
         return new ResolvedProfileSet(visible, hidden);
     }
+
+    // Single source of truth for the ProfileDef -> ResolvedProfile
+    // projection so the visible / hidden branches above stay in sync as
+    // the record gains fields.
+    private static ResolvedProfile MakeProfile(ProfileDef def, int orderIndex, bool isDefault)
+        => new(
+            Id: def.Id,
+            Name: def.Name,
+            Command: def.Command,
+            WorkingDirectory: def.WorkingDirectory,
+            Icon: def.Icon ?? new IconSpec.BundledKey("default"),
+            TabTitle: def.TabTitle ?? def.Name,
+            Visuals: def.Visuals,
+            ProbeId: def.ProbeId,
+            OrderIndex: orderIndex,
+            IsDefault: isDefault);
 
     private static string? ResolveDefault(
         string? requested,
