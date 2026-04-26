@@ -8,6 +8,13 @@
         <StackPanel MaxWidth="800">
             <TextBlock Text="Profiles" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,20" />
 
+            <InfoBar x:Name="WarningsBar"
+                     IsOpen="False"
+                     IsClosable="False"
+                     Severity="Warning"
+                     Title="Profile config warnings"
+                     Margin="0,0,0,12" />
+
             <ctrl:SettingsGroup Header="Default profile"
                                 Description="Used when no profile is specified at launch.">
                 <ctrl:SettingsCard x:Name="DefaultProfileCard" Header="Default profile id" />

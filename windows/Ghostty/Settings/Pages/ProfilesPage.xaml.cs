@@ -53,6 +53,19 @@ internal sealed partial class ProfilesPage : Page
 
     private void Rebind()
     {
+        var warnings = _configService.ProfileWarnings;
+        Debug.WriteLine($"ProfilesPage.Rebind: ProfileWarnings.Count = {warnings.Count}");
+        if (warnings.Count == 0)
+        {
+            WarningsBar.IsOpen = false;
+            WarningsBar.Message = string.Empty;
+        }
+        else
+        {
+            WarningsBar.Message = string.Join("\n", warnings);
+            WarningsBar.IsOpen = true;
+        }
+
         DefaultProfileCard.Description =
             _registry.DefaultProfileId ?? "(no default profile set)";
 
@@ -112,17 +125,28 @@ internal sealed partial class ProfilesPage : Page
             // explicitly so the in-memory ProfileView updates and the
             // page rebinds deterministically rather than depending on
             // when the watcher's debounce timer happens to land.
+            //
+            // Hide via SetValue("true"); un-hide via RemoveValue rather
+            // than SetValue("false") so the config stays minimal --
+            // hidden defaults to false, so a stray "false" line is just
+            // noise that also confuses the warnings filter for
+            // hidden-only blocks.
+            var key = ProfileHiddenKey.For(id);
             _configService.SuppressWatcher(true);
-            try { _editor.SetValue(ProfileHiddenKey.For(id), toggle.IsOn ? "true" : "false"); }
+            try
+            {
+                if (toggle.IsOn) _editor.SetValue(key, "true");
+                else _editor.RemoveValue(key);
+            }
             finally { _configService.SuppressWatcher(false); }
             _configService.Reload();
         }
         catch (Exception ex)
         {
-            // SetValue / Reload failure leaves the toggle visually
-            // flipped; the next ProfilesChanged event from a successful
-            // reload would either confirm or revert it. Logged for
-            // diagnostic only -- no user-facing surface in V1.
+            // SetValue / RemoveValue / Reload failure leaves the toggle
+            // visually flipped; the next ProfilesChanged event from a
+            // successful reload would either confirm or revert it.
+            // Logged for diagnostic only -- no user-facing surface in V1.
             Debug.WriteLine($"failed to toggle profile {id} hidden: {ex}");
         }
     }
