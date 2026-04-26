@@ -110,8 +110,8 @@ internal sealed partial class NewTabSplitButton : UserControl
         if (ctl.ChevronGlyph is not null)
         {
             ctl.ChevronGlyph.Glyph = orient == Orientation.Vertical
-                ? ""
-                : "";
+                ? "\uE76C"
+                : "\uE70D";
         }
     }
 
