@@ -1,0 +1,21 @@
+<Page
+    x:Class="Ghostty.Settings.Pages.ProfilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctrl="using:Ghostty.Controls.Settings">
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="800">
+            <TextBlock Text="Profiles" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,20" />
+
+            <ctrl:SettingsGroup Header="Default profile"
+                                Description="Used when no profile is specified at launch.">
+                <ctrl:SettingsCard x:Name="DefaultProfileCard" Header="Default profile id" />
+            </ctrl:SettingsGroup>
+
+            <ctrl:SettingsGroup x:Name="ProfilesGroup"
+                                Header="Profiles"
+                                Description="Read-only view of profiles parsed from your config and discovered on this system." />
+        </StackPanel>
+    </ScrollViewer>
+</Page>
