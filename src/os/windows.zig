@@ -84,6 +84,11 @@ pub const exp = struct {
         ) callconv(.winapi) windows.BOOL;
         pub extern "kernel32" fn GetConsoleCP() callconv(.winapi) windows.UINT;
         pub extern "kernel32" fn GetConsoleOutputCP() callconv(.winapi) windows.UINT;
+        // System ANSI code page (per-process default ACP, set by the
+        // user's locale). Used to detect legacy double-byte CJK locales
+        // where forcing UTF-8 on a spawned shell would mojibake legacy
+        // .bat scripts. std.os.windows does not wrap this.
+        pub extern "kernel32" fn GetACP() callconv(.winapi) windows.UINT;
         pub extern "kernel32" fn SetConsoleCtrlHandler(
             HandlerRoutine: ?*const fn (windows.DWORD) callconv(.winapi) windows.BOOL,
             Add: windows.BOOL,

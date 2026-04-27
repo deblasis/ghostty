@@ -10,6 +10,8 @@
 //! the same table; edit both together until the C# side is retired.
 
 const std = @import("std");
+const builtin = @import("builtin");
+const windows = @import("windows.zig");
 const testing = std.testing;
 const log = std.log.scoped(.windows_shell);
 
@@ -214,6 +216,38 @@ fn identify(exe_path: []const u8) Kind {
     return kinds.get(lower) orelse .unknown;
 }
 
+/// Returns true if the system ANSI codepage (`GetACP()`) is one of the
+/// legacy double-byte CJK codepages where forcing UTF-8 on a spawned
+/// shell would mojibake legacy `.bat` scripts whose script text is
+/// stored in that codepage.
+///
+/// We only flag the five double-byte CJK codepages (Shift-JIS, GB2312,
+/// EUC-KR, Big5, Johab). Single-byte legacy codepages (Thai 874, Hebrew
+/// 1255, Vietnamese 1258, etc.) survive a UTF-8 flip of the spawned
+/// shell's encoding and are not classified as CJK here.
+///
+/// Modern CJK developers running native Windows are increasingly UTF-8
+/// (VS Code, WSL, Beta-UTF-8 toggle); they can opt back in via
+/// `utf8-console = always`.
+pub fn isCjkAnsiCodePage() bool {
+    if (comptime builtin.os.tag != .windows) return false;
+    return isCjkAnsiCodePageFor(windows.exp.kernel32.GetACP());
+}
+
+/// Pure-logic variant of `isCjkAnsiCodePage` for testing. Takes an
+/// explicit codepage rather than calling `GetACP()`.
+pub fn isCjkAnsiCodePageFor(acp: std.os.windows.UINT) bool {
+    return switch (acp) {
+        932, // ja_JP: Shift-JIS
+        936, // zh_CN: GB2312
+        949, // ko_KR: EUC-KR
+        950, // zh_TW: Big5
+        1361, // ko_KR: Johab (legacy)
+        => true,
+        else => false,
+    };
+}
+
 test "classify: pwsh variants" {
     try testing.expectEqual(Awareness.vt_aware, classify("pwsh"));
     try testing.expectEqual(Awareness.vt_aware, classify("pwsh.exe"));
@@ -364,4 +398,34 @@ test "utf8Preamble: prefix ends with shell-appropriate separator" {
 
     // none: empty.
     try testing.expectEqualStrings("", Preamble.none.prefix());
+}
+
+test "isCjkAnsiCodePage: links GetACP and agrees with the pure-logic helper" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+    // Smoke test: catches a broken `GetACP` extern decl on Windows
+    // and verifies the wrapper agrees with the testable inner helper
+    // for whatever ACP the test host actually has. Per-codepage
+    // assertions live in the OS-agnostic tests below.
+    try testing.expectEqual(
+        isCjkAnsiCodePageFor(windows.exp.kernel32.GetACP()),
+        isCjkAnsiCodePage(),
+    );
+}
+
+test "isCjkAnsiCodePageFor: known CJK codepages return true" {
+    try std.testing.expect(isCjkAnsiCodePageFor(932)); // ja_JP Shift-JIS
+    try std.testing.expect(isCjkAnsiCodePageFor(936)); // zh_CN GB2312
+    try std.testing.expect(isCjkAnsiCodePageFor(949)); // ko_KR EUC-KR
+    try std.testing.expect(isCjkAnsiCodePageFor(950)); // zh_TW Big5
+    try std.testing.expect(isCjkAnsiCodePageFor(1361)); // ko_KR Johab
+}
+
+test "isCjkAnsiCodePageFor: non-CJK codepages return false" {
+    try std.testing.expect(!isCjkAnsiCodePageFor(437)); // OEM US
+    try std.testing.expect(!isCjkAnsiCodePageFor(850)); // OEM WE (Italian)
+    try std.testing.expect(!isCjkAnsiCodePageFor(1252)); // ANSI WE
+    try std.testing.expect(!isCjkAnsiCodePageFor(65001)); // UTF-8
+    try std.testing.expect(!isCjkAnsiCodePageFor(874)); // Thai (single-byte)
+    try std.testing.expect(!isCjkAnsiCodePageFor(1255)); // Hebrew (single-byte)
+    try std.testing.expect(!isCjkAnsiCodePageFor(1258)); // Vietnamese (single-byte)
 }
