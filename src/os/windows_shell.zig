@@ -117,8 +117,10 @@ pub const Preamble = enum {
 };
 
 /// Fine-grained shell identity used to select a UTF-8 preamble under
-/// ConPTY. Kept internal; exposed only through `utf8Preamble`.
-const Kind = enum {
+/// ConPTY and to gate per-shell quirks (e.g. PSReadLine under raw-pipe
+/// stdin treats CSI response bytes as user keystrokes, so termio
+/// suppresses VT response writes for `.pwsh` in bypass mode).
+pub const Kind = enum {
     unknown,
     cmd,
     powershell,
@@ -147,11 +149,33 @@ const kinds = std.StaticStringMap(Kind).initComptime(.{
     .{ "powershell", .powershell },
 });
 
-fn awarenessOf(kind: Kind) Awareness {
+pub fn awarenessOf(kind: Kind) Awareness {
     return switch (kind) {
         .unknown => .unknown,
         .cmd, .powershell => .console_api,
         .pwsh, .wsl, .ssh, .bash, .nu, .zsh, .fish, .elvish, .xonsh => .vt_aware,
+    };
+}
+
+/// Returns true if this shell relies on a real console handle for
+/// interactive input (PSReadLine, line-editing) and breaks under raw
+/// pipe stdin on Windows. Used to force ConPTY transport for these
+/// shells regardless of the user's `conpty-mode = auto` preference.
+///
+/// Currently only pwsh.exe (PowerShell 7+) qualifies. PSReadLine
+/// throws InvalidOperationException when stdin is not a console
+/// handle, and pwsh falls back to Console.ReadLine which has no
+/// backspace, no arrow-key history, no tab completion.
+///
+/// powershell.exe (5.1) is .console_api in `awarenessOf` so it
+/// already routes to ConPTY without needing this gate.
+///
+/// See deblasis/pwsh-bypass-research for empirical investigation
+/// of whether this can be worked around without ConPTY.
+pub fn requiresConsoleInput(kind: Kind) bool {
+    return switch (kind) {
+        .pwsh => true,
+        else => false,
     };
 }
 
@@ -184,7 +208,7 @@ pub fn utf8Preamble(exe_path: []const u8) Preamble {
     return preambleOf(identify(exe_path));
 }
 
-fn identify(exe_path: []const u8) Kind {
+pub fn identify(exe_path: []const u8) Kind {
     const trimmed = std.mem.trim(u8, exe_path, "\"' \t\r\n");
     if (trimmed.len == 0) return .unknown;
 
