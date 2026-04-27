@@ -150,7 +150,7 @@ pub const StreamHandler = struct {
             .write_small => |*v| v.kind = .response,
             .write_stable => |*v| v.kind = .response,
             .write_alloc => |*v| v.kind = .response,
-            else => {},
+            else => unreachable, // Message.writeReq only returns write variants
         }
     }
 

@@ -175,6 +175,8 @@ pub fn awarenessOf(kind: Kind) Awareness {
 pub fn requiresConsoleInput(kind: Kind) bool {
     return switch (kind) {
         .pwsh => true,
+        // else explicit so adding a new Kind doesn't silently flip
+        // its console-input requirement.
         else => false,
     };
 }
@@ -201,9 +203,10 @@ pub fn classify(exe_path: []const u8) Awareness {
 }
 
 /// Return the UTF-8 preamble needed to make this shell emit UTF-8 on
-/// startup under ConPTY. Callers should invoke this only when the
-/// transport actually resolves to ConPTY; the raw-pipe bypass path
-/// already inherits our UTF-8 parent console (see PR # 301).
+/// startup. Callers invoke this regardless of transport; the actual
+/// emission gate lives in `Exec.maybeInjectUtf8Preamble` and is
+/// driven by the resolved `utf8-console` policy, not by ConPTY vs
+/// bypass routing. See deblasis/wintty # 341 for the rationale.
 pub fn utf8Preamble(exe_path: []const u8) Preamble {
     return preambleOf(identify(exe_path));
 }
