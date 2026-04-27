@@ -2225,6 +2225,28 @@ fn resolveConptyMode(
     return resolved;
 }
 
+/// Binary resolution of `Config.Utf8Console`. `auto` collapses to
+/// `.never` on default-locale CJK Windows (Shift-JIS, GB2312, EUC-KR,
+/// Big5, Johab) and to `.always` everywhere else. The runtime never
+/// sees `.auto`; only its resolved form.
+const ResolvedUtf8Console = enum { always, never };
+
+fn resolveUtf8Console(cfg: configpkg.Config.Utf8Console) ResolvedUtf8Console {
+    const resolved: ResolvedUtf8Console = switch (cfg) {
+        .always => .always,
+        .never => .never,
+        .auto => if (internal_os.windows_shell.isCjkAnsiCodePage())
+            .never
+        else
+            .always,
+    };
+    log_validate.info(
+        "utf8-console resolved: config={s} resolved={s}",
+        .{ @tagName(cfg), @tagName(resolved) },
+    );
+    return resolved;
+}
+
 test "execCommand darwin: shell command" {
     if (comptime !builtin.os.tag.isDarwin()) return error.SkipZigTest;
 
@@ -2582,6 +2604,34 @@ test "resolveConptyMode: auto handles path-prefixed shell" {
 test "resolveConptyMode: auto handles quoted shell" {
     try std.testing.expectEqual(ptypkg.Mode.bypass, resolveConptyMode(.auto, "\"pwsh.exe\""));
     try std.testing.expectEqual(ptypkg.Mode.conpty, resolveConptyMode(.auto, "'cmd.exe'"));
+}
+
+test "resolveUtf8Console: always returns always" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+    try std.testing.expectEqual(
+        @as(ResolvedUtf8Console, .always),
+        resolveUtf8Console(.always),
+    );
+}
+
+test "resolveUtf8Console: never returns never" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+    try std.testing.expectEqual(
+        @as(ResolvedUtf8Console, .never),
+        resolveUtf8Console(.never),
+    );
+}
+
+test "resolveUtf8Console: auto agrees with isCjkAnsiCodePage" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+    // Cross-check the resolved value against the linked CJK helper for
+    // whatever ACP the test host actually has. Catches a regression
+    // where the auto branch silently stops calling isCjkAnsiCodePage.
+    const expected: ResolvedUtf8Console = if (internal_os.windows_shell.isCjkAnsiCodePage())
+        .never
+    else
+        .always;
+    try std.testing.expectEqual(expected, resolveUtf8Console(.auto));
 }
 
 // --- # 302 UTF-8 preamble injection tests -----------------------------------
