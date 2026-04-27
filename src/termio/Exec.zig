@@ -652,6 +652,14 @@ pub const Config = struct {
     else
         void = if (builtin.os.tag == .windows) .auto else {},
 
+    /// Windows UTF-8 console preamble policy. Resolved at spawn time
+    /// against the system ANSI codepage (see `resolveUtf8Console`).
+    /// Ignored on POSIX.
+    utf8_console: if (builtin.os.tag == .windows)
+        configpkg.Config.Utf8Console
+    else
+        void = if (builtin.os.tag == .windows) .auto else {},
+
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
 };
@@ -676,6 +684,13 @@ const Subprocess = struct {
     /// the shell classifier at spawn time. Ignored on POSIX.
     conpty_mode: if (builtin.os.tag == .windows)
         configpkg.Config.ConptyMode
+    else
+        void = if (builtin.os.tag == .windows) .auto else {},
+
+    /// Captured from Config.utf8_console at init time; resolved against
+    /// the system ACP per-spawn inside maybeInjectUtf8Preamble.
+    utf8_console: if (builtin.os.tag == .windows)
+        configpkg.Config.Utf8Console
     else
         void = if (builtin.os.tag == .windows) .auto else {},
 
@@ -911,6 +926,7 @@ const Subprocess = struct {
             shell_command,
             internal_os.passwd,
             cfg.conpty_mode,
+            cfg.utf8_console,
         ) catch |err| switch (err) {
             // If we fail to allocate space for the command we want to
             // execute, we'd still like to try to run something so
@@ -955,6 +971,7 @@ const Subprocess = struct {
             .args = args,
 
             .conpty_mode = cfg.conpty_mode,
+            .utf8_console = cfg.utf8_console,
 
             .rt_pre_exec_info = cfg.rt_pre_exec_info,
             .rt_post_fork_info = cfg.rt_post_fork_info,
@@ -1634,6 +1651,10 @@ fn execCommand(
     /// to inject the ConPTY UTF-8 preamble (# 302). Ignored on other
     /// platforms.
     conpty_mode: configpkg.Config.ConptyMode,
+    /// Configured UTF-8 console preamble policy; used only on Windows
+    /// to gate ConPTY UTF-8 preamble injection (# 302). Ignored on
+    /// other platforms.
+    utf8_console: configpkg.Config.Utf8Console,
 ) (Allocator.Error || error{SystemError})![]const [:0]const u8 {
     // If we're on macOS, we have to use `login(1)` to get all of
     // the proper environment variables set, a login shell, and proper
@@ -1765,6 +1786,7 @@ fn execCommand(
                     alloc,
                     cloned,
                     conpty_mode,
+                    utf8_console,
                 );
             }
             break :direct cloned;
@@ -1817,6 +1839,7 @@ fn execCommand(
                         alloc,
                         direct_args,
                         conpty_mode,
+                        utf8_console,
                     );
                 }
 
@@ -1907,7 +1930,10 @@ fn maybeInjectUtf8Preamble(
     alloc: Allocator,
     args: []const [:0]const u8,
     conpty_mode: configpkg.Config.ConptyMode,
+    utf8_console: configpkg.Config.Utf8Console,
 ) Allocator.Error![]const [:0]const u8 {
+    // TODO(#341): gate the preamble decision on this.
+    _ = utf8_console;
     if (comptime builtin.os.tag != .windows) return args;
     if (args.len == 0) return args;
 
@@ -2261,7 +2287,7 @@ test "execCommand darwin: shell command" {
                 .name = "testuser",
             };
         }
-    }, .auto);
+    }, .auto, .auto);
 
     try testing.expectEqual(8, result.len);
     try testing.expectEqualStrings(result[0], "/usr/bin/login");
@@ -2291,7 +2317,7 @@ test "execCommand darwin: direct command" {
                 .name = "testuser",
             };
         }
-    }, .auto);
+    }, .auto, .auto);
 
     try testing.expectEqual(5, result.len);
     try testing.expectEqualStrings(result[0], "/usr/bin/login");
@@ -2320,6 +2346,7 @@ test "execCommand: shell command, empty passwd" {
             }
         },
         .auto,
+        .auto,
     );
 
     try testing.expectEqual(3, result.len);
@@ -2346,6 +2373,7 @@ test "execCommand: shell command, error passwd" {
                 return error.Fail;
             }
         },
+        .auto,
         .auto,
     );
 
@@ -2374,7 +2402,7 @@ test "execCommand: direct command, error passwd" {
             // login command and falls back to POSIX behavior.
             return error.Fail;
         }
-    }, .auto);
+    }, .auto, .auto);
 
     try testing.expectEqual(2, result.len);
     try testing.expectEqualStrings(result[0], "foo");
@@ -2404,7 +2432,7 @@ test "execCommand: direct command, config freed" {
             // login command and falls back to POSIX behavior.
             return error.Fail;
         }
-    }, .auto);
+    }, .auto, .auto);
 
     command_arena.deinit();
 
@@ -2432,6 +2460,7 @@ test "execCommand windows: shell command, single token spawns directly" {
             }
         },
         .always,
+        .auto,
     );
 
     // No cmd.exe /C wrapper: args[0] is the configured shell itself.
@@ -2456,6 +2485,7 @@ test "execCommand windows: shell command, args split without cmd wrap" {
             }
         },
         .always,
+        .auto,
     );
 
     try testing.expectEqual(3, result.len);
@@ -2481,6 +2511,7 @@ test "execCommand windows: shell command, quoted path kept as one arg" {
             }
         },
         .always,
+        .auto,
     );
 
     try testing.expectEqual(2, result.len);
@@ -2510,6 +2541,7 @@ test "execCommand windows: shell command with pipe falls back to cmd.exe" {
             }
         },
         .always,
+        .auto,
     );
 
     // Metachar present: wrap with cmd.exe /C so cmd handles the pipe.
@@ -2536,6 +2568,7 @@ test "execCommand windows: shell command with redirect falls back to cmd.exe" {
             }
         },
         .always,
+        .auto,
     );
 
     try testing.expectEqual(3, result.len);
@@ -2656,6 +2689,7 @@ fn testExecWindowsShell(
             }
         },
         conpty_mode,
+        .auto,
     );
 }
 
@@ -3029,6 +3063,7 @@ test "execCommand windows: pwsh -Command with param() is left untouched" {
             }
         },
         .never,
+        .auto,
     );
 
     try testing.expectEqual(@as(usize, 3), result.len);
@@ -3101,6 +3136,7 @@ test "execCommand windows: pwsh -Command with leading whitespace + param is left
             }
         },
         .never,
+        .auto,
     );
 
     try testing.expectEqual(@as(usize, 3), result.len);
@@ -3159,6 +3195,7 @@ test "execCommand windows: direct command for cmd.exe gets cmd preamble" {
             }
         },
         .auto,
+        .auto,
     );
 
     try testing.expectEqual(@as(usize, 3), result.len);
@@ -3183,6 +3220,7 @@ test "execCommand windows: direct command for pwsh under never gets pwsh preambl
             }
         },
         .never,
+        .auto,
     );
 
     try testing.expectEqual(@as(usize, 5), result.len);

@@ -666,6 +666,9 @@ pub fn init(
             .conpty_mode = if (comptime builtin.os.tag == .windows)
                 config.@"conpty-mode"
             else {},
+            .utf8_console = if (comptime builtin.os.tag == .windows)
+                config.@"utf8-console"
+            else {},
             .rt_pre_exec_info = .init(config),
             .rt_post_fork_info = .init(config),
         });
