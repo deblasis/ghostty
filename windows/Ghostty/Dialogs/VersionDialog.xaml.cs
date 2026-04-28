@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Ghostty.Core.Version;
 using Microsoft.UI.Xaml.Controls;
@@ -10,6 +11,8 @@ namespace Ghostty.Dialogs;
 internal sealed partial class VersionDialog : ContentDialog
 {
     private readonly string _output;
+    private readonly string _copyButtonRest;
+    private bool _copyInProgress;
 
     public VersionDialog()
     {
@@ -20,6 +23,9 @@ internal sealed partial class VersionDialog : ContentDialog
         VersionText.Text = _output;
         Title = $"Wintty {info.WinttyVersionString}";
 
+        // Capture the original button label once so re-entrancy (rapid
+        // double-click) can't leave the button stuck on "Copied".
+        _copyButtonRest = PrimaryButtonText;
         PrimaryButtonClick += OnCopy;
     }
 
@@ -28,11 +34,24 @@ internal sealed partial class VersionDialog : ContentDialog
         // Don't dismiss the dialog when Copy is clicked.
         args.Cancel = true;
 
+        // Drop double-clicks while a previous Copy is still mid-revert.
+        if (_copyInProgress) return;
+        _copyInProgress = true;
+
         var data = new DataPackage();
         data.SetText(_output);
-        WinClipboard.SetContent(data);
+        try
+        {
+            // SetContent races WinUI startup and can throw CO_E_NOTINITIALIZED /
+            // CLIPBRD_E_CANT_OPEN -- same hazard handled in WinUiClipboardBackend.
+            WinClipboard.SetContent(data);
+        }
+        catch (COMException)
+        {
+            _copyInProgress = false;
+            return;
+        }
 
-        var originalText = PrimaryButtonText;
         PrimaryButtonText = "Copied";
         try
         {
@@ -40,7 +59,8 @@ internal sealed partial class VersionDialog : ContentDialog
         }
         finally
         {
-            PrimaryButtonText = originalText;
+            PrimaryButtonText = _copyButtonRest;
+            _copyInProgress = false;
         }
     }
 }

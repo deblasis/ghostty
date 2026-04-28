@@ -28,7 +28,7 @@ internal sealed class VersionCommandSource : ICommandSource
                 Title = "Version",
                 Description = "Show Wintty version, build, and edition",
                 Category = CommandCategory.About,
-                LeadingIcon = "", // Segoe MDL2 Info glyph
+                LeadingIcon = "\uE946", // Segoe Fluent Info glyph
                 Execute = _ => OpenDialog(),
             },
         };
