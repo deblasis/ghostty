@@ -145,6 +145,47 @@ pub export fn ghostty_cli_run_action() c_int {
     });
 }
 
+/// Build information about the loaded libghostty. All strings have static
+/// lifetime — the caller must not free them. Strings are NUL-terminated UTF-8.
+/// `commit` is the empty string when no build commit is present.
+pub const ghostty_build_info_s = extern struct {
+    version: [*:0]const u8,
+    version_string: [*:0]const u8,
+    commit: [*:0]const u8,
+    channel: [*:0]const u8,
+    zig_version: [*:0]const u8,
+    build_mode: [*:0]const u8,
+};
+
+/// Fill `out` with build information about the loaded libghostty. Safe to
+/// call before `ghostty_init`. The strings returned are static and must not
+/// be freed.
+pub export fn ghostty_build_info(out: *ghostty_build_info_s) void {
+    out.* = .{
+        .version = build_config_version_cstr,
+        .version_string = build_config.version_string,
+        .commit = build_config_commit_cstr,
+        .channel = @tagName(build_config.release_channel),
+        .zig_version = builtin.zig_version_string,
+        .build_mode = @tagName(builtin.mode),
+    };
+}
+
+// Comptime-formatted NUL-terminated literals derived from build_config.
+// Kept at file scope so `ghostty_build_info` can return [*:0]const u8 without
+// allocating.
+const build_config_version_cstr: [*:0]const u8 = blk: {
+    const v = build_config.version;
+    break :blk std.fmt.comptimePrint("{d}.{d}.{d}", .{ v.major, v.minor, v.patch });
+};
+
+const build_config_commit_cstr: [*:0]const u8 = blk: {
+    if (build_config.version.build) |b| {
+        break :blk b ++ "";
+    }
+    break :blk "";
+};
+
 /// Set an optional callback that the +list-themes TUI invokes when the
 /// selected theme changes (preview) or is accepted (confirmed). This
 /// lets embedders update their app chrome (title bar, tabs, etc.) to
