@@ -14,6 +14,7 @@ public static class VersionRenderer
     private const string Osc8Open = "\x1b]8;;";
     private const string Osc8Close = "\x1b]8;;\x1b\\";
     private const string St = "\x1b\\";
+    private const int FieldValueColumn = 18;
 
     /// <summary>
     /// Assemble a <see cref="VersionInfo"/> from all sources: the
@@ -107,10 +108,9 @@ public static class VersionRenderer
 
     private static void Field(StringBuilder sb, string label, string value)
     {
-        // Two-space indent, label, ":", padded to column 18, then value.
-        const int column = 18;
+        // Two-space indent, label, ":", padded to FieldValueColumn, then value.
         sb.Append("  ").Append(label).Append(':');
-        var padding = column - (2 + label.Length + 1);
+        var padding = FieldValueColumn - (2 + label.Length + 1);
         if (padding > 0) sb.Append(' ', padding);
         sb.Append(value).Append('\n');
     }

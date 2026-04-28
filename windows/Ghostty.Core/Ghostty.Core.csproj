@@ -90,6 +90,14 @@
 
   <Target Name="GenerateBuildInfo"
           BeforeTargets="CoreCompile">
+    <!--
+      $(IntermediateOutputPath) is set by Microsoft.NET.Sdk.targets, which
+      imports AFTER the csproj XML evaluates. Both the property assignment
+      and the <Compile Include> live inside this target so the path is
+      fully resolved before WriteLinesToFile and CoreCompile read it. The
+      tradeoff: VS / Rider IntelliSense doesn't see BuildInfo.g.cs until
+      after a CLI build, which is acceptable for this internal generator.
+    -->
     <PropertyGroup>
       <_GeneratedBuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</_GeneratedBuildInfoFile>
       <_WinttyCommit></_WinttyCommit>

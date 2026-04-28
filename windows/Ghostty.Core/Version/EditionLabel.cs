@@ -10,6 +10,6 @@ public static class EditionLabel
     public static string Format(Edition edition) => edition switch
     {
         Edition.Oss => "oss",
-        _ => throw new System.ArgumentOutOfRangeException(nameof(edition), edition, null),
+        _ => throw new ArgumentOutOfRangeException(nameof(edition), edition, null),
     };
 }
