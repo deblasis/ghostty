@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Ghostty.Core.Version;
@@ -13,6 +14,29 @@ public static class VersionRenderer
     private const string Osc8Open = "\x1b]8;;";
     private const string Osc8Close = "\x1b]8;;\x1b\\";
     private const string St = "\x1b\\";
+
+    /// <summary>
+    /// Assemble a <see cref="VersionInfo"/> from all sources: the
+    /// MSBuild-generated <see cref="BuildInfo"/> constants, the libghostty
+    /// FFI, the .NET runtime, and the OS.
+    /// </summary>
+    public static VersionInfo Build()
+    {
+        var lib = LibGhosttyBuildInfoBridge.Read();
+        return new VersionInfo(
+            WinttyVersion:       BuildInfo.WinttyVersion,
+            WinttyVersionString: BuildInfo.WinttyVersionString,
+            WinttyCommit:        BuildInfo.WinttyCommit,
+            Edition:             BuildInfo.Edition,
+            LibGhostty:          lib,
+            DotnetRuntime:       Environment.Version.ToString(3),
+            MsbuildConfig:       BuildInfo.MsbuildConfig,
+            AppRuntime:          "WinUI 3",
+            Renderer:            "DX12",
+            FontEngine:          "DirectWrite",
+            WindowsVersion:      Environment.OSVersion.Version.ToString(3),
+            Architecture:        RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant());
+    }
 
     /// <summary>Plain rendering. No escape sequences. Used by the dialog
     /// and by redirected stdout.</summary>
