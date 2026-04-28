@@ -146,10 +146,6 @@ pub export fn ghostty_cli_run_action() c_int {
 }
 
 /// ghostty_build_info_s
-///
-/// Build information about the loaded libghostty. All strings have static
-/// lifetime; the caller must not free them. Strings are NUL-terminated UTF-8.
-/// `commit` is the empty string when no build commit is present.
 pub const BuildInfo = extern struct {
     version: [*:0]const u8,
     version_string: [*:0]const u8,
@@ -159,9 +155,10 @@ pub const BuildInfo = extern struct {
     build_mode: [*:0]const u8,
 };
 
-/// Fill `out` with build information about the loaded libghostty. Safe to
-/// call before `ghostty_init`. The strings returned are static and must not
-/// be freed.
+/// Fill `out` with build information about the loaded libghostty. Returned
+/// strings are NUL-terminated UTF-8 with static lifetime; the caller must
+/// not free them. `commit` is empty when no build commit is present. Safe
+/// to call before `ghostty_init`.
 pub export fn ghostty_build_info(out: *BuildInfo) void {
     out.* = .{
         .version = build_config_version_cstr,
@@ -173,23 +170,14 @@ pub export fn ghostty_build_info(out: *BuildInfo) void {
     };
 }
 
-// Comptime-formatted NUL-terminated literals derived from build_config.
-// Kept at file scope so `ghostty_build_info` can return [*:0]const u8 without
-// allocating.
-const build_config_version_cstr: [*:0]const u8 = blk: {
-    const v = build_config.version;
-    break :blk std.fmt.comptimePrint("{d}.{d}.{d}", .{ v.major, v.minor, v.patch });
-};
+const build_config_version_cstr: [*:0]const u8 = std.fmt.comptimePrint(
+    "{d}.{d}.{d}",
+    .{ build_config.version.major, build_config.version.minor, build_config.version.patch },
+);
 
-// `b ++ ""` forces the comptime concatenation that gives us a sentinel-
-// terminated comptime array of known length, which coerces to [*:0]const u8.
-// Requires `version.build` to remain comptime-known; if it ever becomes a
-// runtime value this stops compiling.
 const build_config_commit_cstr: [*:0]const u8 = blk: {
-    if (build_config.version.build) |b| {
-        break :blk b ++ "";
-    }
-    break :blk "";
+    const b = build_config.version.build orelse break :blk "";
+    break :blk std.fmt.comptimePrint("{s}", .{b});
 };
 
 /// Set an optional callback that the +list-themes TUI invokes when the
