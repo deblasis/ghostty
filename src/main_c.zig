@@ -145,10 +145,12 @@ pub export fn ghostty_cli_run_action() c_int {
     });
 }
 
+/// ghostty_build_info_s
+///
 /// Build information about the loaded libghostty. All strings have static
-/// lifetime — the caller must not free them. Strings are NUL-terminated UTF-8.
+/// lifetime; the caller must not free them. Strings are NUL-terminated UTF-8.
 /// `commit` is the empty string when no build commit is present.
-pub const ghostty_build_info_s = extern struct {
+pub const BuildInfo = extern struct {
     version: [*:0]const u8,
     version_string: [*:0]const u8,
     commit: [*:0]const u8,
@@ -160,7 +162,7 @@ pub const ghostty_build_info_s = extern struct {
 /// Fill `out` with build information about the loaded libghostty. Safe to
 /// call before `ghostty_init`. The strings returned are static and must not
 /// be freed.
-pub export fn ghostty_build_info(out: *ghostty_build_info_s) void {
+pub export fn ghostty_build_info(out: *BuildInfo) void {
     out.* = .{
         .version = build_config_version_cstr,
         .version_string = build_config.version_string,
@@ -179,6 +181,10 @@ const build_config_version_cstr: [*:0]const u8 = blk: {
     break :blk std.fmt.comptimePrint("{d}.{d}.{d}", .{ v.major, v.minor, v.patch });
 };
 
+// `b ++ ""` forces the comptime concatenation that gives us a sentinel-
+// terminated comptime array of known length, which coerces to [*:0]const u8.
+// Requires `version.build` to remain comptime-known; if it ever becomes a
+// runtime value this stops compiling.
 const build_config_commit_cstr: [*:0]const u8 = blk: {
     if (build_config.version.build) |b| {
         break :blk b ++ "";
