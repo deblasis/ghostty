@@ -892,9 +892,9 @@ pub const StreamHandler = struct {
                 // This emits exactly `ESC [ <row> ; <col> R`, the shortest
                 // legal CSI 6 n reply. If a reader ever sees a longer
                 // payload before the `R`, the extra bytes are not from
-                // here: look at transport interleaving (raw-pipe vs
-                // ConPTY) or an out-of-band reply (e.g. mode 2048 size
-                // report, which ends in `t` but may precede this one).
+                // here -- see #367 for the investigation. Note that the
+                // mode 2048 in-band size report (`size_report.zig`) ends
+                // in `t`, not `R`, and may precede this one.
                 var msg: termio.Message = .{ .write_small = .{ .kind = .response } };
                 const resp = try std.fmt.bufPrint(&msg.write_small.data, "\x1B[{};{}R", .{
                     pos.y + 1,
